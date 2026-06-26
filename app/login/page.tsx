@@ -1,4 +1,5 @@
 import { signIn } from "@/auth"
+import { AuthError } from "next-auth"
 import { redirect } from "next/navigation"
 
 export default function LoginPage() {
@@ -15,16 +16,18 @@ export default function LoginPage() {
         <form
           action={async (formData: FormData) => {
             "use server"
-            const result = await signIn("credentials", {
-              email: formData.get("email") as string,
-              password: formData.get("password") as string,
-              redirect: false,
-            })
-
-            if (result?.error) {
-              redirect("/login?error=invalid")
+            try {
+              await signIn("credentials", {
+                email: formData.get("email") as string,
+                password: formData.get("password") as string,
+                redirectTo: "/docs/projects",
+              })
+            } catch (error) {
+              if (error instanceof AuthError) {
+                redirect("/login?error=invalid")
+              }
+              throw error
             }
-            redirect("/docs/projects")
           }}
           className="space-y-4"
         >
