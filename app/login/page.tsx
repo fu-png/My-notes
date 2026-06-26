@@ -1,9 +1,11 @@
-import { signIn } from "@/auth"
-import { AuthError } from "next-auth"
-import { isRedirectError } from "next/dist/client/components/redirect-error"
+import { authenticate, createSession } from "@/lib/auth"
 import { redirect } from "next/navigation"
 
-export default function LoginPage() {
+export default function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>
+}) {
   return (
     <div className="flex min-h-svh items-center justify-center bg-background">
       <div className="mx-auto w-full max-w-sm space-y-6 px-4">
@@ -17,21 +19,17 @@ export default function LoginPage() {
         <form
           action={async (formData: FormData) => {
             "use server"
-            try {
-              await signIn("credentials", {
-                email: formData.get("email") as string,
-                password: formData.get("password") as string,
-                redirectTo: "/docs/projects",
-              })
-            } catch (error) {
-              if (isRedirectError(error)) {
-                throw error
-              }
-              if (error instanceof AuthError) {
-                redirect("/login?error=invalid")
-              }
-              throw error
+            const email = formData.get("email") as string
+            const password = formData.get("password") as string
+
+            const user = await authenticate(email, password)
+
+            if (!user) {
+              redirect("/login?error=invalid")
             }
+
+            await createSession(user)
+            redirect("/docs/projects")
           }}
           className="space-y-4"
         >

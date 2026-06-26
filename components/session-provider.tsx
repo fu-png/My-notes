@@ -1,7 +1,33 @@
 "use client"
 
-import { SessionProvider as NextAuthSessionProvider } from "next-auth/react"
+import { createContext, useContext } from "react"
 
-export function SessionProvider({ children }: { children: React.ReactNode }) {
-  return <NextAuthSessionProvider>{children}</NextAuthSessionProvider>
+interface User {
+  id: string
+  email: string
+  name: string
+}
+
+interface SessionContextValue {
+  user: User | null
+}
+
+const SessionContext = createContext<SessionContextValue>({ user: null })
+
+export function SessionProvider({
+  children,
+  user,
+}: {
+  children: React.ReactNode
+  user: User | null
+}) {
+  return (
+    <SessionContext.Provider value={{ user }}>
+      {children}
+    </SessionContext.Provider>
+  )
+}
+
+export function useSession() {
+  return useContext(SessionContext)
 }
