@@ -1,7 +1,41 @@
-import { authenticate, createSession } from "@/lib/auth"
-import { redirect } from "next/navigation"
+"use client"
+
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 export default function LoginPage() {
+  const router = useRouter()
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError("")
+    setLoading(true)
+
+    const formData = new FormData(e.currentTarget)
+    const email = formData.get("email") as string
+    const password = formData.get("password") as string
+
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (res.ok) {
+        router.push("/docs/projects")
+      } else {
+        setError("邮箱或密码错误")
+      }
+    } catch {
+      setError("登录失败，请重试")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="flex min-h-svh items-center justify-center bg-background">
       <div className="mx-auto w-full max-w-sm space-y-6 px-4">
@@ -12,23 +46,11 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <form
-          action={async (formData: FormData) => {
-            "use server"
-            const email = formData.get("email") as string
-            const password = formData.get("password") as string
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <p className="text-center text-sm text-red-500">{error}</p>
+          )}
 
-            const user = await authenticate(email, password)
-
-            if (!user) {
-              redirect("/login?error=invalid")
-            }
-
-            await createSession(user)
-            redirect("/docs/projects")
-          }}
-          className="space-y-4"
-        >
           <div className="space-y-2">
             <label
               htmlFor="email"
@@ -65,9 +87,10 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            disabled={loading}
+            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
           >
-            登录
+            {loading ? "登录中..." : "登录"}
           </button>
         </form>
       </div>
