@@ -6,8 +6,10 @@ export async function GET() {
   try {
     const projects = await getProjects()
     return NextResponse.json({ projects })
-  } catch {
-    return NextResponse.json({ projects: [] })
+  } catch (err) {
+    console.error("GET /api/projects error:", err)
+    const message = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ projects: [], error: message }, { status: 500 })
   }
 }
 
@@ -24,7 +26,8 @@ export async function POST(request: NextRequest) {
     const project = await createProject(name)
     return NextResponse.json({ success: true, project })
   } catch (err) {
-    console.error("Create project error:", err)
-    return NextResponse.json({ error: "创建项目失败" }, { status: 500 })
+    console.error("POST /api/projects error:", err)
+    const message = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: `创建项目失败: ${message}` }, { status: 500 })
   }
 }
