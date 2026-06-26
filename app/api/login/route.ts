@@ -1,4 +1,4 @@
-import { authenticate, createSession } from "@/lib/auth"
+import { authenticate, createSessionToken, getSessionCookieOptions } from "@/lib/auth"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
@@ -11,6 +11,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid" }, { status: 401 })
   }
 
-  await createSession(user)
-  return NextResponse.json({ success: true })
+  const token = await createSessionToken(user)
+  const cookieOptions = getSessionCookieOptions()
+
+  const response = NextResponse.json({ success: true })
+  response.cookies.set(cookieOptions.name, token, {
+    httpOnly: cookieOptions.httpOnly,
+    secure: cookieOptions.secure,
+    sameSite: cookieOptions.sameSite,
+    path: cookieOptions.path,
+    maxAge: cookieOptions.maxAge,
+  })
+
+  return response
 }

@@ -15,21 +15,23 @@ export interface Session {
   }
 }
 
-export async function createSession(user: Session["user"]) {
-  const token = await new SignJWT({ user })
+export async function createSessionToken(user: Session["user"]) {
+  return await new SignJWT({ user })
     .setProtectedHeader({ alg: "HS256" })
     .setExpirationTime("7d")
     .setIssuedAt()
     .sign(SECRET)
+}
 
-  const cookieStore = await cookies()
-  cookieStore.set(COOKIE_NAME, token, {
+export function getSessionCookieOptions() {
+  return {
+    name: COOKIE_NAME,
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "lax" as const,
     path: "/",
     maxAge: 60 * 60 * 24 * 7, // 7 days
-  })
+  }
 }
 
 export async function getSession(): Promise<Session | null> {
@@ -44,11 +46,6 @@ export async function getSession(): Promise<Session | null> {
   } catch {
     return null
   }
-}
-
-export async function deleteSession() {
-  const cookieStore = await cookies()
-  cookieStore.delete(COOKIE_NAME)
 }
 
 export async function authenticate(email: string, password: string) {
