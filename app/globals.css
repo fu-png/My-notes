@@ -72,7 +72,7 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
+    --radius: 0;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -172,4 +172,62 @@
 
 .dark ::-webkit-scrollbar-thumb:hover {
   background: oklch(0.5 0 0 / 60%);
+}
+
+/* ── Tiptap Editor Styles ────────────────────────────────────────── */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  height: 0;
+}
+
+.tiptap:focus {
+  outline: none;
+}
+
+.tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tiptap ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.tiptap ul[data-type="taskList"] li label {
+  margin-top: 0.25rem;
+}
+
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
+.tiptap table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.tiptap table td,
+.tiptap table th {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  min-width: 80px;
+}
+
+.tiptap table th {
+  background: var(--muted);
+  font-weight: 600;
+}
+
+.tiptap mark {
+  background-color: oklch(0.9 0.1 100);
+  padding: 0.1em 0.2em;
+}
+
+.dark .tiptap mark {
+  background-color: oklch(0.4 0.1 100);
 }

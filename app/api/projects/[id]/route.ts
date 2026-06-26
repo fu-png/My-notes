@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getProject, deletePrefix } from "@/lib/storage"
+import { getProject, deletePrefix, readFile, writeFile } from "@/lib/storage"
 
 // GET /api/projects/[id] — get project detail with file list
 export async function GET(
@@ -17,6 +17,40 @@ export async function GET(
     return NextResponse.json({ project: result.meta, files: result.files })
   } catch {
     return NextResponse.json({ error: "读取项目失败" }, { status: 500 })
+  }
+}
+
+// PATCH /api/projects/[id] — update project metadata (e.g. rename)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+
+  try {
+    const body = await request.json()
+    const { name } = body as { name?: string }
+
+    if (!name || !name.trim()) {
+      return NextResponse.json({ error: "名称不能为空" }, { status: 400 })
+    }
+
+    const metaPath = `projects/${id}/meta.json`
+    const raw = await readFile(metaPath)
+    if (!raw) {
+      return NextResponse.json({ error: "项目不存在" }, { status: 404 })
+    }
+
+    const meta = JSON.parse(raw)
+    meta.name = name.trim()
+
+    await writeFile(metaPath, JSON.stringify(meta, null, 2), {
+      contentType: "application/json",
+    })
+
+    return NextResponse.json({ success: true, project: meta })
+  } catch {
+    return NextResponse.json({ error: "更新项目失败" }, { status: 500 })
   }
 }
 

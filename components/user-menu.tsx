@@ -26,7 +26,7 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+        <button className="outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           <Avatar className="size-8">
             <AvatarImage src={session.user.image ?? undefined} alt={session.user.name ?? "用户头像"} />
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>

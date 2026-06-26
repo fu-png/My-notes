@@ -82,10 +82,18 @@ function MermaidBlock({ code }: { code: string }) {
                 nodeTextColor: "#111827",
               },
         })
-        // Strip inline classDef / style / class lines so the global theme controls all colors
+        // Strip inline classDef / style assignment / class assignment lines
+        // so the global theme controls all colors.
+        // We only strip "class X,Y,Z className" (style assignment) not "class Foo {" (classDiagram definition)
         const cleaned = code
           .split("\n")
-          .filter((l) => !/^\s*(classDef|style\s|class\s)/.test(l))
+          .filter((l) => {
+            if (/^\s*classDef\s/.test(l)) return false
+            if (/^\s*style\s+\S+\s/.test(l)) return false
+            // "class X,Y nodeClass" — style assignment (has comma-separated IDs followed by a class name)
+            if (/^\s*class\s+[\w,]+\s+\w+\s*$/.test(l)) return false
+            return true
+          })
           .join("\n")
         const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`
         const { svg: rendered } = await mermaid.render(id, cleaned)
@@ -102,9 +110,13 @@ function MermaidBlock({ code }: { code: string }) {
 
   if (error) {
     return (
-      <pre className="group relative rounded-md border bg-muted/50 p-4 text-sm text-destructive">
-        <code>{code}</code>
-      </pre>
+      <div className="my-4 overflow-x-auto rounded-md border bg-muted/30 p-4">
+        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-block size-2 rounded-full bg-amber-500" />
+          <span>图表语法暂不支持渲染</span>
+        </div>
+        <pre className="text-xs text-muted-foreground"><code>{code}</code></pre>
+      </div>
     )
   }
 

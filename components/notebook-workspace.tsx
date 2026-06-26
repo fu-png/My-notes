@@ -18,6 +18,7 @@ import {
   IconEye,
   IconSend,
   IconChevronLeft,
+  IconChevronRight,
   IconSparkles,
   IconLetterCase,
   IconLayoutSidebarRightCollapse,
@@ -37,6 +38,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,7 +55,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { getAIConfig, isAIConfigured, getConfiguredModel } from "@/components/settings-dialog"
+import { RichTextEditor } from "@/components/rich-text-editor"
 
 // ─── Types ───
 
@@ -126,6 +141,132 @@ function getFileIcon(filename: string) {
     return <IconFileCode className={className} />
   if (["txt", "log", "md"].includes(ext)) return <IconFileText className={className} />
   return <IconFile className={className} />
+}
+
+// ─── Table of Contents ───
+
+interface TocItem {
+  id: string
+  text: string
+  level: number
+}
+
+function extractHeadings(markdown: string): TocItem[] {
+  const headings: TocItem[] = []
+  const lines = markdown.split("\n")
+  for (const line of lines) {
+    const match = line.match(/^(#{1,6})\s+(.+)$/)
+    if (match) {
+      const level = match[1].length
+      const text = match[2].replace(/[*_`~\[\]]/g, "").trim()
+      // Generate slug matching rehype-slug behavior
+      const id = text
+        .toLowerCase()
+        .replace(/[^\w\u4e00-\u9fff\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "")
+      headings.push({ id, text, level })
+    }
+  }
+  return headings
+}
+
+function TableOfContents({ content }: { content: string }) {
+  const headings = React.useMemo(() => extractHeadings(content), [content])
+  const [activeId, setActiveId] = React.useState<string>("")
+  const [open, setOpen] = React.useState(true)
+
+  React.useEffect(() => {
+    if (headings.length === 0) return
+
+    const scrollContainer = document.getElementById("doc-content-scroll")
+    if (!scrollContainer) return
+
+    const handleScroll = () => {
+      const headingElements = headings
+        .map((h) => ({ id: h.id, el: scrollContainer.querySelector(`#${CSS.escape(h.id)}`) }))
+        .filter((h) => h.el !== null)
+
+      let current = ""
+      for (const { id, el } of headingElements) {
+        const rect = el!.getBoundingClientRect()
+        const containerRect = scrollContainer.getBoundingClientRect()
+        if (rect.top - containerRect.top <= 80) {
+          current = id
+        }
+      }
+      setActiveId(current)
+    }
+
+    scrollContainer.addEventListener("scroll", handleScroll, { passive: true })
+    handleScroll()
+    return () => scrollContainer.removeEventListener("scroll", handleScroll)
+  }, [headings])
+
+  if (headings.length < 2) return null
+
+  const minLevel = Math.min(...headings.map((h) => h.level))
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="sticky top-0 h-fit shrink-0">
+      <div className={`flex flex-col border-r transition-all ${open ? "w-64" : "w-10"}`}>
+        {/* 标题栏 */}
+        <div className={`flex items-center border-b px-2 py-[9px] ${open ? "justify-between" : "justify-center"}`}>
+          {open && (
+            <span className="pl-1 text-sm font-medium text-foreground">目录</span>
+          )}
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-7">
+              {open ? (
+                <IconChevronLeft className="size-4" />
+              ) : (
+                <IconChevronRight className="size-4" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+
+        {/* 目录内容 */}
+        <CollapsibleContent>
+          <div className="h-[calc(100vh-8rem)] overflow-y-auto overflow-x-hidden p-3">
+            <ul className="w-full space-y-0.5">
+              {headings.map((heading, i) => (
+                <li key={`${heading.id}-${i}`}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <a
+                        href={`#${heading.id}`}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          const scrollContainer = document.getElementById("doc-content-scroll")
+                          const target = scrollContainer?.querySelector(`#${CSS.escape(heading.id)}`)
+                          if (target) {
+                            target.scrollIntoView({ behavior: "smooth", block: "start" })
+                          }
+                        }}
+                        className={`block w-full overflow-hidden text-ellipsis whitespace-nowrap py-1.5 pr-2 text-[13px] leading-normal transition-colors ${
+                          activeId === heading.id
+                            ? "bg-accent font-medium text-accent-foreground"
+                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        }`}
+                        style={{ paddingLeft: `${(heading.level - minLevel) * 12 + 8}px` }}
+                      >
+                        {heading.text}
+                      </a>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-60">
+                      {heading.text}
+                    </TooltipContent>
+                  </Tooltip>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  )
 }
 
 // ─── Main Component ───
@@ -397,6 +538,9 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
         selectFile(data.filename)
         setCreatingFile(false)
         setNewFileName("")
+        // Auto-enter edit mode for new files
+        setEditMode(true)
+        setEditContent(content)
       }
     } catch {
       showToast("error", "创建失败")
@@ -689,39 +833,76 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       <div className="flex h-full overflow-hidden">
         {/* ─── Left Panel: File Explorer ─── */}
         <div
-          className={`relative flex w-60 shrink-0 flex-col overflow-hidden border-r bg-muted/30 ${isDragging ? "ring-2 ring-inset ring-primary/50" : ""}`}
+          className={`relative flex w-60 shrink-0 flex-col overflow-hidden border-r bg-muted/20 ${isDragging ? "ring-2 ring-inset ring-primary/50" : ""}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {/* Header — matches center toolbar height */}
-          <div className="flex items-center border-b px-2 py-[9px]">
+          {/* Header — same height as center toolbar (px-4 py-2) */}
+          <div className="flex items-center justify-between border-b px-3 py-2">
             <Button
               variant="ghost"
               size="sm"
-              className="h-auto gap-1 px-1 py-1 text-xs text-muted-foreground"
+              className="h-7 min-w-0 max-w-[140px] gap-1.5 px-1.5 text-sm font-medium text-foreground"
               onClick={() => router.push("/docs/projects")}
             >
-              <IconChevronLeft className="size-3" />
-              <span className="truncate font-medium">{projectName}</span>
+              <IconChevronLeft className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{projectName}</span>
             </Button>
+            <div className="flex items-center gap-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-muted-foreground"
+                    onClick={() => {
+                      setCreatingFile(true)
+                      setNewFileName("")
+                    }}
+                  >
+                    <IconFilePlus className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">新建文件</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-muted-foreground"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                  >
+                    {uploading ? (
+                      <IconLoader2 className="size-4 animate-spin" />
+                    ) : (
+                      <IconUpload className="size-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">上传文件</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
+
 
           {/* File list */}
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="p-1.5">
+            <div className="py-1">
               {loadingFiles ? (
-                <div className="flex items-center justify-center py-8">
+                <div className="flex items-center justify-center py-12">
                   <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
                 </div>
               ) : files.length === 0 ? (
-                <div className="px-2 py-8 text-center text-xs text-muted-foreground">
+                <div className="px-3 py-12 text-center text-sm text-muted-foreground">
                   {isDragging ? (
                     <p className="font-medium text-primary">松开以上传文件</p>
                   ) : (
                     <>
                       <p>暂无文件</p>
-                      <p className="mt-1">新建或拖拽文件到此处</p>
+                      <p className="mt-1 text-xs">新建或拖拽文件到此处</p>
                     </>
                   )}
                 </div>
@@ -729,15 +910,15 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
                 files.map((file) => (
                   <div
                     key={file.filename}
-                    className={`group flex items-center overflow-hidden rounded-none px-2 py-1.5 text-[13px] transition-colors ${
+                    className={`group flex items-center px-3 py-2 text-[13px] transition-colors ${
                       activeFile === file.filename
-                        ? "bg-primary/10 text-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        ? "border-l-2 border-primary bg-accent text-accent-foreground"
+                        : "border-l-2 border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                     }`}
                   >
                     <button
                       onClick={() => selectFile(file.filename)}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+                      className="flex min-w-0 flex-1 items-center gap-2"
                     >
                       {getFileIcon(file.filename)}
                       <span className="truncate">{file.title}</span>
@@ -750,16 +931,16 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
                             setDeleteTarget(file.filename)
                           }}
                           disabled={deleting === file.filename}
-                          className="ml-1 shrink-0 rounded-none p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                          className="ml-1 shrink-0 p-1 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
                         >
                           {deleting === file.filename ? (
-                            <IconLoader2 className="size-3 animate-spin" />
+                            <IconLoader2 className="size-3.5 animate-spin" />
                           ) : (
-                            <IconTrash className="size-3" />
+                            <IconTrash className="size-3.5" />
                           )}
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="right">删除文件</TooltipContent>
+                      <TooltipContent side="right">删除</TooltipContent>
                     </Tooltip>
                   </div>
                 ))
@@ -767,108 +948,24 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
             </div>
           </div>
 
-          {/* Inline new file input */}
-          {creatingFile && (
-            <div className="border-t px-2 py-2">
-              <Input
-                type="text"
-                value={newFileName}
-                onChange={(e) => setNewFileName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreateFile()
-                  if (e.key === "Escape") {
-                    setCreatingFile(false)
-                    setNewFileName("")
-                  }
-                }}
-                placeholder="文件名"
-                autoFocus
-                className="h-7 text-xs"
-              />
-              <div className="mt-1.5 flex gap-1">
-                <Button
-                  size="sm"
-                  className="h-6 flex-1 text-xs"
-                  onClick={handleCreateFile}
-                  disabled={!newFileName.trim()}
-                >
-                  创建
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-6 flex-1 text-xs"
-                  onClick={() => {
-                    setCreatingFile(false)
-                    setNewFileName("")
-                  }}
-                >
-                  取消
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center gap-1 border-t px-2 py-1.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 flex-1 gap-1 text-xs text-muted-foreground"
-                  onClick={() => {
-                    setCreatingFile(true)
-                    setNewFileName("")
-                  }}
-                >
-                  <IconFilePlus className="size-3.5" />
-                  新建
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">新建文件</TooltipContent>
-            </Tooltip>
-
-            <Separator orientation="vertical" className="!self-center !h-3.5" />
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 flex-1 gap-1 text-xs text-muted-foreground"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  {uploading ? (
-                    <IconLoader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <IconUpload className="size-3.5" />
-                  )}
-                  上传
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">上传文件（支持批量）</TooltipContent>
-            </Tooltip>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".md,.txt,.json,.yaml,.yml,.csv,.tsv,.xml,.html,.htm,.js,.ts,.jsx,.tsx,.css,.py,.go,.java,.rs,.sh,.toml,.ini,.env,.log,.pdf,.docx,.xlsx,.pptx"
-              onChange={(e) => {
-                const files = e.target.files
-                if (files && files.length > 0) handleUpload(files)
-                e.target.value = ""
-              }}
-              className="hidden"
-            />
-          </div>
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".md,.txt,.json,.yaml,.yml,.csv,.tsv,.xml,.html,.htm,.js,.ts,.jsx,.tsx,.css,.py,.go,.java,.rs,.sh,.toml,.ini,.env,.log,.pdf,.docx,.xlsx,.pptx"
+            onChange={(e) => {
+              const files = e.target.files
+              if (files && files.length > 0) handleUpload(files)
+              e.target.value = ""
+            }}
+            className="hidden"
+          />
 
           {/* Drag overlay hint */}
           {isDragging && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-primary/5 backdrop-blur-[1px]">
-              <div className="border-2 border-dashed border-primary/40 px-6 py-4 text-sm font-medium text-primary">
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+              <div className="border-2 border-dashed border-primary/50 px-8 py-5 text-sm font-medium text-primary">
                 松开上传
               </div>
             </div>
@@ -881,8 +978,8 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
             <>
               {/* Editor toolbar */}
               <div className="flex items-center justify-between border-b px-4 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{activeTitle}</span>
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate text-sm font-medium">{activeTitle}</span>
                   {wordCount && (
                     <>
                       <Separator orientation="vertical" className="h-4" />
@@ -943,21 +1040,23 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
               </div>
 
               {/* Content area */}
-              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="relative min-h-0 flex-1 overflow-y-auto" id="doc-content-scroll">
                 {loadingContent ? (
                   <div className="flex items-center justify-center py-20">
                     <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
                   </div>
                 ) : editMode ? (
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="h-full w-full resize-none bg-background p-6 font-mono text-[13px] leading-relaxed outline-none"
-                    spellCheck={false}
+                  <RichTextEditor
+                    content={editContent}
+                    onChange={(md) => setEditContent(md)}
+                    placeholder="开始编辑文档内容..."
                   />
                 ) : (
-                  <div className="mx-auto max-w-3xl px-6 py-8">
-                    <MarkdownRenderer content={fileContent} />
+                  <div className="flex">
+                    <TableOfContents content={fileContent} />
+                    <div className="mx-auto max-w-3xl flex-1 px-6 py-8">
+                      <MarkdownRenderer content={fileContent} />
+                    </div>
                   </div>
                 )}
               </div>
@@ -1241,6 +1340,47 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* ─── New File Dialog ─── */}
+        <Dialog open={creatingFile} onOpenChange={(open) => { if (!open) { setCreatingFile(false); setNewFileName("") } }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>新建文档</DialogTitle>
+            </DialogHeader>
+            <div className="py-2">
+              <Input
+                type="text"
+                value={newFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newFileName.trim()) handleCreateFile()
+                }}
+                placeholder="输入文件名..."
+                autoFocus
+                className="h-9"
+              />
+              <p className="mt-2 text-xs text-muted-foreground">
+                将自动添加 .md 后缀，支持 Markdown 格式编辑
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setCreatingFile(false); setNewFileName("") }}
+              >
+                取消
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleCreateFile}
+                disabled={!newFileName.trim()}
+              >
+                创建
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   )

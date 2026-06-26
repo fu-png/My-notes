@@ -1,6 +1,7 @@
 "use client"
 
 import dynamic from "next/dynamic"
+import Image from "next/image"
 import Link from "next/link"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
@@ -49,9 +50,14 @@ export default function Home() {
 
       {/* Hero content — pointer-events-none lets clicks pass through to PixelBlast canvas */}
       <div className="pointer-events-none relative z-10 flex flex-col items-center gap-6 px-6 text-center">
-        <h1 className="text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl">
-          My Notes
-        </h1>
+        <Image
+          src="/logo.png"
+          alt="My Notes"
+          width={280}
+          height={80}
+          className="h-20 w-auto dark:invert sm:h-28"
+          priority
+        />
         <p className="max-w-md text-lg text-muted-foreground">
           个人笔记与知识管理
         </p>
