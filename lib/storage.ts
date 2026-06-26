@@ -11,8 +11,11 @@ import { put, list, del, head } from "@vercel/blob"
 import fs from "fs"
 import path from "path"
 
-// 是否使用 Blob 存储（有 token 则使用 Blob，否则回退文件系统）
-const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN
+// 是否使用 Blob 存储
+// 支持 OIDC 认证（BLOB_STORE_ID + VERCEL_OIDC_TOKEN，Vercel 默认）和静态 Token（BLOB_READ_WRITE_TOKEN）
+const USE_BLOB =
+  !!process.env.BLOB_READ_WRITE_TOKEN ||
+  (!!process.env.BLOB_STORE_ID && !!process.env.VERCEL_OIDC_TOKEN)
 
 const LOCAL_CONTENT_DIR = path.join(process.cwd(), "content")
 
