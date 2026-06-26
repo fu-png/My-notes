@@ -1,5 +1,6 @@
 import { signIn } from "@/auth"
 import { AuthError } from "next-auth"
+import { isRedirectError } from "next/dist/client/components/redirect-error"
 import { redirect } from "next/navigation"
 
 export default function LoginPage() {
@@ -23,6 +24,9 @@ export default function LoginPage() {
                 redirectTo: "/docs/projects",
               })
             } catch (error) {
+              if (isRedirectError(error)) {
+                throw error
+              }
               if (error instanceof AuthError) {
                 redirect("/login?error=invalid")
               }
