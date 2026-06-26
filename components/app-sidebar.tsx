@@ -6,7 +6,6 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { SettingsDialog } from "@/components/settings-dialog"
-import { UserMenu } from "@/components/user-menu"
 import {
   TooltipProvider,
 } from "@/components/ui/tooltip"
@@ -71,7 +70,6 @@ export function TopNav() {
             <SettingsDialog />
           </TooltipProvider>
           <ThemeToggle />
-          <UserMenu />
         </div>
       </div>
     </header>
