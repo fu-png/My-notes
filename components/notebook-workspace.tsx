@@ -2,6 +2,14 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { useIsMobile } from "@/hooks/use-mobile"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import {
   IconFile,
   IconFileText,
@@ -27,6 +35,8 @@ import {
   IconHistory,
   IconArrowLeft,
   IconMessage,
+  IconLink,
+  IconLanguage,
 } from "@tabler/icons-react"
 import {
   AlertDialog,
@@ -76,6 +86,10 @@ interface ChatMessage {
   role: "user" | "assistant"
   content: string
   timestamp: Date
+  docUpdate?: {
+    content: string
+    status: "pending" | "applied" | "rejected"
+  }
 }
 
 interface Conversation {
@@ -273,6 +287,7 @@ function TableOfContents({ content }: { content: string }) {
 
 export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceProps) {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const chatEndRef = React.useRef<HTMLDivElement>(null)
 
@@ -296,7 +311,15 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const [creatingFile, setCreatingFile] = React.useState(false)
   const [newFileName, setNewFileName] = React.useState("")
 
-  // AI panel resize — use ref + rAF to avoid re-renders during drag
+  // URL import state
+  const [createMode, setCreateMode] = React.useState<"file" | "url">("file")
+  const [importUrl, setImportUrl] = React.useState("")
+const [importingUrl, setImportingUrl] = React.useState(false)
+
+// Translation
+const [translating, setTranslating] = React.useState(false)
+
+// AI panel resize — use ref + rAF to avoid re-renders during drag
   const [aiPanelWidth, setAiPanelWidth] = React.useState(320)
   const aiPanelRef = React.useRef<HTMLDivElement>(null)
 
@@ -418,7 +441,10 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   }
 
   // AI panel visibility
-  const [showAI, setShowAI] = React.useState(true)
+  const [showAI, setShowAI] = React.useState(() => {
+    if (typeof window === "undefined") return true
+    return window.innerWidth >= 768
+  })
 
   // AI config status
   const [aiConfigured, setAiConfigured] = React.useState(false)
@@ -450,6 +476,13 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   React.useEffect(() => {
     fetchFiles()
   }, [fetchFiles])
+
+  // Auto-select first file when files are loaded
+  React.useEffect(() => {
+    if (!loadingFiles && files.length > 0 && !activeFile) {
+      selectFile(files[0].filename)
+    }
+  }, [loadingFiles, files])
 
   const loadFileContent = React.useCallback(async (filename: string) => {
     setLoadingContent(true)
@@ -547,6 +580,38 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     }
   }
 
+  const handleImportUrl = async () => {
+    const url = importUrl.trim()
+    if (!url) return
+
+    setImportingUrl(true)
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/import-url`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        }
+      )
+      const data = await res.json()
+      if (res.ok && data.success) {
+        showToast("success", `"${data.title}" 导入成功`)
+        await fetchFiles()
+        selectFile(data.filename)
+        setCreatingFile(false)
+        setImportUrl("")
+        setCreateMode("file")
+      } else {
+        showToast("error", data.error || "导入失败")
+      }
+    } catch {
+      showToast("error", "网络错误，导入失败")
+    } finally {
+      setImportingUrl(false)
+    }
+  }
+
   const handleDeleteFile = async () => {
     if (!deleteTarget) return
     const filename = deleteTarget
@@ -604,6 +669,35 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     }
   }
 
+  // ─── Translate ───
+
+  const handleTranslate = async () => {
+    if (!activeFile) return
+    setTranslating(true)
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/translate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: activeFile }),
+        }
+      )
+      const data = await res.json()
+      if (res.ok && data.content) {
+        setFileContent(data.content)
+        setEditContent(data.content)
+        showToast("success", "翻译完成")
+      } else {
+        showToast("error", data.error || "翻译失败")
+      }
+    } catch {
+      showToast("error", "翻译失败，请重试")
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   // ─── Drag & Drop ───
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -638,7 +732,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
     // Build message context
     const systemPrompt = activeFile
-      ? `你是一个笔记 AI 助手。用户当前正在查看文档「${files.find((f) => f.filename === activeFile)?.title || activeFile}」。文档内容如下：\n\n${fileContent}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。`
+      ? `你是一个笔记 AI 助手。用户当前正在查看文档「${files.find((f) => f.filename === activeFile)?.title || activeFile}」。文档内容如下：\n\n${fileContent}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
       : "你是一个笔记 AI 助手。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。回复请使用中文。"
 
     const apiMessages = [
@@ -728,8 +822,18 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
       // Final update
       if (!fullContent) fullContent = "抱歉，未能获取到回复。"
+
+      // Check if AI response contains a doc-update tag — store as pending, don't auto-apply
+      const docUpdateMatch = fullContent.match(/<doc-update>([\s\S]*?)<\/doc-update>/)
+      let docUpdate: ChatMessage["docUpdate"] | undefined
+      if (docUpdateMatch && activeFile) {
+        docUpdate = { content: docUpdateMatch[1].trim(), status: "pending" }
+        // Remove the raw doc-update block from the displayed message
+        fullContent = fullContent.replace(/<doc-update>[\s\S]*?<\/doc-update>/, "").trim()
+      }
+
       setChatMessages((prev) =>
-        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent } : m))
+        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate } : m))
       )
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "网络错误"
@@ -805,6 +909,47 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     }
   }, [chatMessages])
 
+  // ─── Doc Update Actions ───
+
+  const handleApplyDocUpdate = async (msgId: string) => {
+    const msg = chatMessages.find((m) => m.id === msgId)
+    if (!msg?.docUpdate || !activeFile) return
+
+    const newContent = msg.docUpdate.content
+    // Update the displayed content
+    setFileContent(newContent)
+    setEditContent(newContent)
+    // Save to file
+    const blob = new Blob([newContent], { type: "text/markdown" })
+    const file = new File([blob], activeFile)
+    const formData = new FormData()
+    formData.append("file", file)
+    await fetch(
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(activeFile)}`,
+      { method: "DELETE" }
+    )
+    await fetch(
+      `/api/projects/${encodeURIComponent(projectId)}/files`,
+      { method: "POST", body: formData }
+    )
+    // Mark as applied
+    setChatMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, docUpdate: { ...m.docUpdate!, status: "applied" } } : m
+      )
+    )
+    showToast("success", "文档已更新")
+  }
+
+  const handleRejectDocUpdate = (msgId: string) => {
+    setChatMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, docUpdate: { ...m.docUpdate!, status: "rejected" } } : m
+      )
+    )
+    showToast("success", "已退回修改")
+  }
+
   // ─── Toast ───
 
   const showToast = (type: "success" | "error", msg: string) => {
@@ -833,7 +978,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       <div className="flex h-full overflow-hidden">
         {/* ─── Left Panel: File Explorer ─── */}
         <div
-          className={`relative flex w-60 shrink-0 flex-col overflow-hidden border-r bg-muted/20 ${isDragging ? "ring-2 ring-inset ring-primary/50" : ""}`}
+          className={`relative hidden w-60 shrink-0 flex-col overflow-hidden border-r bg-muted/20 md:flex ${isDragging ? "ring-2 ring-inset ring-primary/50" : ""}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -979,6 +1124,40 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
               {/* Editor toolbar */}
               <div className="flex items-center justify-between border-b px-4 py-2">
                 <div className="flex min-w-0 items-center gap-2">
+                  {/* Mobile file drawer */}
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-7 md:hidden">
+                        <IconFile className="size-4" />
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="w-72 p-0">
+                      <SheetHeader className="border-b px-3 py-2 text-left">
+                        <SheetTitle className="text-sm">{projectName}</SheetTitle>
+                      </SheetHeader>
+                      <div className="h-[calc(100vh-4rem)] overflow-y-auto py-1">
+                        {files.map((file) => (
+                          <div
+                            key={file.filename}
+                            className={`flex items-center px-3 py-2 text-[13px] transition-colors ${
+                              activeFile === file.filename
+                                ? "border-l-2 border-primary bg-accent text-accent-foreground"
+                                : "border-l-2 border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                            }`}
+                          >
+                            <button
+                              onClick={() => selectFile(file.filename)}
+                              className="flex min-w-0 flex-1 items-center gap-2"
+                            >
+                              {getFileIcon(file.filename)}
+                              <span className="truncate">{file.title}</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+
                   <span className="min-w-0 truncate text-sm font-medium">{activeTitle}</span>
                   {wordCount && (
                     <>
@@ -998,44 +1177,66 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  <Button
-                    variant={editMode ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-7 gap-1 text-xs"
-                    onClick={() => {
-                      if (editMode) {
-                        setEditContent(fileContent)
-                      }
-                      setEditMode(!editMode)
-                    }}
-                  >
-                    {editMode ? (
-                      <>
-                        <IconEye className="size-3.5" />
-                        预览
-                      </>
-                    ) : (
-                      <>
-                        <IconEdit className="size-3.5" />
-                        编辑
-                      </>
-                    )}
-                  </Button>
-                  {editMode && (
+                  <div className="hidden md:flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 text-xs"
+                          onClick={handleTranslate}
+                          disabled={translating}
+                        >
+                          {translating ? (
+                            <IconLoader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <IconLanguage className="size-3.5" />
+                          )}
+                          翻译
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>翻译为中文（Bing 翻译）</TooltipContent>
+                    </Tooltip>
+                    <Separator orientation="vertical" className="h-4" />
                     <Button
+                      variant={editMode ? "secondary" : "ghost"}
                       size="sm"
                       className="h-7 gap-1 text-xs"
-                      onClick={handleSave}
-                      disabled={saving || editContent === fileContent}
+                      onClick={() => {
+                        if (editMode) {
+                          setEditContent(fileContent)
+                        }
+                        setEditMode(!editMode)
+                      }}
                     >
-                      {saving ? (
-                        <IconLoader2 className="size-3.5 animate-spin" />
+                      {editMode ? (
+                        <>
+                          <IconEye className="size-3.5" />
+                          预览
+                        </>
                       ) : (
-                        <IconCheck className="size-3.5" />
+                        <>
+                          <IconEdit className="size-3.5" />
+                          编辑
+                        </>
                       )}
-                      保存
                     </Button>
-                  )}
+                    {editMode && (
+                      <Button
+                        size="sm"
+                        className="h-7 gap-1 text-xs"
+                        onClick={handleSave}
+                        disabled={saving || editContent === fileContent}
+                      >
+                        {saving ? (
+                          <IconLoader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <IconCheck className="size-3.5" />
+                        )}
+                        保存
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1053,8 +1254,10 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
                   />
                 ) : (
                   <div className="flex">
-                    <TableOfContents content={fileContent} />
-                    <div className="mx-auto max-w-3xl flex-1 px-6 py-8">
+                    <div className="hidden md:block">
+                      <TableOfContents content={fileContent} />
+                    </div>
+                    <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 md:px-6 md:py-8">
                       <MarkdownRenderer content={fileContent} />
                     </div>
                   </div>
@@ -1072,7 +1275,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
         {/* ─── Right Panel: AI Chat ─── */}
         {showAI && (
-        <div ref={aiPanelRef} className="relative flex shrink-0 flex-col overflow-hidden border-l bg-background" style={{ width: aiPanelWidth }}>
+        <div ref={aiPanelRef} className="relative hidden shrink-0 flex-col overflow-hidden border-l bg-background md:flex" style={{ width: aiPanelWidth }}>
           {/* Resize handle */}
           <div
             className="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
@@ -1235,6 +1438,39 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
                           ) : (
                             <MarkdownRenderer content={msg.content} />
                           )}
+                          {/* Doc update confirmation buttons */}
+                          {msg.docUpdate && (
+                            <div className="mt-2 flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
+                              {msg.docUpdate.status === "pending" && (
+                                <>
+                                  <span className="flex-1 text-xs text-muted-foreground">AI 建议修改文档内容</span>
+                                  <Button
+                                    size="sm"
+                                    className="h-6 gap-1 text-xs"
+                                    onClick={() => handleApplyDocUpdate(msg.id)}
+                                  >
+                                    <IconCheck className="size-3" />
+                                    应用
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 gap-1 text-xs"
+                                    onClick={() => handleRejectDocUpdate(msg.id)}
+                                  >
+                                    <IconX className="size-3" />
+                                    退回
+                                  </Button>
+                                </>
+                              )}
+                              {msg.docUpdate.status === "applied" && (
+                                <span className="text-xs text-green-600">✅ 已应用到文档</span>
+                              )}
+                              {msg.docUpdate.status === "rejected" && (
+                                <span className="text-xs text-muted-foreground">已退回</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1285,7 +1521,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
         {/* AI toggle button (when panel is collapsed) */}
         {!showAI && (
-          <div className="flex shrink-0 flex-col items-center border-l bg-muted/20 px-1.5 py-3">
+          <div className="hidden shrink-0 flex-col items-center border-l bg-muted/20 px-1.5 py-3 md:flex">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1342,42 +1578,95 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
         </AlertDialog>
 
         {/* ─── New File Dialog ─── */}
-        <Dialog open={creatingFile} onOpenChange={(open) => { if (!open) { setCreatingFile(false); setNewFileName("") } }}>
+        <Dialog open={creatingFile} onOpenChange={(open) => { if (!open) { setCreatingFile(false); setNewFileName(""); setImportUrl(""); setCreateMode("file") } }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>新建文档</DialogTitle>
             </DialogHeader>
-            <div className="py-2">
-              <Input
-                type="text"
-                value={newFileName}
-                onChange={(e) => setNewFileName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newFileName.trim()) handleCreateFile()
-                }}
-                placeholder="输入文件名..."
-                autoFocus
-                className="h-9"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                将自动添加 .md 后缀，支持 Markdown 格式编辑
-              </p>
+            {/* Tab 切换 */}
+            <div className="flex gap-1 border-b">
+              <button
+                className={`px-3 py-1.5 text-sm transition-colors ${createMode === "file" ? "border-b-2 border-primary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() => setCreateMode("file")}
+              >
+                空白文档
+              </button>
+              <button
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${createMode === "url" ? "border-b-2 border-primary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() => setCreateMode("url")}
+              >
+                <IconLink className="size-3.5" />
+                从 URL 导入
+              </button>
             </div>
+            {createMode === "file" ? (
+              <div className="py-2">
+                <Input
+                  type="text"
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newFileName.trim()) handleCreateFile()
+                  }}
+                  placeholder="输入文件名..."
+                  autoFocus
+                  className="h-9"
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  将自动添加 .md 后缀，支持 Markdown 格式编辑
+                </p>
+              </div>
+            ) : (
+              <div className="py-2">
+                <Input
+                  type="url"
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && importUrl.trim()) handleImportUrl()
+                  }}
+                  placeholder="粘贴文章链接，如 https://..."
+                  autoFocus
+                  className="h-9"
+                  disabled={importingUrl}
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  自动抓取网页内容并转为 Markdown 文档保存
+                </p>
+              </div>
+            )}
             <DialogFooter>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => { setCreatingFile(false); setNewFileName("") }}
+                onClick={() => { setCreatingFile(false); setNewFileName(""); setImportUrl(""); setCreateMode("file") }}
               >
                 取消
               </Button>
-              <Button
-                size="sm"
-                onClick={handleCreateFile}
-                disabled={!newFileName.trim()}
-              >
-                创建
-              </Button>
+              {createMode === "file" ? (
+                <Button
+                  size="sm"
+                  onClick={handleCreateFile}
+                  disabled={!newFileName.trim()}
+                >
+                  创建
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={handleImportUrl}
+                  disabled={!importUrl.trim() || importingUrl}
+                >
+                  {importingUrl ? (
+                    <>
+                      <IconLoader2 className="mr-1.5 size-3.5 animate-spin" />
+                      导入中...
+                    </>
+                  ) : (
+                    "导入"
+                  )}
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

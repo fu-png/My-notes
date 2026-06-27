@@ -39,10 +39,7 @@ export function TopNav() {
 
           <nav className="flex h-12 items-center gap-1">
             {navItems.map((item) => {
-              const isActive =
-                item.href === "/docs/dashboard"
-                  ? pathname === "/docs/dashboard"
-                  : pathname.startsWith(item.href)
+              const isActive = pathname === item.href
               return (
                 <Link
                   key={item.href}
