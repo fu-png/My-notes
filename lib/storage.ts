@@ -11,11 +11,21 @@ import { put, list, del, head } from "@vercel/blob"
 import fs from "fs"
 import path from "path"
 
+// 是否运行在 Vercel 生产环境（此时文件系统只读，必须使用 Blob）
+const IS_VERCEL_PRODUCTION = !!process.env.VERCEL_ENV
+
 // 是否使用 Blob 存储
 // 支持 OIDC 认证（BLOB_STORE_ID + VERCEL_OIDC_TOKEN，Vercel 默认）和静态 Token（BLOB_READ_WRITE_TOKEN）
 const USE_BLOB =
   !!process.env.BLOB_READ_WRITE_TOKEN ||
   (!!process.env.BLOB_STORE_ID && !!process.env.VERCEL_OIDC_TOKEN)
+
+// 如果在 Vercel 生产环境但未配置 Blob，提前报错
+if (IS_VERCEL_PRODUCTION && !USE_BLOB) {
+  console.error(
+    "[storage] Vercel 生产环境检测到未配置 Blob 存储。请在 Vercel Dashboard 创建 Blob Store，或设置 BLOB_READ_WRITE_TOKEN 环境变量。"
+  )
+}
 
 const LOCAL_CONTENT_DIR = path.join(process.cwd(), "content")
 
@@ -62,6 +72,13 @@ export async function writeFile(
   }
 
   // 本地文件系统
+  // Vercel 线上环境文件系统只读，必须配置 Blob
+  if (IS_VERCEL_PRODUCTION) {
+    throw new Error(
+      "Vercel 生产环境文件系统只读，无法写入文件。请前往 Vercel Dashboard → Storage → 创建 Blob Store，系统会自动注入 BLOB_READ_WRITE_TOKEN 环境变量。"
+    )
+  }
+
   const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
   const dir = path.dirname(filePath)
   if (!fs.existsSync(dir)) {

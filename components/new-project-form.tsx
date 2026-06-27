@@ -35,7 +35,13 @@ export function NewProjectForm() {
         router.push(`/docs/projects/${data.project.id}`)
         router.refresh()
       } else {
-        setError(data.error || "创建失败，请重试")
+        // 503 表示服务端存储未配置
+        const isConfigError = res.status === 503
+        setError(
+          isConfigError
+            ? "服务端存储未配置，请联系管理员在 Vercel Dashboard 中创建 Blob Store"
+            : (data.error || "创建失败，请重试")
+        )
       }
     } catch {
       setError("网络错误，请重试")

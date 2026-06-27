@@ -28,6 +28,11 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("POST /api/projects error:", err)
     const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: `创建项目失败: ${message}` }, { status: 500 })
+    // 如果是 Blob 未配置的错误，返回 503 让前端可以区分
+    const isConfigError = message.includes("Blob") || message.includes("只读")
+    return NextResponse.json(
+      { error: message },
+      { status: isConfigError ? 503 : 500 }
+    )
   }
 }
