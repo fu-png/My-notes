@@ -38,7 +38,6 @@ import {
   IconLink,
   IconLanguage,
   IconDatabase,
-  IconDatabaseSearch,
   IconQuote,
   IconNotes,
   IconListDetails,
@@ -1199,32 +1198,6 @@ ${fileContent}` : ""}
     setChatLoading(false)
   }
 
-  const sendQuickMessage = async (text: string) => {
-    if (chatLoading) return
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: text,
-      timestamp: new Date(),
-    }
-    const aiMsgId = `ai-${Date.now()}`
-    const aiMsg: ChatMessage = {
-      id: aiMsgId,
-      role: "assistant",
-      content: "",
-      timestamp: new Date(),
-    }
-    const newMessages = [...chatMessages, userMsg]
-    setChatMessages([...newMessages, aiMsg])
-    setChatInput("")
-    setChatLoading(true)
-    isStreamingRef.current = true
-
-    await streamAI(newMessages, aiMsgId)
-    isStreamingRef.current = false
-    setChatLoading(false)
-  }
-
   // Scroll to bottom: instant during streaming, smooth otherwise
   const isStreamingRef = React.useRef(false)
   React.useEffect(() => {
@@ -1928,38 +1901,6 @@ ${fileContent}` : ""}
             <div className="flex items-center gap-0.5">
               {!showHistory && (
                 <>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`size-7 ${ragEnabled ? "text-primary" : ""}`}
-                        onClick={() => {
-                          if (!indexStatus?.indexed) {
-                            handleBuildIndex()
-                          } else {
-                            setRagEnabled((v) => !v)
-                          }
-                        }}
-                        disabled={indexing}
-                      >
-                        {indexing ? (
-                          <IconLoader2 className="size-4 animate-spin" />
-                        ) : (
-                          <IconDatabaseSearch className="size-4" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">
-                      {indexing
-                        ? (indexProgress || "正在构建索引...")
-                        : !indexStatus?.indexed
-                          ? "构建 RAG 索引"
-                          : ragEnabled
-                            ? "RAG 已开启（点击关闭）"
-                            : "RAG 已关闭（点击开启）"}
-                    </TooltipContent>
-                  </Tooltip>
                   {indexStatus?.indexed && (
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -2172,31 +2113,6 @@ ${fileContent}` : ""}
                     </div>
                   )}
 
-                  {/* Suggested actions pinned to bottom */}
-                  <div className="space-y-1.5 pb-2">
-                    <p className="px-1 text-[11px] text-muted-foreground/70">试试这些</p>
-                    <button
-                      className="flex w-full items-center gap-2.5 border border-border px-3 py-2 text-left text-[13px] transition-colors hover:bg-muted/50"
-                      onClick={() => sendQuickMessage("帮我简要概括下当前文档")}
-                    >
-                      <IconFile className="size-3.5 shrink-0 text-muted-foreground" />
-                      简要概括当前文档
-                    </button>
-                    <button
-                      className="flex w-full items-center gap-2.5 border border-border px-3 py-2 text-left text-[13px] transition-colors hover:bg-muted/50"
-                      onClick={() => sendQuickMessage("基于当前文档内容，帮我看下是否需要补充")}
-                    >
-                      <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
-                      检查是否需要补充
-                    </button>
-                    <button
-                      className="flex w-full items-center gap-2.5 border border-border px-3 py-2 text-left text-[13px] transition-colors hover:bg-muted/50"
-                      onClick={() => sendQuickMessage("帮我润色当前文档的内容")}
-                    >
-                      <IconLetterCase className="size-3.5 shrink-0 text-muted-foreground" />
-                      润色文档内容
-                    </button>
-                  </div>
                 </div>
               ) : (
                 /* Chat messages */
