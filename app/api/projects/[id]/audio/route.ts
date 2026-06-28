@@ -45,13 +45,13 @@ const DIALOGUE_PROMPT = `你是一个专业的播客脚本撰写人。请基于�
 7. 以 Host 做结束语收尾
 8. 使用中文
 
-**输出格式：** 严格输出 JSON 数组，每项包含 speaker ("host" 或 "expert") 和 text 字段。不要添加任何其他文字、标记或注释。
+**输出格式：** 严格输出 JSON 对象，包含一个 "dialogue" 字段，值为数组。数组每项包含 speaker ("host" 或 "expert") 和 text 字段。text 中如需使用双引号请用中文引号「」替代。不要添加任何其他文字、标记或注释。
 
 示例输出格式：
-[
+{"dialogue": [
   {"speaker": "host", "text": "大家好！今天我们..."},
   {"speaker": "expert", "text": "确实是这样..."}
-]`
+]}`
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
@@ -120,22 +120,44 @@ export async function POST(request: NextRequest, context: RouteContext) {
           // Step 1: 生成对话脚本
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "script", progress: "正在生成对话脚本..." })}\n\n`))
 
-          const scriptRes = await fetch(`${apiBaseUrl}/chat/completions`, {
+          const chatModel = model || "gpt-4o-mini"
+          const messages = [
+            { role: "system", content: DIALOGUE_PROMPT },
+            { role: "user", content: `以下是项目文档内容（共 ${mdFiles.length} 个文件）：\n\n${truncatedContent}\n\n请直接输出 JSON 对象，格式为 {"dialogue": [...]}，不要包含任何其他文字。注意：text 字段中不要使用未转义的双引号，如需引用请用中文引号「」。` },
+          ]
+
+          // 先尝试带 response_format 的请求（确保 JSON 输出）
+          let scriptRes = await fetch(`${apiBaseUrl}/chat/completions`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${apiKey}`,
             },
             body: JSON.stringify({
-              model: model || "gpt-4o-mini",
-              messages: [
-                { role: "system", content: DIALOGUE_PROMPT },
-                { role: "user", content: `以下是项目文档内容（共 ${mdFiles.length} 个文件）：\n\n${truncatedContent}\n\n请直接输出 JSON 数组，不要包含任何其他文字。` },
-              ],
+              model: chatModel,
+              messages,
               temperature: 0.7,
               max_tokens: 4096,
+              response_format: { type: "json_object" },
             }),
           })
+
+          // 如果 response_format 不被支持（400/422），去掉它重试
+          if (!scriptRes.ok && (scriptRes.status === 400 || scriptRes.status === 422)) {
+            scriptRes = await fetch(`${apiBaseUrl}/chat/completions`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: chatModel,
+                messages,
+                temperature: 0.7,
+                max_tokens: 4096,
+              }),
+            })
+          }
 
           if (!scriptRes.ok) {
             const err = await scriptRes.text()
@@ -173,8 +195,68 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
             if (!jsonStr) throw new Error("未找到 JSON 内容")
 
-            const parsed = JSON.parse(jsonStr)
-            dialogue = Array.isArray(parsed) ? parsed : []
+            // 尝试直接解析
+            let parsed: unknown
+            try {
+              parsed = JSON.parse(jsonStr)
+            } catch {
+              // JSON 解析失败时，尝试修复常见问题
+              // 修复 1: 移除可能的 BOM 和不可见字符
+              jsonStr = jsonStr.replace(/^\uFEFF/, "").replace(/[\x00-\x1F\x7F]/g, (ch) => {
+                // 保留 \n \r \t，其他控制字符移除
+                if (ch === "\n" || ch === "\r" || ch === "\t") return ch
+                return ""
+              })
+
+              // 修复 2: 修复 text 字段中未转义的换行符
+              jsonStr = jsonStr.replace(/("text"\s*:\s*")([\s\S]*?)("(?:\s*[,}\]]))/g, (_, prefix, content, suffix) => {
+                const escaped = content
+                  .replace(/\\/g, "\\\\")
+                  .replace(/"/g, '\\"')
+                  .replace(/\n/g, "\\n")
+                  .replace(/\r/g, "\\r")
+                  .replace(/\t/g, "\\t")
+                return prefix + escaped + suffix
+              })
+
+              try {
+                parsed = JSON.parse(jsonStr)
+              } catch {
+                // 修复 3: 逐行提取方式（正则匹配每个对象）
+                const items: DialogueLine[] = []
+                const lineRegex = /\{\s*"speaker"\s*:\s*"(host|expert)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g
+                let match
+                while ((match = lineRegex.exec(rawContent)) !== null) {
+                  items.push({
+                    speaker: match[1] as "host" | "expert",
+                    text: match[2].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\"),
+                  })
+                }
+                // 也尝试 text 在前 speaker 在后的格式
+                if (items.length === 0) {
+                  const altRegex = /\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"speaker"\s*:\s*"(host|expert)"\s*\}/g
+                  while ((match = altRegex.exec(rawContent)) !== null) {
+                    items.push({
+                      speaker: match[2] as "host" | "expert",
+                      text: match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\"),
+                    })
+                  }
+                }
+                if (items.length > 0) {
+                  parsed = items
+                } else {
+                  throw new Error("所有 JSON 修复方法均失败")
+                }
+              }
+            }
+
+            // 支持直接数组或 { dialogue: [...] } 对象格式
+            const dialogueArray = Array.isArray(parsed)
+              ? parsed
+              : (parsed && typeof parsed === "object" && Array.isArray((parsed as Record<string, unknown>).dialogue))
+                ? (parsed as Record<string, unknown>).dialogue as unknown[]
+                : []
+            dialogue = dialogueArray as DialogueLine[]
 
             // 验证并清洗数据
             dialogue = dialogue
