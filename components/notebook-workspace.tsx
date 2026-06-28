@@ -2070,11 +2070,9 @@ ${fileContent}` : ""}
                       <IconSparkles className="size-4 text-primary" />
                     </div>
                     <h3 className="text-[15px] font-medium">有什么可以帮你？</h3>
-                    {activeFile && (
-                      <p className="mt-1 text-[12px] text-muted-foreground">
-                        当前文档：{activeTitle}
-                      </p>
-                    )}
+              <p className="mt-1 text-[12px] text-muted-foreground">
+                {projectName}
+              </p>
                   </div>
 
                   {/* 笔记本指南 — AI 生成模板 */}
