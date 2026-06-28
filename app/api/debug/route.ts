@@ -3,7 +3,8 @@ import { list } from "@vercel/blob"
 
 export async function GET() {
   const info = {
-    deployVersion: "v3-json-fix",
+    deployVersion: "v4-retry-on-exists",
+    deployTime: "2026-06-28T22:00:00Z",
     hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
     hasBlobStoreId: !!process.env.BLOB_STORE_ID,
     hasOidcToken: !!process.env.VERCEL_OIDC_TOKEN,

@@ -4,4 +4,4 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   msw: false
-  protobufjs: set this to true or false
+  protobufjs: true

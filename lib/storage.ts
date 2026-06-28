@@ -58,22 +58,53 @@ export async function writeFile(
   options?: { contentType?: string }
 ): Promise<StoredFile> {
   if (USE_BLOB) {
-    // 先尝试删除已有文件，再写入新文件（彻底避免 "blob already exists" 错误）
-    try {
-      const existing = await findBlobByPathname(pathname)
-      if (existing) {
-        await del(existing.url)
-      }
-    } catch {
-      // 删除失败不阻断流程
-    }
-
-    const blob = await put(pathname, content, {
-      access: "public",
+    // 策略：先尝试直接带 allowOverwrite 写入，
+    // 如果仍然报 "already exists"（某些 store 配置不支持），则 del 后重试
+    const putOptions = {
+      access: "public" as const,
       addRandomSuffix: false,
       allowOverwrite: true,
       contentType: options?.contentType,
-    })
+    }
+
+    let blob: { pathname: string; url: string }
+    try {
+      blob = await put(pathname, content, putOptions)
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      if (errMsg.includes("already exists")) {
+        // allowOverwrite 不生效，手动删除后重试
+        try {
+          const existing = await findBlobByPathname(pathname)
+          if (existing) {
+            await del(existing.url)
+          } else {
+            // list 找不到，尝试用 head 直接检查 URL
+            try {
+              const headResult = await head(pathname)
+              if (headResult?.url) {
+                await del(headResult.url)
+              }
+            } catch {
+              // head 也失败，忽略
+            }
+          }
+        } catch {
+          // 删除失败继续尝试
+        }
+        // 等待一小段时间确保删除生效
+        await new Promise(resolve => setTimeout(resolve, 200))
+        // 重试写入（不带 allowOverwrite，此时文件应已删除）
+        blob = await put(pathname, content, {
+          access: "public",
+          addRandomSuffix: false,
+          contentType: options?.contentType,
+        })
+      } else {
+        throw err
+      }
+    }
+
     return {
       pathname: blob.pathname,
       url: blob.url,
