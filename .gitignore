@@ -35,3 +35,7 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# project runtime data (RAG index, audio cache)
+content/projects/**/.rag/
+content/projects/**/.audio/

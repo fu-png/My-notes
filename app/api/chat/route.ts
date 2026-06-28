@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server"
 
+// Allow long-running streaming responses (reasoning models can take 2+ minutes)
+export const maxDuration = 300
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -22,6 +25,10 @@ export async function POST(request: NextRequest) {
     const baseUrl = (apiBase || "https://api.openai.com/v1").replace(/\/+$/, "")
     const chatModel = model || "gpt-4o-mini"
 
+    // Use AbortController with generous timeout for reasoning models
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 300000) // 5 min timeout
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -32,10 +39,13 @@ export async function POST(request: NextRequest) {
         model: chatModel,
         messages,
         temperature: 0.7,
-        max_tokens: 2048,
+        max_tokens: 16384,
         stream: true,
       }),
+      signal: controller.signal,
     })
+
+    clearTimeout(timeout)
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
@@ -86,8 +96,14 @@ export async function POST(request: NextRequest) {
               try {
                 const parsed = JSON.parse(data)
                 const content = parsed.choices?.[0]?.delta?.content
+                const finishReason = parsed.choices?.[0]?.finish_reason
                 if (content) {
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                }
+                if (finishReason) {
+                  console.log(`[Chat API] Stream finish_reason: ${finishReason}`)
+                  // Forward finish_reason to client so it can detect truncation
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ finish_reason: finishReason })}\n\n`))
                 }
               } catch {
                 // Skip malformed JSON lines

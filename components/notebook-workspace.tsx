@@ -37,6 +37,17 @@ import {
   IconMessage,
   IconLink,
   IconLanguage,
+  IconDatabase,
+  IconDatabaseSearch,
+  IconQuote,
+  IconNotes,
+  IconListDetails,
+  IconTimeline,
+  IconClipboardText,
+  IconBulb,
+  IconCopy,
+  IconDownload,
+  IconPlayerPlay,
 } from "@tabler/icons-react"
 import {
   AlertDialog,
@@ -90,6 +101,14 @@ interface ChatMessage {
     content: string
     status: "pending" | "applied" | "rejected"
   }
+  /** RAG 引用来源（仅 assistant 消息） */
+  ragSources?: {
+    filename: string
+    fileTitle: string
+    headingPath: string[]
+    snippet: string
+    score: number
+  }[]
 }
 
 interface Conversation {
@@ -319,6 +338,42 @@ const [importingUrl, setImportingUrl] = React.useState(false)
 // Translation
 const [translating, setTranslating] = React.useState(false)
 
+// RAG state
+const [ragEnabled, setRagEnabled] = React.useState(false)
+const [indexStatus, setIndexStatus] = React.useState<{
+  indexed: boolean
+  lastIndexedAt?: string
+  totalChunks?: number
+  totalFiles?: number
+} | null>(null)
+const [indexing, setIndexing] = React.useState(false)
+const [indexProgress, setIndexProgress] = React.useState<string>("")
+const [showSources, setShowSources] = React.useState(false)
+const [sourcesData, setSourcesData] = React.useState<{
+  files: { filename: string; fileTitle: string; chunkCount: number; totalTokens: number; headings: string[] }[]
+  totalChunks: number
+  totalTokens: number
+} | null>(null)
+const [sourcesLoading, setSourcesLoading] = React.useState(false)
+
+// AI note generation
+const [generateOpen, setGenerateOpen] = React.useState(false)
+const [generating, setGenerating] = React.useState(false)
+const [generateType, setGenerateType] = React.useState<string>("")
+const [generateContent, setGenerateContent] = React.useState("")
+const [generateError, setGenerateError] = React.useState("")
+
+// Audio overview
+const [audioOpen, setAudioOpen] = React.useState(false)
+const [audioGenerating, setAudioGenerating] = React.useState(false)
+const [audioProgress, setAudioProgress] = React.useState("")
+const [audioScript, setAudioScript] = React.useState<{ speaker: string; text: string }[] | null>(null)
+const [audioUrl, setAudioUrl] = React.useState<string | null>(null)
+const [audioPlaying, setAudioPlaying] = React.useState(false)
+const [audioCurrentLine, setAudioCurrentLine] = React.useState(-1)
+const audioRef = React.useRef<HTMLAudioElement | null>(null)
+const speechRef = React.useRef<{ cancel: () => void } | null>(null)
+
 // AI panel resize — use ref + rAF to avoid re-renders during drag
   const [aiPanelWidth, setAiPanelWidth] = React.useState(320)
   const aiPanelRef = React.useRef<HTMLDivElement>(null)
@@ -456,6 +511,178 @@ const [translating, setTranslating] = React.useState(false)
     return () => window.removeEventListener("ai-config-changed", handleConfigChange)
   }, [])
 
+  // Fetch RAG index status on mount
+  React.useEffect(() => {
+    fetchIndexStatus()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  const fetchIndexStatus = async () => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status" }),
+      })
+      const data = await res.json()
+      if (data.status) {
+        setIndexStatus(data.status)
+        // 如果已有索引，自动开启 RAG
+        if (data.status.indexed) setRagEnabled(true)
+      }
+    } catch {
+      // 静默失败
+    }
+  }
+
+  const fetchSourcesData = async () => {
+    setSourcesLoading(true)
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sources" }),
+      })
+      const data = await res.json()
+      if (data.files) {
+        setSourcesData({ files: data.files, totalChunks: data.totalChunks, totalTokens: data.totalTokens })
+      }
+    } catch {
+      // 静默失败
+    } finally {
+      setSourcesLoading(false)
+    }
+  }
+
+  const handleBuildIndex = async () => {
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 API Key")
+      return
+    }
+    setIndexing(true)
+    setIndexProgress("准备中...")
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "index",
+          apiKey: config.apiKey,
+          apiBase: config.apiBase,
+          model: chatModel,
+          stream: true,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        showToast("error", data.error || "索引失败")
+        return
+      }
+
+      // 读取 SSE 流式进度
+      const reader = res.body?.getReader()
+      if (!reader) {
+        showToast("error", "无法读取响应流")
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith("data: ")) continue
+          try {
+            const parsed = JSON.parse(trimmed.slice(6))
+            if (parsed.progress) {
+              setIndexProgress(parsed.progress)
+            }
+            if (parsed.done) {
+              if (parsed.success) {
+                showToast("success", `索引完成：${parsed.totalFiles} 个文件，${parsed.totalChunks} 个文本块`)
+                setRagEnabled(true)
+                await fetchIndexStatus()
+                // 刷新来源面板数据
+                if (showSources) fetchSourcesData()
+              } else {
+                showToast("error", parsed.error || "索引失败")
+              }
+            }
+          } catch {
+            // skip malformed
+          }
+        }
+      }
+    } catch {
+      showToast("error", "索引构建失败，请检查网络")
+    } finally {
+      setIndexing(false)
+      setIndexProgress("")
+    }
+  }
+
+  /**
+   * 文件变更后自动触发 RAG 索引重建（后台静默执行）
+   * 仅在已配置 API Key 时触发，不阻塞用户操作
+   * 带 2 秒防抖：连续文件操作只触发一次索引
+   */
+  const autoIndexTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const triggerAutoIndex = React.useCallback(() => {
+    // 清除上一次的定时器（防抖）
+    if (autoIndexTimerRef.current) {
+      clearTimeout(autoIndexTimerRef.current)
+    }
+
+    autoIndexTimerRef.current = setTimeout(() => {
+      const config = getAIConfig()
+      if (!config) return // 未配置 API Key，跳过
+
+      // 后台静默执行，不设 setIndexing 避免 UI 阻塞
+      fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "index",
+          apiKey: config.apiKey,
+          apiBase: config.apiBase,
+          model: chatModel,
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setRagEnabled(true)
+            fetchIndexStatus()
+            // 如果来源面板打开，刷新数据
+            if (showSources) fetchSourcesData()
+          }
+        })
+        .catch(() => {
+          // 静默失败，不打扰用户
+        })
+    }, 2000) // 2 秒防抖
+  }, [projectId, chatModel])
+
+  // 组件卸载时清理防抖定时器
+  React.useEffect(() => {
+    return () => {
+      if (autoIndexTimerRef.current) {
+        clearTimeout(autoIndexTimerRef.current)
+      }
+    }
+  }, [])
+
   // Toast
   const [toast, setToast] = React.useState<{ type: "success" | "error"; msg: string } | null>(null)
 
@@ -540,6 +767,8 @@ const [translating, setTranslating] = React.useState(false)
         } else if (data.filename) {
           selectFile(data.filename)
         }
+        // 自动更新 RAG 索引
+        triggerAutoIndex()
       } else {
         showToast("error", data.error || "上传失败")
       }
@@ -574,6 +803,8 @@ const [translating, setTranslating] = React.useState(false)
         // Auto-enter edit mode for new files
         setEditMode(true)
         setEditContent(content)
+        // 自动更新 RAG 索引
+        triggerAutoIndex()
       }
     } catch {
       showToast("error", "创建失败")
@@ -602,6 +833,8 @@ const [translating, setTranslating] = React.useState(false)
         setCreatingFile(false)
         setImportUrl("")
         setCreateMode("file")
+        // 自动更新 RAG 索引
+        triggerAutoIndex()
       } else {
         showToast("error", data.error || "导入失败")
       }
@@ -631,6 +864,8 @@ const [translating, setTranslating] = React.useState(false)
           setEditMode(false)
         }
         router.refresh()
+        // 自动更新 RAG 索引（移除已删除文件的块）
+        triggerAutoIndex()
       }
     } catch {
       // ignore
@@ -661,6 +896,8 @@ const [translating, setTranslating] = React.useState(false)
         setEditMode(false)
         showToast("success", "已保存")
         await fetchFiles()
+        // 自动更新 RAG 索引（文件内容已变更）
+        triggerAutoIndex()
       }
     } catch {
       showToast("error", "保存失败")
@@ -730,10 +967,80 @@ const [translating, setTranslating] = React.useState(false)
       return
     }
 
-    // Build message context
-    const systemPrompt = activeFile
-      ? `你是一个笔记 AI 助手。用户当前正在查看文档「${files.find((f) => f.filename === activeFile)?.title || activeFile}」。文档内容如下：\n\n${fileContent}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
-      : "你是一个笔记 AI 助手。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。回复请使用中文。"
+    // RAG 查询：如果启用了 RAG 且已索引，先检索相关上下文
+    // 多轮上下文感知：综合最近几轮对话构建检索查询，避免代词指代丢失
+    let ragSources: ChatMessage["ragSources"] | undefined
+    let ragContextText = ""
+    const lastUserMsg = userMessages[userMessages.length - 1]
+
+    if (ragEnabled && indexStatus?.indexed && lastUserMsg) {
+      try {
+        // 取最近 3 轮用户消息，拼接为上下文感知的检索查询
+        const recentUserMsgs = userMessages
+          .filter((m) => m.role === "user" && m.id !== "welcome")
+          .slice(-3)
+          .map((m) => m.content)
+        // 最后一条消息权重最高，放在最前面；前几轮作为补充上下文
+        const contextQuery = recentUserMsgs.length > 1
+          ? `${recentUserMsgs[recentUserMsgs.length - 1]}\n\n对话上下文：${recentUserMsgs.slice(0, -1).join("；")}`
+          : lastUserMsg.content
+
+        const ragRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "query",
+            question: contextQuery,
+            apiKey: config.apiKey,
+            apiBase: config.apiBase,
+            model: chatModel,
+          }),
+        })
+        const ragData = await ragRes.json()
+        if (ragData.context?.sources?.length > 0) {
+          ragSources = ragData.context.sources
+          ragContextText = ragData.context.text
+        }
+      } catch (err) {
+        console.warn("[RAG] Query failed, falling back to plain mode:", err)
+      }
+    }
+
+    // Build message context — use RAG prompt if we have context, otherwise plain prompt
+    const activeFileName = activeFile ? (files.find((f) => f.filename === activeFile)?.title || activeFile) : undefined
+    let systemPrompt: string
+
+    if (ragContextText && ragSources && ragSources.length > 0) {
+      // 构建 RAG 增强的 system prompt
+      const sourceList = ragSources
+        .map((s, i) => `  来源 ${i + 1}: ${s.fileTitle}${s.headingPath.length > 0 ? ` > ${s.headingPath.join(" > ")}` : ""}`)
+        .join("\n")
+
+      systemPrompt = `你是一个基于文档知识库的 AI 助手。你的回答必须严格遵循以下规则：
+
+## 已检索到的参考资料
+以下是从用户笔记本中检索到的相关内容片段：
+
+${ragContextText}
+
+## 来源清单
+${sourceList}
+
+${activeFile ? `## 当前打开的文档
+用户正在查看「${activeFileName}」，文档内容：
+${fileContent}` : ""}
+
+## 回答规范
+1. **优先使用检索到的参考资料**回答问题。引用具体内容时，使用 [来源 N] 标注出处。
+2. 如果参考资料中没有足够信息回答问题，你可以基于自己的知识补充，但必须明确说明："以下内容不来自笔记本中的文档，建议独立验证。"
+3. 如果问题完全无法从参考资料和你的知识中回答，坦诚说明你不确定，而不是编造答案。
+4. 回复使用中文。
+5. 如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
+    } else if (activeFile) {
+      systemPrompt = `你是一个笔记 AI 助手。用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
+    } else {
+      systemPrompt = "你是一个笔记 AI 助手。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。回复请使用中文。"
+    }
 
     const apiMessages = [
       { role: "system", content: systemPrompt },
@@ -820,6 +1127,23 @@ const [translating, setTranslating] = React.useState(false)
         }
       }
 
+      // Process remaining buffer after stream ends
+      if (buffer.trim()) {
+        const trimmed = buffer.trim()
+        if (trimmed.startsWith("data: ") && trimmed.slice(6) !== "[DONE]") {
+          try {
+            const parsed = JSON.parse(trimmed.slice(6))
+            if (parsed.error) {
+              fullContent += `\n⚠️ ${parsed.error}`
+            } else if (parsed.content) {
+              fullContent += parsed.content
+            }
+          } catch {
+            // Skip malformed
+          }
+        }
+      }
+
       // Final update
       if (!fullContent) fullContent = "抱歉，未能获取到回复。"
 
@@ -833,7 +1157,7 @@ const [translating, setTranslating] = React.useState(false)
       }
 
       setChatMessages((prev) =>
-        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate } : m))
+        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate, ragSources } : m))
       )
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "网络错误"
@@ -949,6 +1273,308 @@ const [translating, setTranslating] = React.useState(false)
     )
     showToast("success", "已退回修改")
   }
+
+  // ─── AI Note Generation ───
+
+  const GENERATE_TEMPLATES = [
+    { type: "summary", label: "项目摘要", desc: "全面概括所有文档", icon: IconClipboardText },
+    { type: "faq", label: "常见问题", desc: "提炼 Q&A 问答", icon: IconBulb },
+    { type: "guide", label: "学习指南", desc: "由浅入深的学习路径", icon: IconNotes },
+    { type: "outline", label: "内容大纲", desc: "文档结构提取", icon: IconListDetails },
+    { type: "timeline", label: "时间线", desc: "关键事件演进", icon: IconTimeline },
+    { type: "briefing", label: "简报文档", desc: "精炼分享给团队", icon: IconMessage },
+  ]
+
+  const handleGenerate = async (type: string) => {
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 API Key")
+      return
+    }
+
+    setGenerateType(type)
+    setGenerateOpen(true)
+    setGenerating(true)
+    setGenerateContent("")
+    setGenerateError("")
+
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          apiKey: config.apiKey,
+          apiBase: config.apiBase,
+          model: chatModel,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setGenerateError(data.error || "生成失败")
+        setGenerating(false)
+        return
+      }
+
+      const reader = res.body?.getReader()
+      if (!reader) {
+        setGenerateError("无法读取响应流")
+        setGenerating(false)
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ""
+      let full = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith("data: ")) continue
+          const data = trimmed.slice(6)
+          if (data === "[DONE]") continue
+
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.error) {
+              setGenerateError(parsed.error)
+              setGenerating(false)
+              return
+            }
+            if (parsed.content) {
+              full += parsed.content
+              setGenerateContent(full)
+            }
+          } catch {
+            // skip
+          }
+        }
+      }
+
+      if (!full) setGenerateError("未能生成内容")
+    } catch {
+      setGenerateError("网络错误，请重试")
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleSaveGenerated = async () => {
+    if (!generateContent) return
+    const templateLabel = GENERATE_TEMPLATES.find((t) => t.type === generateType)?.label || generateType
+    const filename = `${templateLabel}-${new Date().toISOString().slice(0, 10)}.md`
+
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, content: generateContent }),
+      })
+      if (res.ok) {
+        showToast("success", `已保存为「${filename}」`)
+        await fetchFiles()
+        setGenerateOpen(false)
+      } else {
+        showToast("error", "保存失败")
+      }
+    } catch {
+      showToast("error", "保存失败")
+    }
+  }
+
+  const handleCopyGenerated = async () => {
+    if (!generateContent) return
+    try {
+      await navigator.clipboard.writeText(generateContent)
+      showToast("success", "已复制到剪贴板")
+    } catch {
+      showToast("error", "复制失败")
+    }
+  }
+
+  // ─── Audio Overview ───
+
+  const handleAudioGenerate = async () => {
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 API Key")
+      return
+    }
+
+    setAudioOpen(true)
+    setAudioGenerating(true)
+    setAudioProgress("准备中...")
+    setAudioScript(null)
+    setAudioUrl(null)
+    setAudioCurrentLine(-1)
+
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/audio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate",
+          apiKey: config.apiKey,
+          apiBase: config.apiBase,
+          model: chatModel,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setAudioProgress(data.error || "生成失败")
+        setAudioGenerating(false)
+        return
+      }
+
+      const reader = res.body?.getReader()
+      if (!reader) {
+        setAudioProgress("无法读取响应流")
+        setAudioGenerating(false)
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith("data: ")) continue
+          try {
+            const parsed = JSON.parse(trimmed.slice(6))
+            if (parsed.error) {
+              setAudioProgress(parsed.error)
+              setAudioGenerating(false)
+              return
+            }
+            if (parsed.progress) {
+              setAudioProgress(parsed.progress)
+            }
+            if (parsed.step === "script_done" && parsed.script) {
+              setAudioScript(parsed.script)
+            }
+            if (parsed.step === "tts_unavailable") {
+              setAudioProgress(parsed.message)
+            }
+            if (parsed.done) {
+              if (parsed.hasAudio && parsed.audioUrl) {
+                setAudioUrl(parsed.audioUrl)
+                setAudioProgress("音频生成完成")
+              } else if (parsed.script) {
+                setAudioScript(parsed.script)
+                setAudioProgress("对话脚本已生成（TTS 不可用，可使用浏览器朗读）")
+              }
+            }
+          } catch {
+            // skip
+          }
+        }
+      }
+    } catch {
+      setAudioProgress("网络错误，请重试")
+    } finally {
+      setAudioGenerating(false)
+    }
+  }
+
+  const handleAudioPlay = () => {
+    if (audioUrl) {
+      // 使用真实 TTS 音频
+      if (!audioRef.current) {
+        audioRef.current = new Audio(audioUrl)
+        audioRef.current.onended = () => {
+          setAudioPlaying(false)
+          setAudioCurrentLine(-1)
+        }
+      }
+      if (audioPlaying) {
+        audioRef.current.pause()
+        setAudioPlaying(false)
+      } else {
+        audioRef.current.play()
+        setAudioPlaying(true)
+      }
+    } else if (audioScript && audioScript.length > 0) {
+      // 退化到浏览器原生 SpeechSynthesis
+      if (audioPlaying) {
+        window.speechSynthesis.cancel()
+        setAudioPlaying(false)
+        setAudioCurrentLine(-1)
+        speechRef.current = null
+        return
+      }
+
+      setAudioPlaying(true)
+      let cancelled = false
+      speechRef.current = {
+        cancel: () => {
+          cancelled = true
+          window.speechSynthesis.cancel()
+        },
+      }
+
+      const speakLine = (index: number) => {
+        if (cancelled || index >= audioScript.length) {
+          setAudioPlaying(false)
+          setAudioCurrentLine(-1)
+          return
+        }
+
+        setAudioCurrentLine(index)
+        const line = audioScript[index]
+        const utterance = new SpeechSynthesisUtterance(line.text)
+        utterance.lang = "zh-CN"
+        utterance.rate = 1.1
+        // 用不同的音调区分 host / expert
+        utterance.pitch = line.speaker === "host" ? 1.0 : 1.3
+        utterance.onend = () => speakLine(index + 1)
+        utterance.onerror = () => speakLine(index + 1)
+        window.speechSynthesis.speak(utterance)
+      }
+
+      speakLine(0)
+    }
+  }
+
+  const handleAudioStop = () => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+    if (speechRef.current) {
+      speechRef.current.cancel()
+    }
+    window.speechSynthesis.cancel()
+    setAudioPlaying(false)
+    setAudioCurrentLine(-1)
+  }
+
+  // 组件卸载时清理音频
+  React.useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      window.speechSynthesis?.cancel()
+    }
+  }, [])
 
   // ─── Toast ───
 
@@ -1304,6 +1930,56 @@ const [translating, setTranslating] = React.useState(false)
                 <>
                   <Tooltip>
                     <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`size-7 ${ragEnabled ? "text-primary" : ""}`}
+                        onClick={() => {
+                          if (!indexStatus?.indexed) {
+                            handleBuildIndex()
+                          } else {
+                            setRagEnabled((v) => !v)
+                          }
+                        }}
+                        disabled={indexing}
+                      >
+                        {indexing ? (
+                          <IconLoader2 className="size-4 animate-spin" />
+                        ) : (
+                          <IconDatabaseSearch className="size-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {indexing
+                        ? (indexProgress || "正在构建索引...")
+                        : !indexStatus?.indexed
+                          ? "构建 RAG 索引"
+                          : ragEnabled
+                            ? "RAG 已开启（点击关闭）"
+                            : "RAG 已关闭（点击开启）"}
+                    </TooltipContent>
+                  </Tooltip>
+                  {indexStatus?.indexed && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`size-7 ${showSources ? "text-primary" : ""}`}
+                          onClick={() => {
+                            if (!showSources && !sourcesData) fetchSourcesData()
+                            setShowSources((v) => !v)
+                          }}
+                        >
+                          <IconDatabase className="size-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">来源管理</TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon" className="size-7" onClick={startNewConversation}>
                         <IconPlus className="size-4" />
                       </Button>
@@ -1331,8 +2007,74 @@ const [translating, setTranslating] = React.useState(false)
             </div>
           </div>
 
-          {/* History view */}
-          {showHistory ? (
+          {/* Sources panel */}
+          {showSources ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="p-3">
+                <div className="mb-3 flex items-center justify-between">
+                  <h4 className="text-sm font-medium">来源管理</h4>
+                  <Button variant="ghost" size="icon" className="size-6" onClick={() => setShowSources(false)}>
+                    <IconX className="size-3.5" />
+                  </Button>
+                </div>
+                {sourcesLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : sourcesData ? (
+                  <>
+                    <div className="mb-3 flex gap-3 text-[11px] text-muted-foreground">
+                      <span>{sourcesData.files.length} 个文件</span>
+                      <span>{sourcesData.totalChunks} 个文本块</span>
+                      <span>~{Math.round(sourcesData.totalTokens / 1000)}k tokens</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {sourcesData.files.map((file) => (
+                        <Collapsible key={file.filename}>
+                          <CollapsibleTrigger className="flex w-full items-center gap-2 border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50">
+                            <IconFileText className="size-3.5 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">{file.fileTitle}</p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {file.chunkCount} 块 · ~{Math.round(file.totalTokens / 1000)}k tokens
+                              </p>
+                            </div>
+                            <IconChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="border-x border-b bg-muted/20 px-3 py-2">
+                              {file.headings.length > 0 ? (
+                                <div className="space-y-0.5">
+                                  {file.headings.slice(0, 8).map((h, i) => (
+                                    <p key={i} className="truncate text-[11px] text-muted-foreground">{h}</p>
+                                  ))}
+                                  {file.headings.length > 8 && (
+                                    <p className="text-[11px] text-muted-foreground/50">...还有 {file.headings.length - 8} 个标题</p>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-muted-foreground">无标题结构</p>
+                              )}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      ))}
+                    </div>
+                    {indexStatus?.lastIndexedAt && (
+                      <p className="mt-3 text-[11px] text-muted-foreground/60">
+                        上次索引: {new Date(indexStatus.lastIndexedAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <IconDatabase className="mb-2 size-8 opacity-30" />
+                    <p className="text-sm">尚未建立索引</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : showHistory ? (
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div className="p-3">
                 {conversations.length === 0 ? (
@@ -1394,6 +2136,42 @@ const [translating, setTranslating] = React.useState(false)
                     )}
                   </div>
 
+                  {/* 笔记本指南 — AI 生成模板 */}
+                  {files.length > 0 && (
+                    <div className="space-y-1.5 pb-3">
+                      <p className="px-1 text-[11px] text-muted-foreground/70">笔记本指南</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {GENERATE_TEMPLATES.map((tpl) => (
+                          <button
+                            key={tpl.type}
+                            className="flex items-center gap-2 border border-border px-2.5 py-2 text-left text-[12px] transition-colors hover:bg-muted/50 disabled:opacity-50"
+                            onClick={() => handleGenerate(tpl.type)}
+                            disabled={generating}
+                          >
+                            <tpl.icon className="size-3.5 shrink-0 text-primary/70" />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{tpl.label}</p>
+                              <p className="truncate text-[11px] text-muted-foreground">{tpl.desc}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                      {/* 音频概述按钮 */}
+                      <button
+                        className="flex w-full items-center gap-2.5 border border-dashed border-primary/30 bg-primary/5 px-3 py-2 text-left text-[12px] transition-colors hover:bg-primary/10 disabled:opacity-50"
+                        onClick={handleAudioGenerate}
+                        disabled={audioGenerating}
+                      >
+                        <IconPlayerPlay className="size-3.5 shrink-0 text-primary" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium">音频概述</p>
+                          <p className="text-[11px] text-muted-foreground">生成 Podcast 风格双人对话，边听边学</p>
+                        </div>
+                        {audioGenerating && <IconLoader2 className="size-3.5 shrink-0 animate-spin text-primary" />}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Suggested actions pinned to bottom */}
                   <div className="space-y-1.5 pb-2">
                     <p className="px-1 text-[11px] text-muted-foreground/70">试试这些</p>
@@ -1437,6 +2215,29 @@ const [translating, setTranslating] = React.useState(false)
                             </div>
                           ) : (
                             <MarkdownRenderer content={msg.content} />
+                          )}
+                          {/* RAG 引用来源 */}
+                          {msg.ragSources && msg.ragSources.length > 0 && (
+                            <details className="mt-2 border border-border/50 bg-muted/30 text-xs">
+                              <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground hover:text-foreground">
+                                <IconQuote className="size-3" />
+                                引用了 {msg.ragSources.length} 个来源
+                              </summary>
+                              <div className="space-y-1 border-t px-2.5 py-2">
+                                {msg.ragSources.map((src, i) => (
+                                  <div key={i} className="flex items-start gap-1.5 text-muted-foreground">
+                                    <span className="mt-px shrink-0 font-mono text-[10px] text-primary/70">[{i + 1}]</span>
+                                    <div className="min-w-0">
+                                      <span className="font-medium text-foreground/80">{src.fileTitle}</span>
+                                      {src.headingPath.length > 0 && (
+                                        <span className="text-muted-foreground/70"> &gt; {src.headingPath.join(" > ")}</span>
+                                      )}
+                                      <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/60">{src.snippet}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
                           )}
                           {/* Doc update confirmation buttons */}
                           {msg.docUpdate && (
@@ -1482,6 +2283,16 @@ const [translating, setTranslating] = React.useState(false)
             </div>
           </div>
 
+          {/* Index progress bar */}
+          {indexing && indexProgress && (
+            <div className="shrink-0 border-t bg-muted/30 px-3 py-1.5">
+              <div className="flex items-center gap-2">
+                <IconLoader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+                <span className="truncate text-[11px] text-muted-foreground">{indexProgress}</span>
+              </div>
+            </div>
+          )}
+
           {/* Bottom input area */}
           <div className="shrink-0 border-t px-3 py-2.5">
             <div className="border border-border bg-background px-3 py-2">
@@ -1501,7 +2312,7 @@ const [translating, setTranslating] = React.useState(false)
               />
               <div className="flex items-center justify-between pt-1">
                 <span className="text-[11px] text-muted-foreground/70">
-                  {chatModel}
+                  {chatModel}{ragEnabled && indexStatus?.indexed ? " · RAG" : ""}
                 </span>
                 <Button
                   size="icon"
@@ -1668,6 +2479,131 @@ const [translating, setTranslating] = React.useState(false)
                 </Button>
               )}
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── AI Generate Result Dialog ─── */}
+        <Dialog open={generateOpen} onOpenChange={(open) => { if (!open && !generating) setGenerateOpen(false) }}>
+          <DialogContent className="flex max-h-[80vh] flex-col sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <IconSparkles className="size-4 text-primary" />
+                {GENERATE_TEMPLATES.find((t) => t.type === generateType)?.label || "AI 生成"}
+                {generating && <IconLoader2 className="size-3.5 animate-spin text-muted-foreground" />}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto border bg-muted/20 p-4">
+              {generateError ? (
+                <p className="text-sm text-destructive">{generateError}</p>
+              ) : generateContent ? (
+                <div className="text-sm leading-relaxed [&_article]:max-w-none [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_pre]:text-xs [&_pre]:my-2 [&_blockquote]:my-2 [&_hr]:my-3 [&_table]:text-xs">
+                  <MarkdownRenderer content={generateContent} />
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+                  <IconLoader2 className="size-4 animate-spin" />
+                  正在分析项目文档并生成...
+                </div>
+              )}
+            </div>
+            <DialogFooter className="gap-2 sm:gap-1">
+              {!generating && generateContent && (
+                <>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopyGenerated}>
+                    <IconCopy className="size-3.5" />
+                    复制
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSaveGenerated}>
+                    <IconDownload className="size-3.5" />
+                    保存为笔记
+                  </Button>
+                </>
+              )}
+              <Button
+                variant={generating ? "destructive" : "outline"}
+                size="sm"
+                onClick={() => setGenerateOpen(false)}
+                disabled={generating}
+              >
+                {generating ? "生成中..." : "关闭"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Audio Overview Dialog ─── */}
+        <Dialog open={audioOpen} onOpenChange={(open) => { if (!open && !audioGenerating) { handleAudioStop(); setAudioOpen(false) } }}>
+          <DialogContent className="flex max-h-[80vh] flex-col sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <IconPlayerPlay className="size-4 text-primary" />
+                音频概述
+                {audioGenerating && <IconLoader2 className="size-3.5 animate-spin text-muted-foreground" />}
+              </DialogTitle>
+            </DialogHeader>
+
+            {/* 进度提示 */}
+            {audioGenerating && (
+              <div className="flex items-center gap-2 border bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">
+                <IconLoader2 className="size-3.5 animate-spin shrink-0" />
+                {audioProgress}
+              </div>
+            )}
+
+            {/* 对话脚本展示 */}
+            {audioScript && audioScript.length > 0 && (
+              <div className="min-h-0 flex-1 overflow-y-auto border bg-muted/10 p-3 space-y-2">
+                {audioScript.map((line, i) => (
+                  <div
+                    key={i}
+                    className={`flex gap-2 text-[12px] leading-relaxed transition-colors ${
+                      audioCurrentLine === i ? "bg-primary/10 -mx-1 px-1 py-0.5" : ""
+                    }`}
+                  >
+                    <span className={`shrink-0 font-medium ${
+                      line.speaker === "host" ? "text-blue-600" : "text-emerald-600"
+                    }`}>
+                      {line.speaker === "host" ? "主持人" : "专  家"}
+                    </span>
+                    <span className="text-foreground/90">{line.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 播放控制 */}
+            {!audioGenerating && audioScript && audioScript.length > 0 && (
+              <DialogFooter className="gap-2 sm:gap-1">
+                <Button
+                  variant={audioPlaying ? "destructive" : "default"}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleAudioPlay}
+                >
+                  {audioPlaying ? (
+                    <><IconX className="size-3.5" />暂停</>
+                  ) : (
+                    <><IconPlayerPlay className="size-3.5" />{audioUrl ? "播放音频" : "浏览器朗读"}</>
+                  )}
+                </Button>
+                {audioPlaying && (
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleAudioStop}>
+                    停止
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => { handleAudioStop(); setAudioOpen(false) }}>
+                  关闭
+                </Button>
+              </DialogFooter>
+            )}
+
+            {/* 生成失败 / 无脚本 */}
+            {!audioGenerating && !audioScript && (
+              <DialogFooter>
+                <p className="flex-1 text-[12px] text-muted-foreground">{audioProgress || "未能生成内容"}</p>
+                <Button variant="outline" size="sm" onClick={() => setAudioOpen(false)}>关闭</Button>
+              </DialogFooter>
+            )}
           </DialogContent>
         </Dialog>
       </div>
