@@ -7,7 +7,7 @@
  */
 
 import { chunkDocuments } from "./chunker"
-import { embed, embedBatch } from "./embedding"
+import { embedBatch } from "./embedding"
 import { addChunks, searchByVector, deleteIndex, saveChunksData, loadChunksData } from "./vector-store"
 import { createBm25Index, searchByBm25 } from "./bm25-store"
 import { decomposeQuery } from "./query-decomposer"
@@ -122,33 +122,23 @@ export async function queryProject(
   const decomposed = await decomposeQuery(question, config)
   console.log(`[pipeline] 查询分解为 ${decomposed.subQueries.length} 个子查询:`, decomposed.subQueries)
 
-  // 2. 检索
-  let results: SearchResult[]
+  // 2. 检索 — 批量 Embedding + 并行检索
+  const subQueries = decomposed.subQueries
+  const queryEmbeddings = await embedBatch(subQueries, config)
 
-  if (decomposed.subQueries.length === 1) {
-    // 单查询：直接混合检索
-    const queryEmbedding = await embed(decomposed.subQueries[0], config)
-    const [vectorResults, bm25Results] = await Promise.all([
-      searchByVector(projectId, queryEmbedding, 15),
-      searchByBm25(projectId, decomposed.subQueries[0], 15),
-    ])
-    // 简单 RRF 融合
-    results = simpleRRFFuse([vectorResults, bm25Results], 10)
-  } else {
-    // 多查询：每个子查询分别混合检索，再融合
-    const allResults: SearchResult[][] = []
-    for (const subQuery of decomposed.subQueries) {
-      const queryEmbedding = await embed(subQuery, config)
+  const perQueryResults = await Promise.all(
+    subQueries.map(async (subQuery, i) => {
       const [vectorResults, bm25Results] = await Promise.all([
-        searchByVector(projectId, queryEmbedding, 15),
+        searchByVector(projectId, queryEmbeddings[i], 15),
         searchByBm25(projectId, subQuery, 15),
       ])
-      const fused = simpleRRFFuse([vectorResults, bm25Results], 15)
-      allResults.push(fused)
-    }
-    // 再次 RRF 融合所有子查询的结果
-    results = simpleRRFFuse(allResults, 10)
-  }
+      return simpleRRFFuse([vectorResults, bm25Results], subQueries.length > 1 ? 15 : 10)
+    })
+  )
+
+  const results = subQueries.length === 1
+    ? perQueryResults[0]
+    : simpleRRFFuse(perQueryResults, 10)
 
   // 3. 组装上下文
   const context = buildContext(results, config.maxContextTokens || 4000)

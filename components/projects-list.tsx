@@ -149,9 +149,13 @@ export function ProjectsList() {
         setProjects((prev) =>
           prev.map((p) => (p.id === editingId ? { ...p, name: editName.trim() } : p))
         )
+        router.refresh()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error || "重命名失败，请重试")
       }
     } catch {
-      // ignore
+      alert("网络错误，重命名失败")
     } finally {
       setSaving(false)
       setEditingId(null)

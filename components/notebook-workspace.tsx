@@ -47,6 +47,8 @@ import {
   IconCopy,
   IconDownload,
   IconPlayerPlay,
+  IconPlayerStop,
+  IconMicrophone,
   IconRefresh,
 } from "@tabler/icons-react"
 import {
@@ -82,7 +84,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { getAIConfig, isAIConfigured, getConfiguredModel } from "@/components/settings-dialog"
+import { getAIConfig, getTTSConfig, isAIConfigured, getConfiguredModel } from "@/components/settings-dialog"
 import { RichTextEditor } from "@/components/rich-text-editor"
 
 // ─── Types ───
@@ -114,6 +116,13 @@ interface ChatMessage {
     type: string
     label: string
     done: boolean
+  }
+  /** 音频概述的元信息 */
+  audioMeta?: {
+    stage: "script" | "confirming" | "synthesizing" | "done" | "error"
+    script?: { speaker: string; text: string }[]
+    audioUrl?: string
+    progress?: string
   }
 }
 
@@ -327,6 +336,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const [uploading, setUploading] = React.useState(false)
   const [isDragging, setIsDragging] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null)
+  const deleteTargetRef = React.useRef<string | null>(null)
   const [deleting, setDeleting] = React.useState<string | null>(null)
 
   // Editor state
@@ -367,12 +377,8 @@ const [sourcesLoading, setSourcesLoading] = React.useState(false)
 // AI note generation
 const [generating, setGenerating] = React.useState(false)
 
-// Audio overview
-const [audioOpen, setAudioOpen] = React.useState(false)
+// Audio overview (inline chat)
 const [audioGenerating, setAudioGenerating] = React.useState(false)
-const [audioProgress, setAudioProgress] = React.useState("")
-const [audioScript, setAudioScript] = React.useState<{ speaker: string; text: string }[] | null>(null)
-const [audioUrl, setAudioUrl] = React.useState<string | null>(null)
 const [audioPlaying, setAudioPlaying] = React.useState(false)
 const [audioCurrentLine, setAudioCurrentLine] = React.useState(-1)
 const audioRef = React.useRef<HTMLAudioElement | null>(null)
@@ -850,8 +856,10 @@ const speechRef = React.useRef<{ cancel: () => void } | null>(null)
   }
 
   const handleDeleteFile = async () => {
-    if (!deleteTarget) return
-    const filename = deleteTarget
+    // 使用 ref 获取文件名，避免与 AlertDialog onOpenChange 的竞态条件
+    const filename = deleteTargetRef.current
+    if (!filename) return
+    deleteTargetRef.current = null
     setDeleteTarget(null)
     setDeleting(filename)
     try {
@@ -870,9 +878,12 @@ const speechRef = React.useRef<{ cancel: () => void } | null>(null)
         router.refresh()
         // 自动更新 RAG 索引（移除已删除文件的块）
         triggerAutoIndex()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setToast({ type: "error", msg: data.error || "删除失败，请重试" })
       }
     } catch {
-      // ignore
+      setToast({ type: "error", msg: "网络错误，删除失败" })
     } finally {
       setDeleting(null)
     }
@@ -1421,10 +1432,14 @@ ${fileContent}` : ""}
     const filename = `${label}-${new Date().toISOString().slice(0, 10)}.md`
 
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+      const blob = new Blob([msg.content], { type: "text/markdown" })
+      const file = new File([blob], filename, { type: "text/markdown" })
+      const formData = new FormData()
+      formData.append("file", file)
+
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, content: msg.content }),
+        body: formData,
       })
       if (res.ok) {
         showToast("success", `已保存为「${filename}」`)
@@ -1477,7 +1492,7 @@ ${fileContent}` : ""}
     setChatLoading(false)
   }
 
-  // ─── Audio Overview ───
+  // ─── Audio Overview (inline chat) ───
 
   const handleAudioGenerate = async () => {
     const config = getAIConfig()
@@ -1486,19 +1501,33 @@ ${fileContent}` : ""}
       return
     }
 
-    setAudioOpen(true)
+    const aiMsgId = `audio-${Date.now()}`
+
+    // 插入用户消息 + AI 消息到聊天区
+    const userMsg: ChatMessage = {
+      id: `user-audio-${Date.now()}`,
+      role: "user",
+      content: "生成音频概述",
+      timestamp: new Date(),
+    }
+    const aiMsg: ChatMessage = {
+      id: aiMsgId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+      audioMeta: { stage: "script", progress: "正在生成对话脚本..." },
+    }
+    setChatMessages((prev) => [...prev, userMsg, aiMsg])
+    setChatLoading(true)
     setAudioGenerating(true)
-    setAudioProgress("准备中...")
-    setAudioScript(null)
-    setAudioUrl(null)
-    setAudioCurrentLine(-1)
+    isStreamingRef.current = true
 
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/audio`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "generate",
+          action: "script",
           apiKey: config.apiKey,
           apiBase: config.apiBase,
           model: chatModel,
@@ -1507,15 +1536,25 @@ ${fileContent}` : ""}
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setAudioProgress(data.error || "生成失败")
-        setAudioGenerating(false)
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? { ...m, content: `⚠️ ${data.error || "脚本生成失败"}`, audioMeta: { stage: "error" } }
+              : m
+          )
+        )
         return
       }
 
       const reader = res.body?.getReader()
       if (!reader) {
-        setAudioProgress("无法读取响应流")
-        setAudioGenerating(false)
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? { ...m, content: "⚠️ 无法读取响应流", audioMeta: { stage: "error" } }
+              : m
+          )
+        )
         return
       }
 
@@ -1536,26 +1575,47 @@ ${fileContent}` : ""}
           try {
             const parsed = JSON.parse(trimmed.slice(6))
             if (parsed.error) {
-              setAudioProgress(parsed.error)
-              setAudioGenerating(false)
+              setChatMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMsgId
+                    ? { ...m, content: `⚠️ ${parsed.error}`, audioMeta: { stage: "error" } }
+                    : m
+                )
+              )
               return
             }
             if (parsed.progress) {
-              setAudioProgress(parsed.progress)
+              setChatMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMsgId
+                    ? { ...m, audioMeta: { ...m.audioMeta!, progress: parsed.progress } }
+                    : m
+                )
+              )
             }
             if (parsed.step === "script_done" && parsed.script) {
-              setAudioScript(parsed.script)
-            }
-            if (parsed.step === "tts_unavailable") {
-              setAudioProgress(parsed.message)
+              // 脚本生成完毕，进入确认阶段
+              const scriptContent = parsed.script
+                .map((line: { speaker: string; text: string }) =>
+                  `**${line.speaker === "host" ? "🎙️ 主持人" : "🎓 专家"}**：${line.text}`
+                )
+                .join("\n\n")
+              setChatMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                        ...m,
+                        content: `以下是为你生成的对话脚本，请确认内容后点击「生成音频」按钮：\n\n${scriptContent}`,
+                        audioMeta: { stage: "confirming", script: parsed.script },
+                      }
+                    : m
+                )
+              )
             }
             if (parsed.done) {
-              if (parsed.hasAudio && parsed.audioUrl) {
-                setAudioUrl(parsed.audioUrl)
-                setAudioProgress("音频生成完成")
-              } else if (parsed.script) {
-                setAudioScript(parsed.script)
-                setAudioProgress("对话脚本已生成（TTS 不可用，可使用浏览器朗读）")
+              // action=script 完成
+              if (!parsed.hasAudio && parsed.script) {
+                // 脚本模式正常完成
               }
             }
           } catch {
@@ -1564,17 +1624,174 @@ ${fileContent}` : ""}
         }
       }
     } catch {
-      setAudioProgress("网络错误，请重试")
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId
+            ? { ...m, content: "⚠️ 网络错误，请重试", audioMeta: { stage: "error" } }
+            : m
+        )
+      )
     } finally {
       setAudioGenerating(false)
+      setChatLoading(false)
+      isStreamingRef.current = false
     }
   }
 
-  const handleAudioPlay = () => {
-    if (audioUrl) {
+  /** 用户确认脚本后，开始 TTS 合成 */
+  const handleAudioConfirm = async (msgId: string) => {
+    const msg = chatMessages.find((m) => m.id === msgId)
+    if (!msg?.audioMeta?.script) return
+
+    const config = getAIConfig()
+    const ttsConfig = getTTSConfig()
+    if (!config) {
+      showToast("error", "请先配置 API Key")
+      return
+    }
+
+    // 更新状态为合成中
+    setChatMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId
+          ? { ...m, audioMeta: { ...m.audioMeta!, stage: "synthesizing", progress: "正在合成语音..." } }
+          : m
+      )
+    )
+    setChatLoading(true)
+    setAudioGenerating(true)
+
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/audio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate",
+          apiKey: ttsConfig?.apiKey || config.apiKey,
+          apiBase: ttsConfig?.apiBase || config.apiBase,
+          model: chatModel,
+          ttsModel: ttsConfig?.model || "tts-1",
+          voiceHost: ttsConfig?.voiceHost || "alloy",
+          voiceExpert: ttsConfig?.voiceExpert || "nova",
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId
+              ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: data.error || "合成失败" } }
+              : m
+          )
+        )
+        return
+      }
+
+      const reader = res.body?.getReader()
+      if (!reader) {
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId
+              ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: "无法读取响应流" } }
+              : m
+          )
+        )
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith("data: ")) continue
+          try {
+            const parsed = JSON.parse(trimmed.slice(6))
+            if (parsed.error) {
+              setChatMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msgId
+                    ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: parsed.error } }
+                    : m
+                )
+              )
+              return
+            }
+            if (parsed.progress) {
+              setChatMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msgId
+                    ? { ...m, audioMeta: { ...m.audioMeta!, progress: parsed.progress } }
+                    : m
+                )
+              )
+            }
+            if (parsed.step === "tts_unavailable") {
+              setChatMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msgId
+                    ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", progress: "TTS 不可用，可使用浏览器朗读" } }
+                    : m
+                )
+              )
+            }
+            if (parsed.done) {
+              if (parsed.hasAudio && parsed.audioUrl) {
+                setChatMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === msgId
+                      ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", audioUrl: parsed.audioUrl, progress: "音频生成完成" } }
+                      : m
+                  )
+                )
+              } else {
+                setChatMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === msgId
+                      ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", progress: "脚本已生成，可使用浏览器朗读" } }
+                      : m
+                  )
+                )
+              }
+            }
+          } catch {
+            // skip
+          }
+        }
+      }
+    } catch {
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId
+            ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: "网络错误，请重试" } }
+            : m
+        )
+      )
+    } finally {
+      setAudioGenerating(false)
+      setChatLoading(false)
+    }
+  }
+
+  /** 播放音频（TTS 音频或浏览器朗读） */
+  const handleAudioPlay = (msgId: string) => {
+    const msg = chatMessages.find((m) => m.id === msgId)
+    if (!msg?.audioMeta) return
+
+    if (msg.audioMeta.audioUrl) {
       // 使用真实 TTS 音频
-      if (!audioRef.current) {
-        audioRef.current = new Audio(audioUrl)
+      if (!audioRef.current || audioRef.current.src !== msg.audioMeta.audioUrl) {
+        if (audioRef.current) audioRef.current.pause()
+        audioRef.current = new Audio(msg.audioMeta.audioUrl)
         audioRef.current.onended = () => {
           setAudioPlaying(false)
           setAudioCurrentLine(-1)
@@ -1587,8 +1804,9 @@ ${fileContent}` : ""}
         audioRef.current.play()
         setAudioPlaying(true)
       }
-    } else if (audioScript && audioScript.length > 0) {
-      // 退化到浏览器原生 SpeechSynthesis
+    } else if (msg.audioMeta.script && msg.audioMeta.script.length > 0) {
+      // 退化到浏览器 SpeechSynthesis
+      const script = msg.audioMeta.script
       if (audioPlaying) {
         window.speechSynthesis.cancel()
         setAudioPlaying(false)
@@ -1607,18 +1825,17 @@ ${fileContent}` : ""}
       }
 
       const speakLine = (index: number) => {
-        if (cancelled || index >= audioScript.length) {
+        if (cancelled || index >= script.length) {
           setAudioPlaying(false)
           setAudioCurrentLine(-1)
           return
         }
 
         setAudioCurrentLine(index)
-        const line = audioScript[index]
+        const line = script[index]
         const utterance = new SpeechSynthesisUtterance(line.text)
         utterance.lang = "zh-CN"
         utterance.rate = 1.1
-        // 用不同的音调区分 host / expert
         utterance.pitch = line.speaker === "host" ? 1.0 : 1.3
         utterance.onend = () => speakLine(index + 1)
         utterance.onerror = () => speakLine(index + 1)
@@ -1776,6 +1993,7 @@ ${fileContent}` : ""}
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
+                            deleteTargetRef.current = file.filename
                             setDeleteTarget(file.filename)
                           }}
                           disabled={deleting === file.filename}
@@ -2227,13 +2445,13 @@ ${fileContent}` : ""}
                         </div>
                       ) : (
                         <div className="w-full overflow-hidden text-[13px] leading-relaxed [&_article]:max-w-none [&_article]:text-[13px] [&_article]:leading-relaxed [&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[13px] [&_h1]:mt-3 [&_h1]:mb-1.5 [&_h2]:mt-2.5 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-1.5 [&_p]:leading-relaxed [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_pre]:text-xs [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:text-xs [&_blockquote]:my-2 [&_blockquote]:text-[13px] [&_hr]:my-3 [&_table]:text-xs [&_img]:max-w-full">
-                          {!msg.content && chatLoading ? (
+                          {!msg.content && chatLoading && !msg.audioMeta ? (
                             <div className="px-1 py-2">
                               <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
                             </div>
-                          ) : (
+                          ) : msg.content ? (
                             <MarkdownRenderer content={msg.content} />
-                          )}
+                          ) : null}
                           {/* RAG 引用来源 */}
                           {msg.ragSources && msg.ragSources.length > 0 && (
                             <details className="mt-2 border border-border/50 bg-muted/30 text-xs">
@@ -2290,8 +2508,84 @@ ${fileContent}` : ""}
                               )}
                             </div>
                           )}
+                          {/* 音频概述控件 */}
+                          {msg.audioMeta && (
+                            <div className="mt-2 border border-border/50 bg-muted/20 p-2.5 space-y-2">
+                              {/* 脚本生成中 */}
+                              {msg.audioMeta.stage === "script" && (
+                                <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                                  <IconLoader2 className="size-3.5 animate-spin shrink-0" />
+                                  {msg.audioMeta.progress || "正在生成对话脚本..."}
+                                </div>
+                              )}
+                              {/* 确认阶段 — 让用户确认脚本 */}
+                              {msg.audioMeta.stage === "confirming" && (
+                                <div className="flex items-center gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    className="h-7 gap-1.5 text-[12px]"
+                                    onClick={() => handleAudioConfirm(msg.id)}
+                                    disabled={audioGenerating}
+                                  >
+                                    <IconMicrophone className="size-3.5" />
+                                    生成音频
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 gap-1.5 text-[12px]"
+                                    onClick={() => handleAudioPlay(msg.id)}
+                                  >
+                                    <IconPlayerPlay className="size-3.5" />
+                                    浏览器朗读
+                                  </Button>
+                                </div>
+                              )}
+                              {/* TTS 合成中 */}
+                              {msg.audioMeta.stage === "synthesizing" && (
+                                <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                                  <IconLoader2 className="size-3.5 animate-spin shrink-0" />
+                                  {msg.audioMeta.progress || "正在合成语音..."}
+                                </div>
+                              )}
+                              {/* 完成 — 播放控制 */}
+                              {msg.audioMeta.stage === "done" && (
+                                <div className="flex items-center gap-1.5">
+                                  <Button
+                                    variant={audioPlaying ? "destructive" : "default"}
+                                    size="sm"
+                                    className="h-7 gap-1.5 text-[12px]"
+                                    onClick={() => handleAudioPlay(msg.id)}
+                                  >
+                                    {audioPlaying ? (
+                                      <><IconPlayerStop className="size-3.5" />暂停</>
+                                    ) : (
+                                      <><IconPlayerPlay className="size-3.5" />{msg.audioMeta.audioUrl ? "播放音频" : "浏览器朗读"}</>
+                                    )}
+                                  </Button>
+                                  {audioPlaying && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 gap-1.5 text-[12px]"
+                                      onClick={handleAudioStop}
+                                    >
+                                      停止
+                                    </Button>
+                                  )}
+                                  <span className="text-[11px] text-muted-foreground ml-1">
+                                    {msg.audioMeta.progress}
+                                  </span>
+                                </div>
+                              )}
+                              {/* 错误 */}
+                              {msg.audioMeta.stage === "error" && msg.audioMeta.progress && (
+                                <p className="text-[12px] text-destructive">{msg.audioMeta.progress}</p>
+                              )}
+                            </div>
+                          )}
                           {/* AI 回复操作按钮 — 所有已完成的 assistant 消息 */}
-                          {msg.content && !msg.content.startsWith("⚠️") && !(msg.generateMeta && !msg.generateMeta.done) && !(chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id) && (
+                          {msg.content && !msg.content.startsWith("⚠️") && !msg.audioMeta && !(msg.generateMeta && !msg.generateMeta.done) && !(chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id) && (
                             <div className="mt-2 flex items-center gap-1.5">
                               <Button
                                 variant="outline"
@@ -2534,82 +2828,7 @@ ${fileContent}` : ""}
         </Dialog>
 
         {/* (AI Generate Dialog removed — content now streams inline in chat) */}
-
-        {/* ─── Audio Overview Dialog ─── */}
-        <Dialog open={audioOpen} onOpenChange={(open) => { if (!open && !audioGenerating) { handleAudioStop(); setAudioOpen(false) } }}>
-          <DialogContent className="flex max-h-[80vh] flex-col sm:max-w-xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <IconPlayerPlay className="size-4 text-primary" />
-                音频概述
-                {audioGenerating && <IconLoader2 className="size-3.5 animate-spin text-muted-foreground" />}
-              </DialogTitle>
-            </DialogHeader>
-
-            {/* 进度提示 */}
-            {audioGenerating && (
-              <div className="flex items-center gap-2 border bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">
-                <IconLoader2 className="size-3.5 animate-spin shrink-0" />
-                {audioProgress}
-              </div>
-            )}
-
-            {/* 对话脚本展示 */}
-            {audioScript && audioScript.length > 0 && (
-              <div className="min-h-0 flex-1 overflow-y-auto border bg-muted/10 p-3 space-y-2">
-                {audioScript.map((line, i) => (
-                  <div
-                    key={i}
-                    className={`flex gap-2 text-[12px] leading-relaxed transition-colors ${
-                      audioCurrentLine === i ? "bg-primary/10 -mx-1 px-1 py-0.5" : ""
-                    }`}
-                  >
-                    <span className={`shrink-0 font-medium ${
-                      line.speaker === "host" ? "text-blue-600" : "text-emerald-600"
-                    }`}>
-                      {line.speaker === "host" ? "主持人" : "专  家"}
-                    </span>
-                    <span className="text-foreground/90">{line.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 播放控制 */}
-            {!audioGenerating && audioScript && audioScript.length > 0 && (
-              <DialogFooter className="gap-2 sm:gap-1">
-                <Button
-                  variant={audioPlaying ? "destructive" : "default"}
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleAudioPlay}
-                >
-                  {audioPlaying ? (
-                    <><IconX className="size-3.5" />暂停</>
-                  ) : (
-                    <><IconPlayerPlay className="size-3.5" />{audioUrl ? "播放音频" : "浏览器朗读"}</>
-                  )}
-                </Button>
-                {audioPlaying && (
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleAudioStop}>
-                    停止
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" onClick={() => { handleAudioStop(); setAudioOpen(false) }}>
-                  关闭
-                </Button>
-              </DialogFooter>
-            )}
-
-            {/* 生成失败 / 无脚本 */}
-            {!audioGenerating && !audioScript && (
-              <DialogFooter>
-                <p className="flex-1 text-[12px] text-muted-foreground">{audioProgress || "未能生成内容"}</p>
-                <Button variant="outline" size="sm" onClick={() => setAudioOpen(false)}>关闭</Button>
-              </DialogFooter>
-            )}
-          </DialogContent>
-        </Dialog>
+        {/* (Audio Overview Dialog removed — content now streams inline in chat) */}
       </div>
     </TooltipProvider>
   )

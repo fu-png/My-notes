@@ -56,7 +56,7 @@ const DIALOGUE_PROMPT = `你是一个专业的播客脚本撰写人。请基于�
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
   const body = await request.json()
-  const { action, apiKey, apiBase, model } = body
+  const { action, apiKey, apiBase, model, ttsModel, voiceHost, voiceExpert } = body
 
   if (!projectId) {
     return Response.json({ error: "缺少项目 ID" }, { status: 400 })
@@ -211,8 +211,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts", progress: "正在合成语音..." })}\n\n`))
 
           const audioChunks: Buffer[] = []
-          const hostVoice = "alloy"
-          const expertVoice = "nova"
+          const hostVoice = voiceHost || "alloy"
+          const expertVoice = voiceExpert || "nova"
+          const ttsModelName = ttsModel || "tts-1"
 
           for (let i = 0; i < dialogue.length; i++) {
             const line = dialogue[i]
@@ -226,7 +227,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                   Authorization: `Bearer ${apiKey}`,
                 },
                 body: JSON.stringify({
-                  model: "tts-1",
+                  model: ttsModelName,
                   input: line.text,
                   voice: line.speaker === "host" ? hostVoice : expertVoice,
                   response_format: "mp3",
