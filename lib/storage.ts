@@ -58,6 +58,16 @@ export async function writeFile(
   options?: { contentType?: string }
 ): Promise<StoredFile> {
   if (USE_BLOB) {
+    // 先尝试删除已有文件，再写入新文件（彻底避免 "blob already exists" 错误）
+    try {
+      const existing = await findBlobByPathname(pathname)
+      if (existing) {
+        await del(existing.url)
+      }
+    } catch {
+      // 删除失败不阻断流程
+    }
+
     const blob = await put(pathname, content, {
       access: "public",
       addRandomSuffix: false,
