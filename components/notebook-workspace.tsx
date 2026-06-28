@@ -47,6 +47,7 @@ import {
   IconCopy,
   IconDownload,
   IconPlayerPlay,
+  IconRefresh,
 } from "@tabler/icons-react"
 import {
   AlertDialog,
@@ -108,6 +109,12 @@ interface ChatMessage {
     snippet: string
     score: number
   }[]
+  /** 笔记本指南生成的元信息 */
+  generateMeta?: {
+    type: string
+    label: string
+    done: boolean
+  }
 }
 
 interface Conversation {
@@ -308,6 +315,8 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const isMobile = useIsMobile()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const chatEndRef = React.useRef<HTMLDivElement>(null)
+  const chatScrollRef = React.useRef<HTMLDivElement>(null)
+  const userScrolledUpRef = React.useRef(false)
 
   // File state
   const [files, setFiles] = React.useState<DocFile[]>([])
@@ -356,11 +365,7 @@ const [sourcesData, setSourcesData] = React.useState<{
 const [sourcesLoading, setSourcesLoading] = React.useState(false)
 
 // AI note generation
-const [generateOpen, setGenerateOpen] = React.useState(false)
 const [generating, setGenerating] = React.useState(false)
-const [generateType, setGenerateType] = React.useState<string>("")
-const [generateContent, setGenerateContent] = React.useState("")
-const [generateError, setGenerateError] = React.useState("")
 
 // Audio overview
 const [audioOpen, setAudioOpen] = React.useState(false)
@@ -1199,12 +1204,29 @@ ${fileContent}` : ""}
   }
 
   // Scroll to bottom: instant during streaming, smooth otherwise
+  // If the user has scrolled up during streaming, don't force scroll back down
   const isStreamingRef = React.useRef(false)
+
+  const handleChatScroll = React.useCallback(() => {
+    const el = chatScrollRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    userScrolledUpRef.current = !atBottom
+  }, [])
+
   React.useEffect(() => {
+    if (userScrolledUpRef.current) return
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: isStreamingRef.current ? "instant" : "smooth" })
     }
   }, [chatMessages])
+
+  // Reset scroll lock when streaming ends
+  React.useEffect(() => {
+    if (!chatLoading && !generating) {
+      userScrolledUpRef.current = false
+    }
+  }, [chatLoading, generating])
 
   // ─── Doc Update Actions ───
 
@@ -1265,11 +1287,27 @@ ${fileContent}` : ""}
       return
     }
 
-    setGenerateType(type)
-    setGenerateOpen(true)
+    const templateLabel = GENERATE_TEMPLATES.find((t) => t.type === type)?.label || "AI 生成"
+    const aiMsgId = `gen-${Date.now()}`
+
+    // 插入一条用户消息 + 一条空的 AI 消息到聊天区
+    const userMsg: ChatMessage = {
+      id: `user-gen-${Date.now()}`,
+      role: "user",
+      content: `生成${templateLabel}`,
+      timestamp: new Date(),
+    }
+    const aiMsg: ChatMessage = {
+      id: aiMsgId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+      generateMeta: { type, label: templateLabel, done: false },
+    }
+    setChatMessages((prev) => [...prev, userMsg, aiMsg])
+    setChatLoading(true)
     setGenerating(true)
-    setGenerateContent("")
-    setGenerateError("")
+    isStreamingRef.current = true
 
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
@@ -1285,21 +1323,32 @@ ${fileContent}` : ""}
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setGenerateError(data.error || "生成失败")
-        setGenerating(false)
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? { ...m, content: `⚠️ ${data.error || "生成失败"}`, generateMeta: { type, label: templateLabel, done: true } }
+              : m
+          )
+        )
         return
       }
 
       const reader = res.body?.getReader()
       if (!reader) {
-        setGenerateError("无法读取响应流")
-        setGenerating(false)
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? { ...m, content: "⚠️ 无法读取响应流", generateMeta: { type, label: templateLabel, done: true } }
+              : m
+          )
+        )
         return
       }
 
       const decoder = new TextDecoder()
       let buffer = ""
-      let full = ""
+      let fullContent = ""
+      let rafScheduled = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -1318,43 +1367,68 @@ ${fileContent}` : ""}
           try {
             const parsed = JSON.parse(data)
             if (parsed.error) {
-              setGenerateError(parsed.error)
-              setGenerating(false)
-              return
-            }
-            if (parsed.content) {
-              full += parsed.content
-              setGenerateContent(full)
+              fullContent += `\n⚠️ ${parsed.error}`
+            } else if (parsed.content) {
+              fullContent += parsed.content
             }
           } catch {
             // skip
           }
         }
+
+        // Throttle UI updates via rAF
+        if (!rafScheduled) {
+          rafScheduled = true
+          const snapshot = fullContent
+          requestAnimationFrame(() => {
+            setChatMessages((prev) =>
+              prev.map((m) => (m.id === aiMsgId ? { ...m, content: snapshot } : m))
+            )
+            rafScheduled = false
+          })
+        }
       }
 
-      if (!full) setGenerateError("未能生成内容")
+      if (!fullContent) fullContent = "未能生成内容，请重试。"
+
+      // Final update — mark as done
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId
+            ? { ...m, content: fullContent, generateMeta: { type, label: templateLabel, done: true } }
+            : m
+        )
+      )
     } catch {
-      setGenerateError("网络错误，请重试")
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId
+            ? { ...m, content: "⚠️ 网络错误，请重试", generateMeta: { type, label: templateLabel, done: true } }
+            : m
+        )
+      )
     } finally {
       setGenerating(false)
+      setChatLoading(false)
+      isStreamingRef.current = false
     }
   }
 
-  const handleSaveGenerated = async () => {
-    if (!generateContent) return
-    const templateLabel = GENERATE_TEMPLATES.find((t) => t.type === generateType)?.label || generateType
-    const filename = `${templateLabel}-${new Date().toISOString().slice(0, 10)}.md`
+  const handleSaveGenerated = async (msgId: string) => {
+    const msg = chatMessages.find((m) => m.id === msgId)
+    if (!msg?.content) return
+    const label = msg.generateMeta?.label || "AI笔记"
+    const filename = `${label}-${new Date().toISOString().slice(0, 10)}.md`
 
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, content: generateContent }),
+        body: JSON.stringify({ filename, content: msg.content }),
       })
       if (res.ok) {
         showToast("success", `已保存为「${filename}」`)
         await fetchFiles()
-        setGenerateOpen(false)
       } else {
         showToast("error", "保存失败")
       }
@@ -1363,14 +1437,44 @@ ${fileContent}` : ""}
     }
   }
 
-  const handleCopyGenerated = async () => {
-    if (!generateContent) return
+  const handleCopyGenerated = async (msgId: string) => {
+    const msg = chatMessages.find((m) => m.id === msgId)
+    if (!msg?.content) return
     try {
-      await navigator.clipboard.writeText(generateContent)
+      await navigator.clipboard.writeText(msg.content)
       showToast("success", "已复制到剪贴板")
     } catch {
       showToast("error", "复制失败")
     }
+  }
+
+  const handleRegenerateGuide = (type: string) => {
+    handleGenerate(type)
+  }
+
+  const handleRegenerateChat = async (msgId: string) => {
+    if (chatLoading || generating) return
+
+    // 找到这条 AI 消息在数组中的位置，取其前面所有消息作为上下文
+    const msgIndex = chatMessages.findIndex((m) => m.id === msgId)
+    if (msgIndex < 0) return
+
+    const preceding = chatMessages.slice(0, msgIndex)
+    const newAiMsgId = `ai-${Date.now()}`
+    const newAiMsg: ChatMessage = {
+      id: newAiMsgId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    }
+    // 替换掉旧的 AI 回复
+    setChatMessages([...preceding, newAiMsg])
+    setChatLoading(true)
+    isStreamingRef.current = true
+
+    await streamAI(preceding, newAiMsgId)
+    isStreamingRef.current = false
+    setChatLoading(false)
   }
 
   // ─── Audio Overview ───
@@ -2059,7 +2163,7 @@ ${fileContent}` : ""}
           ) : (
           <>
           {/* Scrollable content area */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={chatScrollRef} onScroll={handleChatScroll} className="min-h-0 flex-1 overflow-y-auto">
             <div className={`p-4 ${chatMessages.length <= 1 && !chatLoading ? "flex h-full flex-col" : ""}`}>
               {/* Welcome & greeting (when no conversation) */}
               {chatMessages.length <= 1 && !chatLoading ? (
@@ -2184,6 +2288,39 @@ ${fileContent}` : ""}
                               {msg.docUpdate.status === "rejected" && (
                                 <span className="text-xs text-muted-foreground">已退回</span>
                               )}
+                            </div>
+                          )}
+                          {/* AI 回复操作按钮 — 所有已完成的 assistant 消息 */}
+                          {msg.content && !msg.content.startsWith("⚠️") && !(msg.generateMeta && !msg.generateMeta.done) && !(chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id) && (
+                            <div className="mt-2 flex items-center gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 gap-1 text-[11px]"
+                                onClick={() => handleCopyGenerated(msg.id)}
+                              >
+                                <IconCopy className="size-3" />
+                                复制
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 gap-1 text-[11px]"
+                                onClick={() => handleSaveGenerated(msg.id)}
+                              >
+                                <IconDownload className="size-3" />
+                                保存为笔记
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 gap-1 text-[11px]"
+                                onClick={() => msg.generateMeta ? handleRegenerateGuide(msg.generateMeta.type) : handleRegenerateChat(msg.id)}
+                                disabled={chatLoading || generating}
+                              >
+                                <IconRefresh className="size-3" />
+                                重新生成
+                              </Button>
                             </div>
                           )}
                         </div>
@@ -2396,54 +2533,7 @@ ${fileContent}` : ""}
           </DialogContent>
         </Dialog>
 
-        {/* ─── AI Generate Result Dialog ─── */}
-        <Dialog open={generateOpen} onOpenChange={(open) => { if (!open && !generating) setGenerateOpen(false) }}>
-          <DialogContent className="flex max-h-[80vh] flex-col sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <IconSparkles className="size-4 text-primary" />
-                {GENERATE_TEMPLATES.find((t) => t.type === generateType)?.label || "AI 生成"}
-                {generating && <IconLoader2 className="size-3.5 animate-spin text-muted-foreground" />}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto border bg-muted/20 p-4">
-              {generateError ? (
-                <p className="text-sm text-destructive">{generateError}</p>
-              ) : generateContent ? (
-                <div className="text-sm leading-relaxed [&_article]:max-w-none [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_pre]:text-xs [&_pre]:my-2 [&_blockquote]:my-2 [&_hr]:my-3 [&_table]:text-xs">
-                  <MarkdownRenderer content={generateContent} />
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-                  <IconLoader2 className="size-4 animate-spin" />
-                  正在分析项目文档并生成...
-                </div>
-              )}
-            </div>
-            <DialogFooter className="gap-2 sm:gap-1">
-              {!generating && generateContent && (
-                <>
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopyGenerated}>
-                    <IconCopy className="size-3.5" />
-                    复制
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSaveGenerated}>
-                    <IconDownload className="size-3.5" />
-                    保存为笔记
-                  </Button>
-                </>
-              )}
-              <Button
-                variant={generating ? "destructive" : "outline"}
-                size="sm"
-                onClick={() => setGenerateOpen(false)}
-                disabled={generating}
-              >
-                {generating ? "生成中..." : "关闭"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* (AI Generate Dialog removed — content now streams inline in chat) */}
 
         {/* ─── Audio Overview Dialog ─── */}
         <Dialog open={audioOpen} onOpenChange={(open) => { if (!open && !audioGenerating) { handleAudioStop(); setAudioOpen(false) } }}>
