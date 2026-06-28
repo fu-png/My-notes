@@ -61,6 +61,7 @@ export async function writeFile(
     const blob = await put(pathname, content, {
       access: "public",
       addRandomSuffix: false,
+      allowOverwrite: true,
       contentType: options?.contentType,
     })
     return {
