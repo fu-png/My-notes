@@ -72,42 +72,13 @@ export function DocBreadcrumb() {
 
   const projectName = useProjectName(projectId)
 
-  if (pathname === "/docs") {
-    return (
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbPage>My Notes</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-    )
-  }
-
-  // Handle dashboard page
-  if (pathname === "/docs/dashboard") {
-    return (
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem className="hidden md:block">
-            <BreadcrumbLink href="/docs">My Notes</BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator className="hidden md:block" />
-          <BreadcrumbItem>
-            <BreadcrumbPage>仪表盘</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-    )
-  }
-
   // Handle projects pages
   if (pathname === "/docs/projects") {
     return (
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem className="hidden md:block">
-            <BreadcrumbLink href="/docs">My Notes</BreadcrumbLink>
+            <BreadcrumbLink href="/docs/projects">My Notes</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator className="hidden md:block" />
           <BreadcrumbItem>
@@ -123,7 +94,7 @@ export function DocBreadcrumb() {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem className="hidden md:block">
-            <BreadcrumbLink href="/docs">My Notes</BreadcrumbLink>
+            <BreadcrumbLink href="/docs/projects">My Notes</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator className="hidden md:block" />
           <BreadcrumbItem className="hidden md:block">
@@ -148,7 +119,7 @@ export function DocBreadcrumb() {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem className="hidden md:block">
-            <BreadcrumbLink href="/docs">My Notes</BreadcrumbLink>
+            <BreadcrumbLink href="/docs/projects">My Notes</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator className="hidden md:block" />
           <BreadcrumbItem className="hidden md:block">
@@ -183,7 +154,7 @@ export function DocBreadcrumb() {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem className="hidden md:block">
-            <BreadcrumbLink href="/docs">My Notes</BreadcrumbLink>
+            <BreadcrumbLink href="/docs/projects">My Notes</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator className="hidden md:block" />
           <BreadcrumbItem>
@@ -201,7 +172,7 @@ export function DocBreadcrumb() {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem className="hidden md:block">
-            <BreadcrumbLink href="/docs">My Notes</BreadcrumbLink>
+            <BreadcrumbLink href="/docs/projects">My Notes</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator className="hidden md:block" />
           <BreadcrumbItem className="hidden md:block">
@@ -224,7 +195,7 @@ export function DocBreadcrumb() {
     <Breadcrumb>
       <BreadcrumbList>
         <BreadcrumbItem className="hidden md:block">
-          <BreadcrumbLink href="/docs">My Notes</BreadcrumbLink>
+          <BreadcrumbLink href="/docs/projects">My Notes</BreadcrumbLink>
         </BreadcrumbItem>
         {section && (
           <>

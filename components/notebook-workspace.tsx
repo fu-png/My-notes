@@ -453,10 +453,10 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   // Toast
   const [toast, setToast] = React.useState<{ type: "success" | "error"; msg: string } | null>(null)
 
-  const showToast = (type: "success" | "error", msg: string) => {
+  const showToast = React.useCallback((type: "success" | "error", msg: string) => {
     setToast({ type, msg })
     setTimeout(() => setToast(null), 2500)
-  }
+  }, [])
 
   // ─── Data Fetching ───
 
@@ -500,14 +500,14 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     }
   }, [projectId])
 
-  const selectFile = (filename: string) => {
+  const selectFile = React.useCallback((filename: string) => {
     setActiveFile(filename)
     loadFileContent(filename)
-  }
+  }, [loadFileContent])
 
   // ─── File Operations ───
 
-  const handleUpload = async (fileList: FileList | File[]) => {
+  const handleUpload = React.useCallback(async (fileList: FileList | File[]) => {
     const uploadFiles = Array.from(fileList)
     if (uploadFiles.length === 0) return
 
@@ -546,7 +546,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     } finally {
       setUploading(false)
     }
-  }
+  }, [projectId, selectFile, fetchFiles, showToast, triggerAutoIndex])
 
   const handleCreateFile = async () => {
     const name = newFileName.trim()
@@ -645,20 +645,20 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
   // ─── Rename ───
 
-  const startRename = (filename: string) => {
+  const startRename = React.useCallback((filename: string) => {
     const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : ""
     const title = ext ? filename.slice(0, -ext.length) : filename
     setRenamingFile(filename)
     setRenameValue(title)
     setTimeout(() => renameInputRef.current?.select(), 50)
-  }
+  }, [])
 
-  const cancelRename = () => {
+  const cancelRename = React.useCallback(() => {
     setRenamingFile(null)
     setRenameValue("")
-  }
+  }, [])
 
-  const handleRenameFile = async () => {
+  const handleRenameFile = React.useCallback(async () => {
     if (!renamingFile || !renameValue.trim() || renaming) return
     const oldFilename = renamingFile
     const ext = oldFilename.includes(".") ? oldFilename.slice(oldFilename.lastIndexOf(".")) : ""
@@ -702,7 +702,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       setRenaming(false)
       cancelRename()
     }
-  }
+  }, [renamingFile, renameValue, renaming, projectId, activeFile, showToast, triggerAutoIndex, cancelRename])
 
   const handleSave = async () => {
     if (!activeFile) return
@@ -738,6 +738,11 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
   const handleTranslate = async () => {
     if (!activeFile) return
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 AI 助手的 API Key")
+      return
+    }
     setTranslating(true)
     try {
       const res = await fetch(
@@ -745,7 +750,12 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: activeFile }),
+          body: JSON.stringify({
+            filename: activeFile,
+            apiKey: config.apiKey,
+            apiBase: config.apiBase,
+            model: chatModel,
+          }),
         }
       )
       const data = await res.json()
@@ -765,20 +775,20 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
   // ─── Drag & Drop ───
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = React.useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(true)
-  }
-  const handleDragLeave = (e: React.DragEvent) => {
+  }, [])
+  const handleDragLeave = React.useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-  }
-  const handleDrop = (e: React.DragEvent) => {
+  }, [])
+  const handleDrop = React.useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
     const droppedFiles = e.dataTransfer.files
     if (droppedFiles.length > 0) handleUpload(droppedFiles)
-  }
+  }, [handleUpload])
 
   // ─── Chat ───
 

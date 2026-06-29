@@ -4,7 +4,7 @@
 
 # 御舆：解码 Agent Harness
 
-### Claude Code 架构深度剖析
+### Claude 代码架构深度剖析
 
 <br/>
 
@@ -28,7 +28,7 @@
 
 [![GitHub Stars](https://img.shields.io/github/stars/lintsinghua/claude-code-book?style=flat-square&logo=github&label=Stars)](https://github.com/lintsinghua/claude-code-book/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/lintsinghua/claude-code-book?style=flat-square&logo=github&label=Forks)](https://github.com/lintsinghua/claude-code-book/network/members)
-[![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-CC BY--NC--SA 4.0-lightgrey?style=flat-square)](LICENSE)
 [![中文](https://img.shields.io/badge/语言-中文-red?style=flat-square)](./)
 [![English](https://img.shields.io/badge/lang-English-blue?style=flat-square)](en/README.md)
 [![Last Commit](https://img.shields.io/github/last-commit/lintsinghua/claude-code-book?style=flat-square)](https://github.com/lintsinghua/claude-code-book/commits/main)
@@ -62,18 +62,18 @@
 | | **可迁移的认知模型** | 无论你用 LangChain、AutoGen、CrewAI 还是从零构建，书中 139 张架构图直接复用 |
 
 <details>
-<summary><b>书中的数据一览</b></summary>
+<summary><b>Book Data Overview</b></summary>
 
 | 指标 | 数量 |
 |------|------|
-| 全书字数 | 42 万字（中文）/ 75K+ words（English） |
-| 正文章节 | 15 章 + 4 篇附录 |
+| 全书字数 | 42 万字（中文）/ 75K words（英文） |
+| 正文章节 | 15 章 4 篇附录 |
 | Mermaid 架构图/流程图/状态机 | 139 张 |
 | 覆盖核心子系统 | 工具系统、权限管线、上下文压缩、记忆系统、钩子系统、子智能体调度、MCP 集成、技能插件、流式架构、Plan 模式 |
-| 分析的设计决策 | 50+ 个"为什么这样设计" |
+| 分析的设计决策 | 50 个“为什么这样设计” |
 | 术语条目（中英对照） | 100 条 |
 | 功能标志 | 89 个 |
-| 注册工具 | 50+ 个 |
+| 注册工具 | 50 个 |
 
 </details>
 
@@ -85,7 +85,7 @@
 
 > **时间紧张？** 01 → 02 → 04 → 15，拿到核心认知和动手能力就够用
 >
-> **有经验？** 直接读 Part 2 + Part 3，遇到概念缺口回溯 Part 1
+> **有经验？** 直接读 Part 2 Part 3，遇到概念缺口回溯 Part 1
 >
 > **系统学习？** 从头到尾，每章做练习，最后 Ch15 构建自己的 Harness（约 2–3 周）
 >
@@ -95,18 +95,18 @@
 
 ## 目录
 
-### Part 1. 基础篇 — 建立心智模型
+### 第1部分 基础篇 — 建立心智模型
 
-> 理解 Agent 编程的范式转移，建立对 Agent Harness 的整体认知框架。
+> 理解 Agent 编程的范式转变，建立对 Agent Harness 的整体认知框架。
 
 | # | 章节 | 核心内容 |
 |:-:|------|---------|
-| 01 | [智能体编程的新范式](第一部分-基础篇/01-智能体编程的新范式.md) | Copilot → Claude Code 演进；Agent Harness 五大设计原则；Bun + React/Ink + Zod v4 技术栈 |
+| 01 | [智能体编程的新范式](第一部分-基础篇/01-智能体编程的新范式.md) | Copilot → Claude Code 演进；Agent Harness 五大设计原则；Bun React/Ink Zod v4 技术栈 |
 | 02 | [对话循环 — Agent 的心跳](第一部分-基础篇/02-对话循环-Agent的心跳.md) | `while(true)` 异步生成器主循环；五种 yield 事件；十种终止原因；`QueryDeps` 依赖注入 |
-| 03 | [工具系统 — Agent 的双手](第一部分-基础篇/03-工具系统-Agent的双手.md) | `Tool<I,O,P>` 五要素协议；`buildTool` 故障安全工厂；45+ 工具 × 12 类；并发分区贪心算法 |
+| 03 | [工具系统 — Agent 的双手](第一部分-基础篇/03-工具系统-Agent的双手.md) | `Tool<I,O,P>` 五要素协议；`buildTool` 故障安全工厂；45 工具 × 12 类；并发分区贪心算法 |
 | 04 | [权限管线 — Agent 的护栏](第一部分-基础篇/04-权限管线-Agent的护栏.md) | 四阶段管线；五种权限模式谱系；Bash 规则匹配；推测性分类器 2 秒 Promise.race |
 
-### Part 2. 核心系统篇 — 深入子系统
+### 第2部分 核心系统篇 — 深入子系统
 
 > 拆解 Agent Harness 的四大核心子系统——配置、记忆、上下文、钩子。
 
@@ -128,22 +128,22 @@
 | 11 | [技能系统与插件架构](第三部分-高级模式篇/11-技能系统与插件架构.md) | 11 个核心技能；SKILL.md frontmatter；三级参数替换；分层加载；插件缓存 |
 | 12 | [MCP 集成与外部协议](第三部分-高级模式篇/12-MCP集成与外部协议.md) | 8 种传输协议；五态连接管理；三段式工具命名；Bridge 双向通信系统 |
 
-### Part 4. 工程实践篇 — 从原理到构建
+### 第四部分 工程实践篇 — 从原理到构建
 
 > 性能优化的工程细节，以及从零构建一个完整 Harness 的实战路线图。
 
 | # | 章节 | 核心内容 |
 |:-:|------|---------|
 | 13 | [流式架构与性能优化](第四部分-工程实践篇/13-流式架构与性能优化.md) | QueryEngine 生命周期管理；并发控制；启动优化 160ms→65ms（-59%）；惰性加载策略 |
-| 14 | [Plan 模式与结构化工作流](第四部分-工程实践篇/14-Plan模式与结构化工作流.md) | "先想后做"哲学；计划文件三层恢复策略；本地调度与远程触发 |
+| 14 | [Plan 模式与结构化工作流](第四部分-工程实践篇/14-Plan模式与结构化工作流.md) | “先想后做”哲学；计划文件三层恢复策略；本地调度与远程触发 |
 | 15 | [构建你自己的 Agent Harness](第四部分-工程实践篇/15-构建你自己的Agent-Harness.md) | 六步实现路线图；循环依赖解决方案；四层可观测性体系；安全威胁模型 |
 
-### Appendix — 参考资料速查
+### 附录 — 参考资料速查
 
 | | 内容 |
 |:-:|------|
 | [A](附录/A-源码导航地图.md) | **架构导航地图** — 16 个核心模块、依赖树、6 条数据流路径、四层架构、10 种设计模式 |
-| [B](附录/B-工具完整清单.md) | **工具完整清单** — 50+ 工具 × 12 类，readOnly/destructive/concurrencySafe 属性 |
+| [B](附录/B-工具完整清单.md) | **工具完整清单** — 50 个工具 × 12 类，readOnly/destructive/concurrencySafe 属性 |
 | [C](附录/C-功能标志速查表.md) | **功能标志速查表** — 89 个 Flag × 13 类，编译时/运行时类型，依赖关系图 |
 | [D](附录/D-术语表.md) | **术语表** — 100 条中英对照术语，含交叉引用和章节定位 |
 
@@ -186,8 +186,8 @@
 
 <p align="center">
   <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">
-    <img src="https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey" alt="CC BY-NC-SA 4.0" />
+    <img src="https://img.shields.io/badge/license-CC BY--NC--SA 4.0-lightgrey" alt="CC BY-NC-SA 4.0" />
   </a>
   <br/><br/>
-  可自由分享和改编，但须署名、非商业使用、并以相同协议共享。
+  You are free to share and adapt, but must give credit, non-commercial use, and share under the same license.
 </p>

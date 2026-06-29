@@ -65,8 +65,9 @@ export async function PATCH(
     }
 
     return NextResponse.json({ success: true, filename: trimmed })
-  } catch {
-    return NextResponse.json({ error: "重命名失败" }, { status: 500 })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "重命名失败"
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
@@ -85,9 +86,13 @@ export async function DELETE(
   }
 
   try {
-    await deleteFile(pathname)
+    const success = await deleteFile(pathname)
+    if (!success) {
+      return NextResponse.json({ error: "删除失败，文件可能在 Blob 存储中未找到" }, { status: 500 })
+    }
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: "删除失败" }, { status: 500 })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "删除失败"
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

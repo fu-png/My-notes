@@ -202,12 +202,23 @@ export async function deleteFile(pathname: string): Promise<boolean> {
   if (USE_BLOB) {
     try {
       const blob = await findBlobByPathname(pathname)
-      if (!blob) return false
+      if (!blob) {
+        console.error("[storage] deleteFile: blob not found for pathname:", pathname)
+        return false
+      }
       await del(blob.url)
       return true
-    } catch {
+    } catch (err) {
+      console.error("[storage] deleteFile error:", err)
       return false
     }
+  }
+
+  // Vercel 线上环境文件系统只读
+  if (IS_VERCEL_PRODUCTION) {
+    throw new Error(
+      "Vercel 生产环境文件系统只读，无法删除文件。请前往 Vercel Dashboard → Storage → 创建 Blob Store。"
+    )
   }
 
   const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
@@ -229,20 +240,37 @@ export async function renameFile(oldPathname: string, newPathname: string): Prom
   if (USE_BLOB) {
     try {
       const blob = await findBlobByPathname(oldPathname)
-      if (!blob) return false
+      if (!blob) {
+        console.error("[storage] renameFile: blob not found for pathname:", oldPathname)
+        return false
+      }
       const response = await fetch(blob.url)
-      if (!response.ok) return false
+      if (!response.ok) {
+        console.error("[storage] renameFile: fetch failed, status:", response.status)
+        return false
+      }
       const content = Buffer.from(await response.arrayBuffer())
+      // 从旧文件 URL 推断 contentType
+      const contentType = response.headers.get("content-type") || undefined
       await put(newPathname, content, {
         access: "public",
         addRandomSuffix: false,
-        allowOverwrite: false,
+        allowOverwrite: true,
+        contentType,
       })
       await del(blob.url)
       return true
-    } catch {
+    } catch (err) {
+      console.error("[storage] renameFile error:", err)
       return false
     }
+  }
+
+  // Vercel 线上环境文件系统只读
+  if (IS_VERCEL_PRODUCTION) {
+    throw new Error(
+      "Vercel 生产环境文件系统只读，无法重命名文件。请前往 Vercel Dashboard → Storage → 创建 Blob Store。"
+    )
   }
 
   // 本地文件系统
@@ -272,9 +300,17 @@ export async function deletePrefix(prefix: string): Promise<boolean> {
         await del(urls)
       }
       return true
-    } catch {
+    } catch (err) {
+      console.error("[storage] deletePrefix error:", err)
       return false
     }
+  }
+
+  // Vercel 线上环境文件系统只读
+  if (IS_VERCEL_PRODUCTION) {
+    throw new Error(
+      "Vercel 生产环境文件系统只读，无法删除目录。请前往 Vercel Dashboard → Storage → 创建 Blob Store。"
+    )
   }
 
   const dirPath = path.join(LOCAL_CONTENT_DIR, prefix)
@@ -354,10 +390,13 @@ export async function getProjects(): Promise<ProjectMeta[]> {
         if (!response.ok) continue
         const meta = await response.json() as ProjectMeta
 
-        // 计算文件数量：同项目前缀下的文件数 - 1（meta.json）
+        // 计算文件数量：同项目前缀下的文件数 - 1（meta.json），排除子目录文件
         const projectPrefix = metaBlob.pathname.replace("meta.json", "")
         const allFiles = metaFiles.filter(
-          (f) => f.pathname.startsWith(projectPrefix) && f.pathname !== metaBlob.pathname
+          (f) =>
+            f.pathname.startsWith(projectPrefix) &&
+            f.pathname !== metaBlob.pathname &&
+            !f.pathname.slice(projectPrefix.length).includes("/")
         )
         projects.push({ ...meta, fileCount: allFiles.length })
       } catch {
@@ -410,10 +449,16 @@ export async function getProject(id: string): Promise<{ meta: ProjectMeta; files
   try {
     const meta = JSON.parse(metaContent) as ProjectMeta
 
-    // 列出项目下的所有文件（排除 meta.json）
-    const allFiles = await listFiles(`projects/${id}/`)
+    // 列出项目下的所有文件（排除 meta.json 和子目录文件如 .audio/、.rag/）
+    const projectPrefix = `projects/${id}/`
+    const allFiles = await listFiles(projectPrefix)
     const files = allFiles
       .filter((f) => !f.pathname.endsWith("/meta.json"))
+      .filter((f) => {
+        // 只包含直接位于项目目录下的文件，排除子目录（.audio/、.rag/ 等）
+        const relativePath = f.pathname.slice(projectPrefix.length)
+        return !relativePath.includes("/")
+      })
       .map((f) => {
         const filename = f.pathname.split("/").pop() ?? ""
         return {
@@ -484,8 +529,15 @@ async function findBlobByPathname(pathname: string) {
     if (exact) {
       return { url: exact.url, pathname: exact.pathname, size: exact.size }
     }
+    // list prefix 匹配可能返回相近但不完全匹配的结果
+    if (result.blobs.length > 0 && !exact) {
+      console.warn("[storage] findBlobByPathname: prefix matched but no exact match.",
+        "searched:", pathname,
+        "found:", result.blobs.map(b => b.pathname))
+    }
     return null
-  } catch {
+  } catch (err) {
+    console.error("[storage] findBlobByPathname error:", err)
     return null
   }
 }

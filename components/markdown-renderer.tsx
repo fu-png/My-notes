@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeRaw from "rehype-raw"
 import rehypeSlug from "rehype-slug"
-import { IconCopy, IconCheck, IconLink } from "@tabler/icons-react"
+import { IconCopy, IconCheck } from "@tabler/icons-react"
 
 interface MarkdownRendererProps {
   content: string
@@ -171,24 +171,15 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-function HeadingWithAnchor({
+function HeadingWithId({
   level,
   children,
   id,
 }: { level: number; children?: React.ReactNode; id?: string }) {
   const Tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
   return (
-    <Tag id={id} className="group/heading relative">
+    <Tag id={id}>
       {children}
-      {id && (
-        <a
-          href={`#${id}`}
-          className="ml-2 inline-flex text-muted-foreground/0 transition-colors group-hover/heading:text-muted-foreground"
-          aria-label="锚点链接"
-        >
-          <IconLink className="size-4" />
-        </a>
-      )}
     </Tag>
   )
 }
@@ -226,16 +217,16 @@ const markdownComponents = {
     )
   },
   h1({ children, id }: { children?: React.ReactNode; id?: string }) {
-    return <HeadingWithAnchor level={1} id={id}>{children}</HeadingWithAnchor>
+    return <HeadingWithId level={1} id={id}>{children}</HeadingWithId>
   },
   h2({ children, id }: { children?: React.ReactNode; id?: string }) {
-    return <HeadingWithAnchor level={2} id={id}>{children}</HeadingWithAnchor>
+    return <HeadingWithId level={2} id={id}>{children}</HeadingWithId>
   },
   h3({ children, id }: { children?: React.ReactNode; id?: string }) {
-    return <HeadingWithAnchor level={3} id={id}>{children}</HeadingWithAnchor>
+    return <HeadingWithId level={3} id={id}>{children}</HeadingWithId>
   },
   h4({ children, id }: { children?: React.ReactNode; id?: string }) {
-    return <HeadingWithAnchor level={4} id={id}>{children}</HeadingWithAnchor>
+    return <HeadingWithId level={4} id={id}>{children}</HeadingWithId>
   },
 }
 

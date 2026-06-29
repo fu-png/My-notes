@@ -10,6 +10,7 @@ import {
   IconCheck,
   IconEdit,
   IconChevronLeft,
+  IconDotsVertical,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,8 +18,18 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 import type { DocFile } from "./types"
 import { getFileIcon } from "./types"
+
+// ─── Constants ───
+
+const FILE_INPUT_ACCEPT = ".md,.txt,.json,.yaml,.yml,.csv,.tsv,.xml,.html,.htm,.js,.ts,.jsx,.tsx,.css,.py,.go,.java,.rs,.sh,.toml,.ini,.env,.log,.pdf,.docx,.xlsx,.pptx"
 
 // ─── File Item (shared between desktop and mobile sidebar) ───
 
@@ -38,7 +49,7 @@ interface FileItemProps {
   onDeleteRequest: (filename: string) => void
 }
 
-function FileItem({
+const FileItem = React.memo(function FileItem({
   file,
   isActive,
   renamingFile,
@@ -53,6 +64,9 @@ function FileItem({
   onRenameValueChange,
   onDeleteRequest,
 }: FileItemProps) {
+  const isRenaming = renamingFile === file.filename
+  const isDeleting = deleting === file.filename
+
   return (
     <div
       className={`group flex items-center px-3 py-2 text-[13px] transition-colors ${
@@ -61,8 +75,7 @@ function FileItem({
           : "border-l-2 border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       }`}
     >
-      {renamingFile === file.filename ? (
-        /* ── 重命名输入框 ── */
+      {isRenaming ? (
         <form
           className="flex min-w-0 flex-1 items-center gap-1"
           onSubmit={(e) => { e.preventDefault(); onSubmitRename() }}
@@ -95,7 +108,6 @@ function FileItem({
           </button>
         </form>
       ) : (
-        /* ── 正常显示 ── */
         <>
           <button
             onClick={() => onSelect(file.filename)}
@@ -105,40 +117,41 @@ function FileItem({
             {getFileIcon(file.filename)}
             <span className="truncate">{file.title}</span>
           </button>
-          <div className="ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-            <Tooltip>
-              <TooltipTrigger asChild>
+          <div className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
-                  onClick={(e) => { e.stopPropagation(); onStartRename(file.filename) }}
+                  onClick={(e) => e.stopPropagation()}
+                  disabled={isDeleting}
                   className="p-1 text-muted-foreground hover:text-foreground"
                 >
-                  <IconEdit className="size-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">重命名</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDeleteRequest(file.filename) }}
-                  disabled={deleting === file.filename}
-                  className="p-1 hover:text-destructive"
-                >
-                  {deleting === file.filename ? (
+                  {isDeleting ? (
                     <IconLoader2 className="size-3.5 animate-spin" />
                   ) : (
-                    <IconTrash className="size-3.5" />
+                    <IconDotsVertical className="size-3.5" />
                   )}
                 </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">删除</TooltipContent>
-            </Tooltip>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="right" sideOffset={4}>
+                <DropdownMenuItem onClick={() => onStartRename(file.filename)}>
+                  <IconEdit className="size-3.5" />
+                  编辑
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => onDeleteRequest(file.filename)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <IconTrash className="size-3.5" />
+                  删除
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </>
       )}
     </div>
   )
-}
+})
 
 // ─── Desktop File Explorer ───
 
@@ -170,7 +183,7 @@ export interface FileExplorerProps {
   onDrop: (e: React.DragEvent) => void
 }
 
-export function FileExplorer({
+export const FileExplorer = React.memo(function FileExplorer({
   projectName,
   files,
   loadingFiles,
@@ -296,7 +309,7 @@ export function FileExplorer({
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".md,.txt,.json,.yaml,.yml,.csv,.tsv,.xml,.html,.htm,.js,.ts,.jsx,.tsx,.css,.py,.go,.java,.rs,.sh,.toml,.ini,.env,.log,.pdf,.docx,.xlsx,.pptx"
+        accept={FILE_INPUT_ACCEPT}
         onChange={(e) => {
           const files = e.target.files
           if (files && files.length > 0) onUpload(files)
@@ -315,7 +328,7 @@ export function FileExplorer({
       )}
     </div>
   )
-}
+})
 
 // ─── Mobile File List (for Sheet content) ───
 
@@ -336,7 +349,7 @@ export interface MobileFileListProps {
   onDeleteRequest: (filename: string) => void
 }
 
-export function MobileFileList({
+export const MobileFileList = React.memo(function MobileFileList({
   projectName,
   files,
   activeFile,
@@ -379,4 +392,4 @@ export function MobileFileList({
       </div>
     </>
   )
-}
+})

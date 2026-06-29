@@ -9,7 +9,7 @@ export default function NotFound() {
         你访问的页面不存在或已被移动。
       </p>
       <Link
-        href="/docs"
+        href="/"
         className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
       >
         返回首页
