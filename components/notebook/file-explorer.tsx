@@ -370,7 +370,7 @@ export const MobileFileList = React.memo(function MobileFileList({
       <div className="border-b px-3 py-2 text-left">
         <span className="text-sm font-medium">{projectName}</span>
       </div>
-      <div className="h-[calc(100vh-4rem)] overflow-y-auto py-1">
+      <div className="overflow-y-auto py-1">
         {files.map((file) => (
           <FileItem
             key={file.filename}
