@@ -12,7 +12,6 @@ import {
   IconLayoutSidebarRightExpand,
   IconLink,
   IconLanguage,
-  IconChevronDown,
 } from "@tabler/icons-react"
 import {
   AlertDialog,
@@ -39,6 +38,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { getAIConfig, getTTSConfig, isAIConfigured, getConfiguredModel } from "@/components/settings-dialog"
 import dynamic from "next/dynamic"
 
@@ -106,9 +110,6 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const [renameValue, setRenameValue] = React.useState("")
   const [renaming, setRenaming] = React.useState(false)
   const renameInputRef = React.useRef<HTMLInputElement>(null)
-
-  // Mobile file list floating panel
-  const [mobileFileListOpen, setMobileFileListOpen] = React.useState(false)
 
   // Editor state
   const [editMode, setEditMode] = React.useState(false)
@@ -1705,54 +1706,40 @@ ${fileContent}` : ""}
 
         {/* ─── Center: Document Viewer / Editor ─── */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Mobile header with floating file list */}
-          <div className="relative flex items-center justify-between border-b px-3 py-2 md:hidden">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setMobileFileListOpen(!mobileFileListOpen)}
-            >
-              <IconFile className="size-4" />
-              <span className="max-w-[120px] truncate">{activeTitle || "选择文件"}</span>
-              <IconChevronDown className={`size-3.5 transition-transform ${mobileFileListOpen ? "rotate-180" : ""}`} />
-            </Button>
+          {/* Mobile header */}
+          <div className="flex items-center justify-between border-b px-3 py-2 md:hidden">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-1.5">
+                  <IconFile className="size-4" />
+                  <span className="max-w-[120px] truncate">{activeTitle || "选择文件"}</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-72 p-0">
+                <MobileFileList
+                  projectName={projectName}
+                  files={files}
+                  activeFile={activeFile}
+                  deleting={deleting}
+                  renamingFile={renamingFile}
+                  renameValue={renameValue}
+                  renaming={renaming}
+                  renameInputRef={renameInputRef}
+                  onSelectFile={selectFile}
+                  onStartRename={startRename}
+                  onCancelRename={cancelRename}
+                  onSubmitRename={handleRenameFile}
+                  onRenameValueChange={setRenameValue}
+                  onDeleteRequest={(filename: string) => {
+                    deleteTargetRef.current = filename
+                    setDeleteTarget(filename)
+                  }}
+                />
+              </SheetContent>
+            </Sheet>
             <Button variant="ghost" size="sm" onClick={() => setShowAI(!showAI)}>
               <IconLayoutSidebarRightExpand className="size-4" />
             </Button>
-            {/* Floating file list overlay */}
-            {mobileFileListOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-40 bg-black/20"
-                  onClick={() => setMobileFileListOpen(false)}
-                />
-                <div className="absolute left-0 right-0 top-full z-50 max-h-[60vh] overflow-y-auto rounded-b-lg border-x border-b bg-background shadow-lg">
-                  <MobileFileList
-                    projectName={projectName}
-                    files={files}
-                    activeFile={activeFile}
-                    deleting={deleting}
-                    renamingFile={renamingFile}
-                    renameValue={renameValue}
-                    renaming={renaming}
-                    renameInputRef={renameInputRef}
-                    onSelectFile={(filename: string) => {
-                      selectFile(filename)
-                      setMobileFileListOpen(false)
-                    }}
-                    onStartRename={startRename}
-                    onCancelRename={cancelRename}
-                    onSubmitRename={handleRenameFile}
-                    onRenameValueChange={setRenameValue}
-                    onDeleteRequest={(filename: string) => {
-                      deleteTargetRef.current = filename
-                      setDeleteTarget(filename)
-                    }}
-                  />
-                </div>
-              </>
-            )}
           </div>
 
           {/* Desktop header */}
