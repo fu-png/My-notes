@@ -216,6 +216,46 @@ export async function deleteFile(pathname: string): Promise<boolean> {
   return true
 }
 
+/** 重命名文件（读取旧文件内容，写入新路径，删除旧文件） */
+export async function renameFile(oldPathname: string, newPathname: string): Promise<boolean> {
+  // 检查旧文件是否存在
+  const exists = await fileExists(oldPathname)
+  if (!exists) return false
+
+  // 检查新路径是否已被占用
+  const newExists = await fileExists(newPathname)
+  if (newExists) return false
+
+  if (USE_BLOB) {
+    try {
+      const blob = await findBlobByPathname(oldPathname)
+      if (!blob) return false
+      const response = await fetch(blob.url)
+      if (!response.ok) return false
+      const content = Buffer.from(await response.arrayBuffer())
+      await put(newPathname, content, {
+        access: "public",
+        addRandomSuffix: false,
+        allowOverwrite: false,
+      })
+      await del(blob.url)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // 本地文件系统
+  const oldPath = path.join(LOCAL_CONTENT_DIR, oldPathname)
+  const newPath = path.join(LOCAL_CONTENT_DIR, newPathname)
+  const dir = path.dirname(newPath)
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  fs.renameSync(oldPath, newPath)
+  return true
+}
+
 /** 删除指定前缀下的所有文件 */
 export async function deletePrefix(prefix: string): Promise<boolean> {
   if (USE_BLOB) {

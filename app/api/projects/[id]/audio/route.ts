@@ -162,7 +162,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
           if (!scriptRes.ok) {
             const err = await scriptRes.text()
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `脚本生成失败: ${scriptRes.status} ${err.slice(0, 200)}` })}\n\n`))
-            controller.close()
             return
           }
 
@@ -273,7 +272,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
             const parseMsg = parseError instanceof Error ? parseError.message : "未知解析错误"
             console.error("[Audio] JSON parse error:", parseMsg, "\nRaw content (first 500 chars):", rawContent.slice(0, 500))
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `对话脚本格式解析失败: ${parseMsg}，请重试` })}\n\n`))
-            controller.close()
             return
           }
 
@@ -285,7 +283,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
           // 如果仅生成脚本，到此结束
           if (action === "script") {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false })}\n\n`))
-            controller.close()
             return
           }
 
@@ -320,7 +317,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 // TTS API 不可用，返回仅脚本结果
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_unavailable", message: "TTS API 不可用，已生成对话脚本，你可以使用浏览器朗读功能收听" })}\n\n`))
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false, script: dialogue })}\n\n`))
-                controller.close()
                 return
               }
 
