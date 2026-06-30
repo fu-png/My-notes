@@ -173,17 +173,16 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   React.useEffect(() => {
     const handleSelection = () => {
       const selection = window.getSelection()
-      if (!selection || selection.isCollapsed) {
-        setSelectedText("")
-        return
-      }
+      if (!selection || selection.isCollapsed) return // 选区消失时不清除，保留已有划词
       const range = selection.getRangeAt(0)
       const container = docContentRef.current
       if (!container) return
       // 仅当选区在文档内容区域内时才捕获
       if (container.contains(range.commonAncestorContainer)) {
         const text = selection.toString().trim()
-        setSelectedText(text.length > 0 ? text : "")
+        if (text.length > 0) {
+          setSelectedText(text)
+        }
       }
     }
     document.addEventListener("mouseup", handleSelection)

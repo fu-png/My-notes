@@ -38,7 +38,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
-import { Toggle } from "@/components/ui/toggle"
+import { Switch } from "@/components/ui/switch"
 import type { ChatMessage, Conversation, DocFile } from "./types"
 import { GENERATE_TEMPLATES } from "./types"
 
@@ -587,15 +587,17 @@ export function ChatPanel({
             <div className="flex items-center gap-1.5">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Toggle
-                    size="sm"
-                    pressed={deepThinkMode}
-                    onPressedChange={onToggleDeepThink}
-                    className={`h-6 gap-1 px-1.5 text-[11px] ${deepThinkMode ? "bg-primary/15 text-primary hover:bg-primary/20" : "text-muted-foreground/70 hover:text-foreground"}`}
-                  >
-                    <IconBrain className="size-3" />
-                    深度思考
-                  </Toggle>
+                  <div className="flex items-center gap-1">
+                    <Switch
+                      size="sm"
+                      checked={deepThinkMode}
+                      onCheckedChange={onToggleDeepThink}
+                    />
+                    <span className={`flex items-center gap-0.5 text-[11px] ${deepThinkMode ? "text-primary" : "text-muted-foreground/70"}`}>
+                      <IconBrain className="size-3" />
+                      深度思考
+                    </span>
+                  </div>
                 </TooltipTrigger>
                 <TooltipContent side="top">
                   {deepThinkMode ? "深度思考已开启，点击关闭" : "开启深度思考模式"}
