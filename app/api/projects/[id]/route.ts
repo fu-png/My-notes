@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { getProject, deletePrefix, readFile, writeFile } from "@/lib/storage"
 
+export const dynamic = "force-dynamic"
+
 // GET /api/projects/[id] — get project detail with file list
 export async function GET(
   _request: NextRequest,

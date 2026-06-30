@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getProjects, createProject } from "@/lib/storage"
 
+// 禁止缓存，确保每次请求都读取最新数据
+export const dynamic = "force-dynamic"
+
 // GET /api/projects — list all projects
 export async function GET() {
   try {

@@ -2,6 +2,9 @@ import { NotebookWorkspace } from "@/components/notebook-workspace"
 import { notFound } from "next/navigation"
 import { readFile } from "@/lib/storage"
 
+// 禁止缓存，确保每次进入都读取最新的项目名称
+export const dynamic = "force-dynamic"
+
 export async function generateMetadata({
   params,
 }: {
