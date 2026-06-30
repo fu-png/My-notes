@@ -6,9 +6,6 @@ import {
   IconUpload,
   IconTrash,
   IconLoader2,
-  IconX,
-  IconCheck,
-  IconEdit,
   IconChevronLeft,
   IconDotsVertical,
 } from "@tabler/icons-react"
@@ -36,35 +33,18 @@ const FILE_INPUT_ACCEPT = ".md,.txt,.json,.yaml,.yml,.csv,.tsv,.xml,.html,.htm,.
 interface FileItemProps {
   file: DocFile
   isActive: boolean
-  renamingFile: string | null
-  renameValue: string
-  renaming: boolean
   deleting: string | null
-  renameInputRef: React.RefObject<HTMLInputElement | null>
   onSelect: (filename: string) => void
-  onStartRename: (filename: string) => void
-  onCancelRename: () => void
-  onSubmitRename: () => void
-  onRenameValueChange: (value: string) => void
   onDeleteRequest: (filename: string) => void
 }
 
 const FileItem = React.memo(function FileItem({
   file,
   isActive,
-  renamingFile,
-  renameValue,
-  renaming,
   deleting,
-  renameInputRef,
   onSelect,
-  onStartRename,
-  onCancelRename,
-  onSubmitRename,
-  onRenameValueChange,
   onDeleteRequest,
 }: FileItemProps) {
-  const isRenaming = renamingFile === file.filename
   const isDeleting = deleting === file.filename
 
   return (
@@ -75,80 +55,39 @@ const FileItem = React.memo(function FileItem({
           : "border-l-2 border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       }`}
     >
-      {isRenaming ? (
-        <form
-          className="flex min-w-0 flex-1 items-center gap-1"
-          onSubmit={(e) => { e.preventDefault(); onSubmitRename() }}
-        >
-          {getFileIcon(file.filename)}
-          <input
-            ref={renameInputRef}
-            value={renameValue}
-            onChange={(e) => onRenameValueChange(e.target.value)}
-            onBlur={() => { if (!renaming) onCancelRename() }}
-            onKeyDown={(e) => { if (e.key === "Escape") onCancelRename() }}
-            disabled={renaming}
-            autoFocus
-            className="min-w-0 flex-1 border-b border-primary bg-transparent px-0.5 py-0 text-[13px] outline-none"
-          />
-          <button
-            type="submit"
-            disabled={renaming || !renameValue.trim()}
-            className="shrink-0 p-0.5 text-primary hover:text-primary/80"
-          >
-            {renaming ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconCheck className="size-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={onCancelRename}
-            disabled={renaming}
-            className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground"
-          >
-            <IconX className="size-3.5" />
-          </button>
-        </form>
-      ) : (
-        <>
-          <button
-            onClick={() => onSelect(file.filename)}
-            onDoubleClick={(e) => { e.preventDefault(); onStartRename(file.filename) }}
-            className="flex min-w-0 flex-1 items-center gap-2"
-          >
-            {getFileIcon(file.filename)}
-            <span className="truncate">{file.title}</span>
-          </button>
-          <div className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  onClick={(e) => e.stopPropagation()}
-                  disabled={isDeleting}
-                  className="p-1 text-muted-foreground hover:text-foreground"
-                >
-                  {isDeleting ? (
-                    <IconLoader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <IconDotsVertical className="size-3.5" />
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="right" sideOffset={4}>
-                <DropdownMenuItem onClick={() => onStartRename(file.filename)}>
-                  <IconEdit className="size-3.5" />
-                  编辑
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => onDeleteRequest(file.filename)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <IconTrash className="size-3.5" />
-                  删除
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </>
-      )}
+      <button
+        onClick={() => onSelect(file.filename)}
+        className="flex min-w-0 flex-1 items-center gap-2"
+      >
+        {getFileIcon(file.filename)}
+        <span className="truncate">{file.title}</span>
+      </button>
+      <div className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              onClick={(e) => e.stopPropagation()}
+              disabled={isDeleting}
+              className="p-1 text-muted-foreground hover:text-foreground"
+            >
+              {isDeleting ? (
+                <IconLoader2 className="size-3.5 animate-spin" />
+              ) : (
+                <IconDotsVertical className="size-3.5" />
+              )}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="right" sideOffset={4}>
+            <DropdownMenuItem
+              onClick={() => onDeleteRequest(file.filename)}
+              className="text-destructive focus:text-destructive"
+            >
+              <IconTrash className="size-3.5" />
+              删除
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   )
 })
@@ -163,17 +102,9 @@ export interface FileExplorerProps {
   uploading: boolean
   isDragging: boolean
   deleting: string | null
-  renamingFile: string | null
-  renameValue: string
-  renaming: boolean
-  renameInputRef: React.RefObject<HTMLInputElement | null>
   fileInputRef: React.RefObject<HTMLInputElement | null>
   onBack: () => void
   onSelectFile: (filename: string) => void
-  onStartRename: (filename: string) => void
-  onCancelRename: () => void
-  onSubmitRename: () => void
-  onRenameValueChange: (value: string) => void
   onDeleteRequest: (filename: string) => void
   onCreateFile: () => void
   onUploadClick: () => void
@@ -191,17 +122,9 @@ export const FileExplorer = React.memo(function FileExplorer({
   uploading,
   isDragging,
   deleting,
-  renamingFile,
-  renameValue,
-  renaming,
-  renameInputRef,
   fileInputRef,
   onBack,
   onSelectFile,
-  onStartRename,
-  onCancelRename,
-  onSubmitRename,
-  onRenameValueChange,
   onDeleteRequest,
   onCreateFile,
   onUploadClick,
@@ -287,16 +210,8 @@ export const FileExplorer = React.memo(function FileExplorer({
                 key={file.filename}
                 file={file}
                 isActive={activeFile === file.filename}
-                renamingFile={renamingFile}
-                renameValue={renameValue}
-                renaming={renaming}
                 deleting={deleting}
-                renameInputRef={renameInputRef}
                 onSelect={onSelectFile}
-                onStartRename={onStartRename}
-                onCancelRename={onCancelRename}
-                onSubmitRename={onSubmitRename}
-                onRenameValueChange={onRenameValueChange}
                 onDeleteRequest={onDeleteRequest}
               />
             ))
@@ -337,15 +252,7 @@ export interface MobileFileListProps {
   files: DocFile[]
   activeFile: string | null
   deleting: string | null
-  renamingFile: string | null
-  renameValue: string
-  renaming: boolean
-  renameInputRef: React.RefObject<HTMLInputElement | null>
   onSelectFile: (filename: string) => void
-  onStartRename: (filename: string) => void
-  onCancelRename: () => void
-  onSubmitRename: () => void
-  onRenameValueChange: (value: string) => void
   onDeleteRequest: (filename: string) => void
 }
 
@@ -354,15 +261,7 @@ export const MobileFileList = React.memo(function MobileFileList({
   files,
   activeFile,
   deleting,
-  renamingFile,
-  renameValue,
-  renaming,
-  renameInputRef,
   onSelectFile,
-  onStartRename,
-  onCancelRename,
-  onSubmitRename,
-  onRenameValueChange,
   onDeleteRequest,
 }: MobileFileListProps) {
   return (
@@ -376,16 +275,8 @@ export const MobileFileList = React.memo(function MobileFileList({
             key={file.filename}
             file={file}
             isActive={activeFile === file.filename}
-            renamingFile={renamingFile}
-            renameValue={renameValue}
-            renaming={renaming}
             deleting={deleting}
-            renameInputRef={renameInputRef}
             onSelect={onSelectFile}
-            onStartRename={onStartRename}
-            onCancelRename={onCancelRename}
-            onSubmitRename={onSubmitRename}
-            onRenameValueChange={onRenameValueChange}
             onDeleteRequest={onDeleteRequest}
           />
         ))}

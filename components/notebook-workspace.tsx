@@ -110,13 +110,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const deleteTargetRef = React.useRef<string | null>(null)
   const [deleting, setDeleting] = React.useState<string | null>(null)
 
-  // Rename state
-  const [renamingFile, setRenamingFile] = React.useState<string | null>(null)
-  const [renameValue, setRenameValue] = React.useState("")
-  const [renaming, setRenaming] = React.useState(false)
-  const renameInputRef = React.useRef<HTMLInputElement>(null)
-
-  // Editor state
+// Editor state
   const [editMode, setEditMode] = React.useState(false)
   const [editContent, setEditContent] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -696,67 +690,6 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       setDeleting(null)
     }
   }
-
-  // ─── Rename ───
-
-  const startRename = React.useCallback((filename: string) => {
-    const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : ""
-    const title = ext ? filename.slice(0, -ext.length) : filename
-    setRenamingFile(filename)
-    setRenameValue(title)
-    setTimeout(() => renameInputRef.current?.select(), 50)
-  }, [])
-
-  const cancelRename = React.useCallback(() => {
-    setRenamingFile(null)
-    setRenameValue("")
-  }, [])
-
-  const handleRenameFile = React.useCallback(async () => {
-    if (!renamingFile || !renameValue.trim() || renaming) return
-    const oldFilename = renamingFile
-    const ext = oldFilename.includes(".") ? oldFilename.slice(oldFilename.lastIndexOf(".")) : ""
-    const newFilename = renameValue.trim() + ext
-
-    if (newFilename === oldFilename) {
-      cancelRename()
-      return
-    }
-
-    setRenaming(true)
-    try {
-      const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(oldFilename)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ newFilename }),
-        }
-      )
-      if (res.ok) {
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.filename === oldFilename
-              ? { filename: newFilename, title: newFilename.replace(/\.[^.]+$/, "") }
-              : f
-          )
-        )
-        if (activeFile === oldFilename) {
-          setActiveFile(newFilename)
-        }
-        showToast("success", "已重命名")
-        triggerAutoIndex()
-      } else {
-        const data = await res.json().catch(() => ({}))
-        showToast("error", data.error || "重命名失败")
-      }
-    } catch {
-      showToast("error", "网络错误，重命名失败")
-    } finally {
-      setRenaming(false)
-      cancelRename()
-    }
-  }, [renamingFile, renameValue, renaming, projectId, activeFile, showToast, triggerAutoIndex, cancelRename])
 
   const handleSave = async () => {
     if (!activeFile) return
@@ -1962,17 +1895,9 @@ ${fileContent}` : ""}${webContextBlock}
           uploading={uploading}
           isDragging={isDragging}
           deleting={deleting}
-          renamingFile={renamingFile}
-          renameValue={renameValue}
-          renaming={renaming}
-          renameInputRef={renameInputRef}
           fileInputRef={fileInputRef}
           onBack={() => router.push("/docs/projects")}
           onSelectFile={selectFile}
-          onStartRename={startRename}
-          onCancelRename={cancelRename}
-          onSubmitRename={handleRenameFile}
-          onRenameValueChange={setRenameValue}
           onDeleteRequest={(filename: string) => {
             deleteTargetRef.current = filename
             setDeleteTarget(filename)
@@ -2002,15 +1927,7 @@ ${fileContent}` : ""}${webContextBlock}
                   files={files}
                   activeFile={activeFile}
                   deleting={deleting}
-                  renamingFile={renamingFile}
-                  renameValue={renameValue}
-                  renaming={renaming}
-                  renameInputRef={renameInputRef}
                   onSelectFile={selectFile}
-                  onStartRename={startRename}
-                  onCancelRename={cancelRename}
-                  onSubmitRename={handleRenameFile}
-                  onRenameValueChange={setRenameValue}
                   onDeleteRequest={(filename: string) => {
                     deleteTargetRef.current = filename
                     setDeleteTarget(filename)
