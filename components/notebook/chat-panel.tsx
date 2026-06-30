@@ -367,20 +367,33 @@ export function ChatPanel({
                       )}
                       {/* 互联网搜索来源 (Agent Reach) */}
                       {msg.webSources && msg.webSources.length > 0 && (
-                        <details className="mt-2 border border-border/50 bg-blue-50/50 dark:bg-blue-950/20 text-xs">
+                        <details className="mt-2 border border-border/50 bg-blue-50/50 dark:bg-blue-950/20 text-xs" open={msg.webSources.length <= 3}>
                           <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground hover:text-foreground">
                             <IconWorld className="size-3 text-blue-500" />
-                            来自互联网 · {msg.webSources[0].action === "search" ? `搜索「${msg.webSources[0].query}」` : msg.webSources[0].action === "web" ? "网页内容" : msg.webSources[0].action === "youtube" ? "YouTube 视频" : msg.webSources[0].action === "github" ? "GitHub 仓库" : msg.webSources[0].action === "bilibili" ? "B站内容" : "互联网内容"}
+                            {msg.webSources[0].action === "search"
+                              ? `搜索「${msg.webSources[0].query}」· ${msg.webSources.length} 条结果`
+                              : msg.webSources[0].action === "web" ? "网页内容"
+                              : msg.webSources[0].action === "youtube" ? "YouTube 视频"
+                              : msg.webSources[0].action === "github" ? "GitHub"
+                              : msg.webSources[0].action === "bilibili" ? "B站"
+                              : "互联网内容"}
                           </summary>
-                          <div className="space-y-1 border-t px-2.5 py-2">
+                          <div className="space-y-1.5 border-t px-2.5 py-2">
                             {msg.webSources.map((src, i) => (
-                              <div key={i} className="text-muted-foreground">
-                                {src.url && (
-                                  <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all">
-                                    {src.url}
-                                  </a>
-                                )}
-                                <p className="mt-0.5 line-clamp-3 text-[11px] leading-relaxed text-muted-foreground/60">{src.snippet}</p>
+                              <div key={i} className="flex items-start gap-1.5 text-muted-foreground">
+                                <span className="mt-px shrink-0 font-mono text-[10px] text-blue-500/70">[{i + 1}]</span>
+                                <div className="min-w-0">
+                                  {src.url ? (
+                                    <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all text-[11px] font-medium">
+                                      {src.snippet || src.url}
+                                    </a>
+                                  ) : (
+                                    <span className="text-[11px] font-medium text-foreground/80">{src.snippet}</span>
+                                  )}
+                                  {src.url && src.snippet && src.snippet !== src.url && (
+                                    <p className="mt-0.5 text-[10px] text-muted-foreground/50 truncate">{src.url}</p>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>

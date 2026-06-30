@@ -805,7 +805,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const detectWebIntent = (text: string): { action: string; query?: string; url?: string } | null => {
     const trimmed = text.trim()
 
-    // 检测 URL
+    // 1. 检测 URL（优先级最高）
     const urlMatch = trimmed.match(/https?:\/\/[^\s]+/)
     if (urlMatch) {
       const url = urlMatch[0]
@@ -818,12 +818,27 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       return { action: "web", url }
     }
 
-    // 检测搜索意图关键词
-    const searchPrefixes = ["搜索", "搜一下", "查一下", "帮我搜", "帮我查", "search", "look up", "find"]
+    // 2. 显式搜索前缀
+    const searchPrefixes = ["搜索", "搜一下", "查一下", "帮我搜", "帮我查", "帮我找", "search", "look up", "find"]
     for (const prefix of searchPrefixes) {
       if (trimmed.toLowerCase().startsWith(prefix)) {
         const query = trimmed.slice(prefix.length).replace(/^[：:\s]+/, "").trim()
         if (query) return { action: "search", query }
+      }
+    }
+
+    // 3. 隐式搜索意图检测（含时效性/外部知识关键词）
+    const implicitPatterns = [
+      /(?:最新|最近|今年|2024|2025|2026).*(?:趋势|动态|进展|新闻|消息|发展|报道)/,
+      /(?:现在|目前|当前|当下).*(?:怎么样|如何|什么情况|状态)/,
+      /(?:有没有|有哪些|推荐一些?).*(?:工具|框架|库|教程|资源|方案|文章)/,
+      /(?:对比|比较|区别|差异).*(?:和|与|vs|VS)/,
+      /(?:怎么评价|如何看待|大家怎么看|口碑|测评|评测)/,
+      /(?:什么是|介绍一下)(?!.*(?:文档|笔记|这个|本文|这篇))/,
+    ]
+    for (const pattern of implicitPatterns) {
+      if (pattern.test(trimmed)) {
+        return { action: "search", query: trimmed }
       }
     }
 
@@ -836,9 +851,21 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     aiMsgId: string
   ): Promise<{ content: string; sources: ChatMessage["webSources"] } | null> => {
     // 更新 AI 消息显示搜索状态
+    const statusText = intent.action === "search"
+      ? `🔍 正在搜索「${intent.query}」...`
+      : intent.action === "web"
+      ? `🌐 正在读取网页内容...`
+      : intent.action === "youtube"
+      ? `▶️ 正在获取视频信息...`
+      : intent.action === "github"
+      ? `🐙 正在查询 GitHub...`
+      : intent.action === "bilibili"
+      ? `📺 正在搜索B站...`
+      : `🌐 正在获取互联网内容...`
+
     setChatMessages((prev) =>
       prev.map((m) =>
-        m.id === aiMsgId ? { ...m, content: "🌐 正在从互联网获取内容..." } : m
+        m.id === aiMsgId ? { ...m, content: statusText } : m
       )
     )
 
@@ -852,25 +879,56 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         console.warn("[Agent Reach] 调用失败:", data.error)
-        return null
+        // 降级：不阻断对话，返回错误提示让 AI 基于自身知识回答
+        return { content: "", sources: [] }
       }
 
       const data = await res.json()
-      if (!data.success || !data.content) return null
+      if (!data.success || !data.content) {
+        return { content: "", sources: [] }
+      }
 
-      const sources: ChatMessage["webSources"] = [
-        {
+      // 从搜索结果中提取多条来源
+      const sources: ChatMessage["webSources"] = []
+      if (intent.action === "search" && data.content) {
+        // 尝试从格式化文本提取每条结果的标题和 URL
+        const urlMatches = data.content.matchAll(/URL:\s*(https?:\/\/[^\s\n]+)/g)
+        const titleMatches = data.content.matchAll(/^\d+\.\s+(.+)$/gm)
+        const titles = [...titleMatches].map(m => m[1])
+        const urls = [...urlMatches].map(m => m[1])
+
+        for (let i = 0; i < Math.min(urls.length, 5); i++) {
+          sources.push({
+            action: "search",
+            query: intent.query,
+            url: urls[i],
+            snippet: titles[i] || urls[i],
+          })
+        }
+
+        // 如果没解析出单独来源，用整体摘要
+        if (sources.length === 0) {
+          sources.push({
+            action: intent.action,
+            query: intent.query,
+            url: intent.url,
+            snippet: data.content.slice(0, 200) + (data.content.length > 200 ? "..." : ""),
+          })
+        }
+      } else {
+        sources.push({
           action: intent.action,
           query: intent.query,
           url: intent.url,
           snippet: data.content.slice(0, 200) + (data.content.length > 200 ? "..." : ""),
-        },
-      ]
+        })
+      }
 
       return { content: data.content, sources }
     } catch (err) {
       console.warn("[Agent Reach] 网络错误:", err)
-      return null
+      // 网络失败时降级而非完全中断
+      return { content: "", sources: [] }
     }
   }
 
@@ -896,12 +954,14 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     const lastUserMsg = userMessages[userMessages.length - 1]
 
     // ── Agent Reach: 互联网内容预取 ──
+    let webSearchTriggered = false
     if (lastUserMsg) {
       const webIntent = detectWebIntent(lastUserMsg.content)
       if (webIntent) {
+        webSearchTriggered = true
         const webResult = await fetchWebContent(webIntent, aiMsgId)
         if (webResult) {
-          webSources = webResult.sources
+          webSources = webResult.sources && webResult.sources.length > 0 ? webResult.sources : undefined
           webContextText = webResult.content
         }
       }
@@ -943,7 +1003,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
     // 构建互联网搜索上下文段落
     const webContextBlock = webContextText
-      ? `\n\n## 互联网检索结果\n以下是通过 Agent Reach 从互联网获取的内容（来源：${webSources?.[0]?.action || "web"}${webSources?.[0]?.url ? `，URL: ${webSources[0].url}` : ""}${webSources?.[0]?.query ? `，搜索词: ${webSources[0].query}` : ""}）：\n\n${webContextText}\n\n请基于以上互联网内容回答用户的问题。如果内容与用户问题不完全匹配，可以提取有用的部分并结合你自己的知识补充。`
+      ? `\n\n## 互联网检索结果\n以下是实时从互联网获取的内容（${webSources?.[0]?.query ? `搜索词: 「${webSources[0].query}」` : ""}${webSources?.[0]?.url ? `来源: ${webSources[0].url}` : ""}）：\n\n${webContextText}\n\n## 使用说明\n- 请基于以上互联网内容回答用户问题，优先引用搜索结果中的事实和数据\n- 可以结合自己的知识进行补充和分析，但要区分搜索结果和自身推断\n- 如果搜索结果与问题不完全匹配，提取相关部分并说明\n- 回答中引用具体来源时标注 URL 链接`
       : ""
 
     if (ragContextText && ragSources && ragSources.length > 0) {
@@ -973,6 +1033,9 @@ ${fileContent}` : ""}${webContextBlock}
 5. 如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
     } else if (webContextText) {
       systemPrompt = `你是一个笔记 AI 助手，具备互联网搜索能力。${activeFile ? `用户当前正在查看文档「${activeFileName}」。` : ""}${webContextBlock}\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
+    } else if (webSearchTriggered && !webContextText) {
+      // 搜索被触发但结果为空（降级情况）
+      systemPrompt = `你是一个笔记 AI 助手。${activeFile ? `用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}\n\n` : ""}用户的问题可能涉及实时信息，但互联网搜索未能获取到结果。请基于你自己的知识尽力回答，并在回答末尾说明「注：联网搜索未返回结果，以上内容基于模型知识，可能不是最新信息。」\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
     } else if (activeFile) {
       systemPrompt = `你是一个笔记 AI 助手。用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
     } else {
