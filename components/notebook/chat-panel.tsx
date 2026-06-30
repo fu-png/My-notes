@@ -23,6 +23,7 @@ import {
   IconChevronRight,
   IconFileText,
   IconSend,
+  IconWorld,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -359,6 +360,27 @@ export function ChatPanel({
                                   )}
                                   <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/60">{src.snippet}</p>
                                 </div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                      {/* 互联网搜索来源 (Agent Reach) */}
+                      {msg.webSources && msg.webSources.length > 0 && (
+                        <details className="mt-2 border border-border/50 bg-blue-50/50 dark:bg-blue-950/20 text-xs">
+                          <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground hover:text-foreground">
+                            <IconWorld className="size-3 text-blue-500" />
+                            来自互联网 · {msg.webSources[0].action === "search" ? `搜索「${msg.webSources[0].query}」` : msg.webSources[0].action === "web" ? "网页内容" : msg.webSources[0].action === "youtube" ? "YouTube 视频" : msg.webSources[0].action === "github" ? "GitHub 仓库" : msg.webSources[0].action === "bilibili" ? "B站内容" : "互联网内容"}
+                          </summary>
+                          <div className="space-y-1 border-t px-2.5 py-2">
+                            {msg.webSources.map((src, i) => (
+                              <div key={i} className="text-muted-foreground">
+                                {src.url && (
+                                  <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all">
+                                    {src.url}
+                                  </a>
+                                )}
+                                <p className="mt-0.5 line-clamp-3 text-[11px] leading-relaxed text-muted-foreground/60">{src.snippet}</p>
                               </div>
                             ))}
                           </div>

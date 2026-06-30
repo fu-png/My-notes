@@ -31,6 +31,13 @@ export interface ChatMessage {
     snippet: string
     score: number
   }[]
+  /** 互联网搜索结果来源（Agent Reach） */
+  webSources?: {
+    action: string
+    query?: string
+    url?: string
+    snippet: string
+  }[]
   /** 笔记本指南生成的元信息 */
   generateMeta?: {
     type: string
@@ -87,7 +94,7 @@ export function countWords(text: string): { chars: number; words: number } {
 export const WELCOME_MESSAGE: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  content: `你好！我是你的 AI 笔记助手。我可以帮你：\n\n- 总结当前文档内容\n- 回答关于文档的问题\n- 帮你改写或润色文字\n- 生成新的笔记内容\n\n选择一个文档开始吧！`,
+  content: `你好！我是你的 AI 笔记助手。我可以帮你：\n\n- 总结当前文档内容\n- 回答关于文档的问题\n- 帮你改写或润色文字\n- 生成新的笔记内容\n- 🌐 搜索互联网内容（发送链接或以「搜索」开头提问）\n\n选择一个文档开始吧！`,
   timestamp: new Date(0),
 }
 

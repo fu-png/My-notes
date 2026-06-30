@@ -790,6 +790,81 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     if (droppedFiles.length > 0) handleUpload(droppedFiles)
   }, [handleUpload])
 
+  // ─── Web Search (Agent Reach) ───
+
+  /** 检测用户消息是否需要互联网搜索 */
+  const detectWebIntent = (text: string): { action: string; query?: string; url?: string } | null => {
+    const trimmed = text.trim()
+
+    // 检测 URL
+    const urlMatch = trimmed.match(/https?:\/\/[^\s]+/)
+    if (urlMatch) {
+      const url = urlMatch[0]
+      if (/youtube\.com|youtu\.be/i.test(url)) return { action: "youtube", url }
+      if (/github\.com/i.test(url)) {
+        const repoMatch = url.match(/github\.com\/([^/]+\/[^/\s?#]+)/)
+        return repoMatch ? { action: "github", query: repoMatch[1] } : { action: "web", url }
+      }
+      if (/bilibili\.com|b23\.tv/i.test(url)) return { action: "bilibili", url }
+      return { action: "web", url }
+    }
+
+    // 检测搜索意图关键词
+    const searchPrefixes = ["搜索", "搜一下", "查一下", "帮我搜", "帮我查", "search", "look up", "find"]
+    for (const prefix of searchPrefixes) {
+      if (trimmed.toLowerCase().startsWith(prefix)) {
+        const query = trimmed.slice(prefix.length).replace(/^[：:\s]+/, "").trim()
+        if (query) return { action: "search", query }
+      }
+    }
+
+    return null
+  }
+
+  /** 调用 Agent Reach 获取互联网内容 */
+  const fetchWebContent = async (
+    intent: { action: string; query?: string; url?: string },
+    aiMsgId: string
+  ): Promise<{ content: string; sources: ChatMessage["webSources"] } | null> => {
+    // 更新 AI 消息显示搜索状态
+    setChatMessages((prev) =>
+      prev.map((m) =>
+        m.id === aiMsgId ? { ...m, content: "🌐 正在从互联网获取内容..." } : m
+      )
+    )
+
+    try {
+      const res = await fetch("/api/agent-reach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(intent),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        console.warn("[Agent Reach] 调用失败:", data.error)
+        return null
+      }
+
+      const data = await res.json()
+      if (!data.success || !data.content) return null
+
+      const sources: ChatMessage["webSources"] = [
+        {
+          action: intent.action,
+          query: intent.query,
+          url: intent.url,
+          snippet: data.content.slice(0, 200) + (data.content.length > 200 ? "..." : ""),
+        },
+      ]
+
+      return { content: data.content, sources }
+    } catch (err) {
+      console.warn("[Agent Reach] 网络错误:", err)
+      return null
+    }
+  }
+
   // ─── Chat ───
 
   const streamAI = async (userMessages: ChatMessage[], aiMsgId: string) => {
@@ -807,7 +882,21 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
     let ragSources: ChatMessage["ragSources"] | undefined
     let ragContextText = ""
+    let webSources: ChatMessage["webSources"] | undefined
+    let webContextText = ""
     const lastUserMsg = userMessages[userMessages.length - 1]
+
+    // ── Agent Reach: 互联网内容预取 ──
+    if (lastUserMsg) {
+      const webIntent = detectWebIntent(lastUserMsg.content)
+      if (webIntent) {
+        const webResult = await fetchWebContent(webIntent, aiMsgId)
+        if (webResult) {
+          webSources = webResult.sources
+          webContextText = webResult.content
+        }
+      }
+    }
 
     if (ragEnabled && indexStatus?.indexed && lastUserMsg) {
       try {
@@ -843,6 +932,11 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     const activeFileName = activeFile ? (files.find((f) => f.filename === activeFile)?.title || activeFile) : undefined
     let systemPrompt: string
 
+    // 构建互联网搜索上下文段落
+    const webContextBlock = webContextText
+      ? `\n\n## 互联网检索结果\n以下是通过 Agent Reach 从互联网获取的内容（来源：${webSources?.[0]?.action || "web"}${webSources?.[0]?.url ? `，URL: ${webSources[0].url}` : ""}${webSources?.[0]?.query ? `，搜索词: ${webSources[0].query}` : ""}）：\n\n${webContextText}\n\n请基于以上互联网内容回答用户的问题。如果内容与用户问题不完全匹配，可以提取有用的部分并结合你自己的知识补充。`
+      : ""
+
     if (ragContextText && ragSources && ragSources.length > 0) {
       const sourceList = ragSources
         .map((s, i) => `  来源 ${i + 1}: ${s.fileTitle}${s.headingPath.length > 0 ? ` > ${s.headingPath.join(" > ")}` : ""}`)
@@ -860,7 +954,7 @@ ${sourceList}
 
 ${activeFile ? `## 当前打开的文档
 用户正在查看「${activeFileName}」，文档内容：
-${fileContent}` : ""}
+${fileContent}` : ""}${webContextBlock}
 
 ## 回答规范
 1. **优先使用检索到的参考资料**回答问题。引用具体内容时，使用 [来源 N] 标注出处。
@@ -868,10 +962,12 @@ ${fileContent}` : ""}
 3. 如果问题完全无法从参考资料和你的知识中回答，坦诚说明你不确定，而不是编造答案。
 4. 回复使用中文。
 5. 如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
+    } else if (webContextText) {
+      systemPrompt = `你是一个笔记 AI 助手，具备互联网搜索能力。${activeFile ? `用户当前正在查看文档「${activeFileName}」。` : ""}${webContextBlock}\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
     } else if (activeFile) {
       systemPrompt = `你是一个笔记 AI 助手。用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
     } else {
-      systemPrompt = "你是一个笔记 AI 助手。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。回复请使用中文。"
+      systemPrompt = "你是一个笔记 AI 助手，具备互联网搜索能力。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。用户也可以发送链接或以「搜索」开头来搜索互联网内容。回复请使用中文。"
     }
 
     const apiMessages = [
@@ -983,7 +1079,7 @@ ${fileContent}` : ""}
       }
 
       setChatMessages((prev) =>
-        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate, ragSources } : m))
+        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate, ragSources, webSources } : m))
       )
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "网络错误"
