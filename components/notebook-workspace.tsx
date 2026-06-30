@@ -295,6 +295,14 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   }, [chatMessages])
 
   const startNewConversation = () => {
+    // 中断正在进行的流式请求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    isStreamingRef.current = false
+    setChatLoading(false)
+    setGenerating(false)
     setActiveConversationId(null)
     setChatMessages([WELCOME_MESSAGE])
     setShowHistory(false)
@@ -1099,11 +1107,6 @@ ${fileContent}` : ""}${webContextBlock}
       systemPrompt += `\n\n## 用户选中的文本\n用户在文档中划选了以下内容，请针对这段内容回答用户的问题：\n\n"""\n${selectedText}\n"""\n\n请围绕这段选中文本来回答，如果用户的问题与选中文本无直接关联，也可以结合全文内容回答。`
     }
 
-    // 深度思考模式：在系统提示词末尾追加深度思考指令
-    if (deepThink) {
-      systemPrompt += "\n\n## 深度思考模式\n用户已开启深度思考模式。请在回答前进行深入的逐步推理：\n1. 先分析问题的核心要素和关键约束\n2. 考虑多种可能的思路和方法\n3. 逐步推导，权衡不同方案的优劣\n4. 验证你的推理过程是否有逻辑漏洞\n5. 最后给出经过深思熟虑的结论\n\n请将你的推理过程放在回答前面，用「## 思考过程」标题标注。然后给出最终回答。"
-    }
-
     const apiMessages = [
       { role: "system", content: systemPrompt },
       ...userMessages.filter((m) => m.id !== "welcome").map((m) => ({
@@ -1113,6 +1116,9 @@ ${fileContent}` : ""}${webContextBlock}
     ]
 
     try {
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1123,6 +1129,7 @@ ${fileContent}` : ""}${webContextBlock}
           model: chatModel,
           deepThink,
         }),
+        signal: controller.signal,
       })
 
       if (!res.ok) {
@@ -1231,6 +1238,8 @@ ${fileContent}` : ""}${webContextBlock}
         prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate, ragSources, webSources, reasoning: fullReasoning || undefined } : m))
       )
     } catch (err: unknown) {
+      // 用户中断（新建对话等）时不显示错误
+      if (err instanceof DOMException && err.name === "AbortError") return
       const msg = err instanceof Error ? err.message : "网络错误"
       setChatMessages((prev) =>
         prev.map((m) =>
@@ -1239,6 +1248,8 @@ ${fileContent}` : ""}${webContextBlock}
             : m
         )
       )
+    } finally {
+      abortControllerRef.current = null
     }
   }
 
@@ -1274,6 +1285,7 @@ ${fileContent}` : ""}${webContextBlock}
   }
 
   const isStreamingRef = React.useRef(false)
+  const abortControllerRef = React.useRef<AbortController | null>(null)
 
   const handleChatScroll = React.useCallback(() => {
     const el = chatScrollRef.current
@@ -1373,6 +1385,7 @@ ${fileContent}` : ""}${webContextBlock}
           apiKey: config.apiKey,
           apiBase: config.apiBase,
           model: chatModel,
+          deepThink: deepThinkMode,
         }),
       })
 
@@ -1403,6 +1416,7 @@ ${fileContent}` : ""}${webContextBlock}
       const decoder = new TextDecoder()
       let buffer = ""
       let fullContent = ""
+      let fullReasoning = ""
       let rafScheduled = false
 
       while (true) {
@@ -1426,6 +1440,9 @@ ${fileContent}` : ""}${webContextBlock}
             } else if (parsed.content) {
               fullContent += parsed.content
             }
+            if (parsed.reasoning) {
+              fullReasoning += parsed.reasoning
+            }
           } catch {
             // skip
           }
@@ -1434,9 +1451,11 @@ ${fileContent}` : ""}${webContextBlock}
         if (!rafScheduled) {
           rafScheduled = true
           const snapshot = fullContent
+          const reasoningSnapshot = fullReasoning
+          const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
           requestAnimationFrame(() => {
             setChatMessages((prev) =>
-              prev.map((m) => (m.id === aiMsgId ? { ...m, content: snapshot } : m))
+              prev.map((m) => (m.id === aiMsgId ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined } : m))
             )
             rafScheduled = false
           })
@@ -1445,10 +1464,15 @@ ${fileContent}` : ""}${webContextBlock}
 
       if (!fullContent) fullContent = "未能生成内容，请重试。"
 
+      // 从 content 中解析「## 思考过程」
+      const parsedFinal = parseReasoningFromContent(fullContent, fullReasoning)
+      fullContent = parsedFinal.content
+      fullReasoning = parsedFinal.reasoning
+
       setChatMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
-            ? { ...m, content: fullContent, generateMeta: { type, label: templateLabel, done: true } }
+            ? { ...m, content: fullContent, reasoning: fullReasoning || undefined, generateMeta: { type, label: templateLabel, done: true } }
             : m
         )
       )
@@ -1527,7 +1551,7 @@ ${fileContent}` : ""}${webContextBlock}
     setChatLoading(true)
     isStreamingRef.current = true
 
-    await streamAI(preceding, newAiMsgId)
+    await streamAI(preceding, newAiMsgId, deepThinkMode)
     isStreamingRef.current = false
     setChatLoading(false)
   }

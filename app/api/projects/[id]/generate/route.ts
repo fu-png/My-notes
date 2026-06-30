@@ -80,7 +80,7 @@ const TEMPLATES: Record<string, { name: string; prompt: string }> = {
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
   const body = await request.json()
-  const { type, apiKey, apiBase, model, customPrompt } = body
+  const { type, apiKey, apiBase, model, customPrompt, deepThink } = body
 
   if (!projectId) {
     return Response.json({ error: "缺少项目 ID" }, { status: 400 })
@@ -191,12 +191,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
             if (data === "[DONE]") continue
 
             try {
-              const parsed = JSON.parse(data)
-              const content = parsed.choices?.[0]?.delta?.content
-              if (content) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
-              }
-            } catch {
+                const parsed = JSON.parse(data)
+                const delta = parsed.choices?.[0]?.delta
+                const content = delta?.content
+                const reasoningContent = delta?.reasoning_content || delta?.reasoning
+                if (content) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                }
+                if (reasoningContent) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ reasoning: reasoningContent })}\n\n`))
+                }
+              } catch {
               // skip
             }
           }
