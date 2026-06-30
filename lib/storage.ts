@@ -77,7 +77,7 @@ export async function writeFile(
         try {
           const existing = await findBlobByPathname(pathname)
           if (existing) {
-            await del(existing.url)
+            await del(existing.rawUrl)
           } else {
             // list 找不到，尝试用 head 直接检查 URL
             try {
@@ -206,7 +206,7 @@ export async function deleteFile(pathname: string): Promise<boolean> {
         console.error("[storage] deleteFile: blob not found for pathname:", pathname)
         return false
       }
-      await del(blob.url)
+      await del(blob.rawUrl)
       return true
     } catch (err) {
       console.error("[storage] deleteFile error:", err)
@@ -258,7 +258,7 @@ export async function renameFile(oldPathname: string, newPathname: string): Prom
         allowOverwrite: true,
         contentType,
       })
-      await del(blob.url)
+      await del(blob.rawUrl)
       return true
     } catch (err) {
       console.error("[storage] renameFile error:", err)
@@ -327,11 +327,15 @@ export async function listFiles(prefix: string): Promise<{ pathname: string; url
     do {
       const result = await list({ prefix, limit: 1000, cursor })
       results.push(
-        ...result.blobs.map((b) => ({
-          pathname: b.pathname,
-          url: b.url,
-          size: b.size,
-        }))
+        ...result.blobs.map((b) => {
+          // 用 uploadedAt 作为版本号拼入 URL，绕过 CDN 30 天缓存
+          const version = new Date(b.uploadedAt).getTime()
+          return {
+            pathname: b.pathname,
+            url: `${b.url}?v=${version}`,
+            size: b.size,
+          }
+        })
       )
       cursor = result.hasMore ? result.cursor : undefined
     } while (cursor)
@@ -521,21 +525,36 @@ export async function uploadFileToProject(
 // 辅助函数
 // ============================================================
 
-/** 在 Blob 存储中通过 pathname 查找文件 */
+/** 在 Blob 存储中通过 pathname 查找文件。
+ *
+ *  使用 list + head 两步获取：list 确认文件存在，head 获取最新的
+ *  uploadedAt 时间戳作为版本号拼入 URL query string，从而绕过
+ *  Vercel Blob CDN 的 max-age=2592000（30天）缓存。
+ *  allowOverwrite 覆写后 CDN 会对同一 URL 返回旧内容，
+ *  加上 ?v={uploadedAt} 后 CDN 视为新资源，返回最新内容。
+ */
 async function findBlobByPathname(pathname: string) {
   try {
     const result = await list({ prefix: pathname, limit: 1 })
     const exact = result.blobs.find((b) => b.pathname === pathname)
-    if (exact) {
-      return { url: exact.url, pathname: exact.pathname, size: exact.size }
+    if (!exact) {
+      if (result.blobs.length > 0) {
+        console.warn("[storage] findBlobByPathname: prefix matched but no exact match.",
+          "searched:", pathname,
+          "found:", result.blobs.map(b => b.pathname))
+      }
+      return null
     }
-    // list prefix 匹配可能返回相近但不完全匹配的结果
-    if (result.blobs.length > 0 && !exact) {
-      console.warn("[storage] findBlobByPathname: prefix matched but no exact match.",
-        "searched:", pathname,
-        "found:", result.blobs.map(b => b.pathname))
+    // 用 head 获取最新的 uploadedAt，拼成版本号绕过 CDN 缓存
+    const meta = await head(exact.url)
+    const version = new Date(meta.uploadedAt).getTime()
+    const freshUrl = `${exact.url}?v=${version}`
+    return {
+      url: freshUrl,           // 带版本号的 URL，用于 fetch 读取（绕过 CDN 缓存）
+      rawUrl: exact.url,       // 原始 URL，用于 del() 等 API 调用
+      pathname: exact.pathname,
+      size: exact.size,
     }
-    return null
   } catch (err) {
     console.error("[storage] findBlobByPathname error:", err)
     return null

@@ -93,6 +93,11 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const chatScrollRef = React.useRef<HTMLDivElement>(null)
   const userScrolledUpRef = React.useRef(false)
 
+  // Project name state — 初始值来自 Server Component prop，
+  // 但会在 fetchFiles 时用 API 返回的最新名称覆盖，
+  // 避免 Next.js 客户端 Router Cache 导致旧名称回退
+  const [currentProjectName, setCurrentProjectName] = React.useState(projectName)
+
   // File state
   const [files, setFiles] = React.useState<DocFile[]>([])
   const [loadingFiles, setLoadingFiles] = React.useState(true)
@@ -465,6 +470,10 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
       const data = await res.json()
       setFiles(data.files || [])
+      // 用 API 返回的最新名称覆盖，防止 Router Cache 缓存了旧名称
+      if (data.project?.name) {
+        setCurrentProjectName(data.project.name)
+      }
     } catch {
       setFiles([])
     } finally {
@@ -1770,7 +1779,7 @@ ${fileContent}` : ""}${webContextBlock}
       <div className="flex h-full overflow-hidden">
         {/* ─── Left Panel: File Explorer ─── */}
         <FileExplorer
-          projectName={projectName}
+          projectName={currentProjectName}
           files={files}
           loadingFiles={loadingFiles}
           activeFile={activeFile}
@@ -1813,7 +1822,7 @@ ${fileContent}` : ""}${webContextBlock}
               </SheetTrigger>
               <SheetContent side="left" className="w-72 p-0">
                 <MobileFileList
-                  projectName={projectName}
+                  projectName={currentProjectName}
                   files={files}
                   activeFile={activeFile}
                   deleting={deleting}
@@ -1955,7 +1964,7 @@ ${fileContent}` : ""}${webContextBlock}
 
         {/* ─── Right: AI Chat Panel ─── */}
         <ChatPanel
-          projectName={projectName}
+          projectName={currentProjectName}
           projectId={projectId}
           files={files}
           activeFile={activeFile}
