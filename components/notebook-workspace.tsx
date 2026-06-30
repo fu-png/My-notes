@@ -165,6 +165,36 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const [aiPanelWidth, setAiPanelWidth] = React.useState(320)
   const aiPanelRef = React.useRef<HTMLDivElement>(null)
 
+  // 划词问答
+  const [selectedText, setSelectedText] = React.useState("")
+  const docContentRef = React.useRef<HTMLDivElement>(null)
+
+  // 监听文档区域的划词事件
+  React.useEffect(() => {
+    const handleSelection = () => {
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed) {
+        setSelectedText("")
+        return
+      }
+      const range = selection.getRangeAt(0)
+      const container = docContentRef.current
+      if (!container) return
+      // 仅当选区在文档内容区域内时才捕获
+      if (container.contains(range.commonAncestorContainer)) {
+        const text = selection.toString().trim()
+        setSelectedText(text.length > 0 ? text : "")
+      }
+    }
+    document.addEventListener("mouseup", handleSelection)
+    return () => document.removeEventListener("mouseup", handleSelection)
+  }, [])
+
+  // 切换文件时清除划词
+  React.useEffect(() => {
+    setSelectedText("")
+  }, [activeFile])
+
   const handleResizeStart = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     const startX = e.clientX
@@ -205,7 +235,14 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const [chatInput, setChatInput] = React.useState("")
   const [chatLoading, setChatLoading] = React.useState(false)
   const [chatModel, setChatModel] = React.useState("gpt-4o-mini")
-  const [deepThinkMode, setDeepThinkMode] = React.useState(false)
+  const [deepThinkMode, setDeepThinkMode] = React.useState(() => {
+    if (typeof window === "undefined") return false
+    return localStorage.getItem("ai-deep-think-mode") === "true"
+  })
+
+  React.useEffect(() => {
+    localStorage.setItem("ai-deep-think-mode", String(deepThinkMode))
+  }, [deepThinkMode])
 
   React.useEffect(() => {
     setChatModel(getConfiguredModel())
@@ -935,7 +972,22 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
   // ─── Chat ───
 
-  const streamAI = async (userMessages: ChatMessage[], aiMsgId: string, deepThink: boolean = false) => {
+  /** 从 content 中解析「## 思考过程」段落，提取为 reasoning（兼容不支持 reasoning_content 的模型） */
+  const parseReasoningFromContent = (content: string, existingReasoning: string): { content: string; reasoning: string } => {
+    // 如果已有 reasoning_content 流式数据，不需要从 content 中解析
+    if (existingReasoning) return { content, reasoning: existingReasoning }
+
+    // 匹配「## 思考过程」标题及其后续内容（直到下一个 ## 标题或末尾）
+    const match = content.match(/^##\s*思考过程\s*\n([\s\S]*?)(?=\n##\s|$)/)
+    if (match) {
+      const reasoning = match[1].trim()
+      const cleanedContent = content.replace(/^##\s*思考过程\s*\n[\s\S]*?(?=\n##\s|$)/, '').trim()
+      return { content: cleanedContent, reasoning }
+    }
+    return { content, reasoning: existingReasoning }
+  }
+
+  const streamAI = async (userMessages: ChatMessage[], aiMsgId: string, deepThink: boolean = false, selectedText?: string) => {
     const config = getAIConfig()
     if (!config) {
       setChatMessages((prev) =>
@@ -1043,6 +1095,11 @@ ${fileContent}` : ""}${webContextBlock}
       systemPrompt = "你是一个笔记 AI 助手，具备互联网搜索能力。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。用户也可以发送链接或以「搜索」开头来搜索互联网内容。回复请使用中文。"
     }
 
+    // 划词问答：注入用户选中的文本
+    if (selectedText) {
+      systemPrompt += `\n\n## 用户选中的文本\n用户在文档中划选了以下内容，请针对这段内容回答用户的问题：\n\n"""\n${selectedText}\n"""\n\n请围绕这段选中文本来回答，如果用户的问题与选中文本无直接关联，也可以结合全文内容回答。`
+    }
+
     // 深度思考模式：在系统提示词末尾追加深度思考指令
     if (deepThink) {
       systemPrompt += "\n\n## 深度思考模式\n用户已开启深度思考模式。请在回答前进行深入的逐步推理：\n1. 先分析问题的核心要素和关键约束\n2. 考虑多种可能的思路和方法\n3. 逐步推导，权衡不同方案的优劣\n4. 验证你的推理过程是否有逻辑漏洞\n5. 最后给出经过深思熟虑的结论\n\n请将你的推理过程放在回答前面，用「## 思考过程」标题标注。然后给出最终回答。"
@@ -1128,9 +1185,10 @@ ${fileContent}` : ""}${webContextBlock}
           rafScheduled = true
           const snapshot = fullContent
           const reasoningSnapshot = fullReasoning
+          const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
           requestAnimationFrame(() => {
             setChatMessages((prev) =>
-              prev.map((m) => (m.id === aiMsgId ? { ...m, content: snapshot, reasoning: reasoningSnapshot || undefined } : m))
+              prev.map((m) => (m.id === aiMsgId ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined } : m))
             )
             rafScheduled = false
           })
@@ -1157,6 +1215,11 @@ ${fileContent}` : ""}${webContextBlock}
       }
 
       if (!fullContent) fullContent = "抱歉，未能获取到回复。"
+
+      // 从 content 中解析「## 思考过程」（兼容不支持 reasoning_content 的模型）
+      const parsedFinal = parseReasoningFromContent(fullContent, fullReasoning)
+      fullContent = parsedFinal.content
+      fullReasoning = parsedFinal.reasoning
 
       const docUpdateMatch = fullContent.match(/<doc-update>([\s\S]*?)<\/doc-update>/)
       let docUpdate: ChatMessage["docUpdate"] | undefined
@@ -1203,7 +1266,10 @@ ${fileContent}` : ""}${webContextBlock}
     setChatLoading(true)
     isStreamingRef.current = true
 
-    await streamAI(newMessages, aiMsgId, deepThinkMode)
+    const textSnapshot = selectedText
+    setSelectedText("")
+
+    await streamAI(newMessages, aiMsgId, deepThinkMode, textSnapshot || undefined)
     isStreamingRef.current = false
     setChatLoading(false)
   }
@@ -2017,7 +2083,7 @@ ${fileContent}` : ""}${webContextBlock}
             {activeFile && !editMode && fileContent && (
               <TableOfContents content={fileContent} />
             )}
-            <div id="doc-content-scroll" className="min-w-0 flex-1 overflow-y-auto">
+            <div id="doc-content-scroll" ref={docContentRef} className="min-w-0 flex-1 overflow-y-auto">
               {loadingContent ? (
                 <div className="flex items-center justify-center py-20">
                   <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
@@ -2078,6 +2144,8 @@ ${fileContent}` : ""}${webContextBlock}
           onSetChatInput={setChatInput}
           onSendMessage={handleSendMessage}
           onToggleDeepThink={() => setDeepThinkMode((v) => !v)}
+          selectedText={selectedText}
+          onClearSelectedText={() => setSelectedText("")}
           onStartNewConversation={startNewConversation}
           onLoadConversation={loadConversation}
           onDeleteConversation={deleteConversation}

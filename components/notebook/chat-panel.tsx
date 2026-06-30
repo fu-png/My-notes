@@ -38,6 +38,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
+import { Toggle } from "@/components/ui/toggle"
 import type { ChatMessage, Conversation, DocFile } from "./types"
 import { GENERATE_TEMPLATES } from "./types"
 
@@ -105,6 +106,8 @@ export interface ChatPanelProps {
   onSetChatInput: (v: string) => void
   onSendMessage: () => void
   onToggleDeepThink: () => void
+  selectedText: string
+  onClearSelectedText: () => void
   onStartNewConversation: () => void
   onLoadConversation: (conv: Conversation) => void
   onDeleteConversation: (convId: string) => void
@@ -165,6 +168,8 @@ export function ChatPanel({
   onSetChatInput,
   onSendMessage,
   onToggleDeepThink,
+  selectedText,
+  onClearSelectedText,
   onStartNewConversation,
   onLoadConversation,
   onDeleteConversation,
@@ -205,6 +210,12 @@ export function ChatPanel({
             <>
               <IconSparkles className="size-4 text-primary" />
               <span className="text-sm font-medium">AI 助手</span>
+              {deepThinkMode && (
+                <span className="flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                  <IconBrain className="size-2.5" />
+                  深度思考
+                </span>
+              )}
               <span className={`size-1.5 rounded-full ${aiConfigured ? "bg-green-500" : "bg-muted-foreground/40"}`} title={aiConfigured ? "已配置" : "未配置 API Key"} />
             </>
           )}
@@ -339,19 +350,38 @@ export function ChatPanel({
                       {msg.content}
                     </div>
                   ) : (
-                    <div className="w-full overflow-hidden text-[13px] leading-relaxed [&_article]:max-w-none [&_article]:text-[13px] [&_article]:leading-relaxed [&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[13px] [&_h1]:mt-3 [&_h1]:mb-1.5 [&_h2]:mt-2.5 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-1.5 [&_p]:leading-relaxed [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_pre]:text-xs [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:text-xs [&_blockquote]:my-2 [&_blockquote]:text-[13px] [&_hr]:my-3 [&_table]:text-xs [&_img]:max-w-full">
+                    <div className="w-full overflow-hidden text-[13px] leading-relaxed [&_article]:max-w-none [&_article]:text-[13px] [&_article]:leading-relaxed [&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[13px] [&_h1]:mt-3 [&_h1]:mb-1.5 [&_h2]:mt-2.5 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-3 [&_p]:leading-relaxed [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_pre]:text-xs [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:text-xs [&_blockquote]:my-2 [&_blockquote]:text-[13px] [&_hr]:my-3 [&_table]:text-xs [&_img]:max-w-full">
                       {/* 深度思考推理过程 */}
-                      {msg.reasoning && (
-                        <details className="mb-2 border border-primary/20 bg-primary/5 text-xs" open>
-                          <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-primary/80 hover:text-primary">
-                            <IconBrain className="size-3" />
-                            思考过程
-                          </summary>
-                          <div className="border-t border-primary/10 px-2.5 py-2 text-muted-foreground [&_p]:my-1 [&_p]:leading-relaxed">
-                            <MarkdownRenderer content={msg.reasoning} />
-                          </div>
-                        </details>
-                      )}
+                      {msg.reasoning && (() => {
+                        const isLastMsg = msg.id === chatMessages[chatMessages.length - 1]?.id
+                        const isThinking = chatLoading && isLastMsg
+                        const hasContent = !!msg.content
+                        return (
+                          <details
+                            className="mb-2 border border-primary/20 bg-primary/5 text-xs"
+                            {...(isThinking || !hasContent ? { open: true } : {})}
+                          >
+                            <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-primary/80 hover:text-primary">
+                              <IconBrain className={`size-3 ${isThinking ? "animate-pulse" : ""}`} />
+                              {isThinking ? (
+                                <span className="flex items-center gap-1">
+                                  正在思考
+                                  <span className="inline-flex gap-0.5">
+                                    <span className="size-1 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.3s]" />
+                                    <span className="size-1 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.15s]" />
+                                    <span className="size-1 rounded-full bg-primary/60 animate-bounce" />
+                                  </span>
+                                </span>
+                              ) : (
+                                "思考过程"
+                              )}
+                            </summary>
+                            <div className="border-t border-primary/10 px-2.5 py-2 text-muted-foreground [&_p]:my-1 [&_p]:leading-relaxed">
+                              <MarkdownRenderer content={msg.reasoning} />
+                            </div>
+                          </details>
+                        )
+                      })()}
                       {!msg.content && !msg.reasoning && chatLoading && !msg.audioMeta ? (
                         <div className="px-1 py-2">
                           <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
@@ -514,6 +544,28 @@ export function ChatPanel({
         </div>
       )}
 
+      {/* 划词引用条 */}
+      {selectedText && (
+        <div className="shrink-0 border-t bg-primary/5 px-3 py-2">
+          <div className="flex items-start gap-2">
+            <IconQuote className="size-3.5 shrink-0 mt-0.5 text-primary/60" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium text-primary/70">划词内容</p>
+              <p className="mt-0.5 line-clamp-3 text-[11px] leading-relaxed text-muted-foreground">
+                {selectedText}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClearSelectedText}
+              className="shrink-0 text-muted-foreground/50 transition-colors hover:text-foreground"
+            >
+              <IconX className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom input area */}
       <div className="shrink-0 border-t px-3 py-2.5">
         <div className="border border-border bg-background px-3 py-2">
@@ -526,7 +578,7 @@ export function ChatPanel({
                 onSendMessage()
               }
             }}
-            placeholder="输入问题，按 Enter 发送..."
+            placeholder={deepThinkMode ? "深度思考已开启，输入问题让 AI 深入推理..." : "输入问题，按 Enter 发送..."}
             disabled={chatLoading}
             rows={2}
             className="w-full resize-none bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
@@ -535,21 +587,18 @@ export function ChatPanel({
             <div className="flex items-center gap-1.5">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={onToggleDeepThink}
-                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors ${
-                      deepThinkMode
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground/70 hover:text-foreground"
-                    }`}
+                  <Toggle
+                    size="sm"
+                    pressed={deepThinkMode}
+                    onPressedChange={onToggleDeepThink}
+                    className={`h-6 gap-1 px-1.5 text-[11px] ${deepThinkMode ? "bg-primary/15 text-primary hover:bg-primary/20" : "text-muted-foreground/70 hover:text-foreground"}`}
                   >
                     <IconBrain className="size-3" />
                     深度思考
-                  </button>
+                  </Toggle>
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  {deepThinkMode ? "深度思考已开启，AI 会先推理再回答" : "开启深度思考模式"}
+                  {deepThinkMode ? "深度思考已开启，点击关闭" : "开启深度思考模式"}
                 </TooltipContent>
               </Tooltip>
               <span className="text-[11px] text-muted-foreground/70">
