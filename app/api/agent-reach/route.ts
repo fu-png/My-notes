@@ -144,12 +144,13 @@ print(json.dumps({'title': feed.feed.get('title',''), 'items': items}, ensure_as
 /** 执行 shell 命令并返回输出 */
 async function runCommand(cmd: string): Promise<string> {
   try {
+    const home = process.env.HOME || "/Users/fzchun"
     const { stdout, stderr } = await execAsync(cmd, {
       timeout: 30000,
       maxBuffer: 1024 * 1024 * 5, // 5MB
       env: {
         ...process.env,
-        PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/.local/bin`,
+        PATH: `${home}/.local/share/mise/shims:${home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`,
       },
     })
     return stdout || stderr || "(无输出)"
