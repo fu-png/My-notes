@@ -730,9 +730,9 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
         setEditMode(false)
         if (newFilename !== activeFile) {
           setActiveFile(newFilename)
-          // 更新 URL 路径
+          // 静默更新 URL，不触发路由导航
           const newUrl = `/docs/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(newFilename)}`
-          router.replace(newUrl)
+          window.history.replaceState(null, "", newUrl)
         }
         showToast("success", "已保存")
         await fetchFiles()
