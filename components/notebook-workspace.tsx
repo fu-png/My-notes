@@ -695,14 +695,32 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     if (!activeFile) return
     setSaving(true)
     try {
+      // 从内容第一行提取新文件名（不含扩展名）
+      const ext = activeFile.includes(".") ? activeFile.slice(activeFile.lastIndexOf(".")) : ""
+      const firstLine = editContent.trim().split("\n")[0]?.trim() || ""
+      const newTitle = firstLine
+        .replace(/^#{1,6}\s*/, "")
+        .replace(/\*\*(.+?)\*\*/g, "$1")
+        .replace(/\*(.+?)\*/g, "$1")
+        .replace(/\[(.+?)\]\(.+?\)/g, "$1")
+        .replace(/`(.+?)`/g, "$1")
+        .trim() || activeFile.replace(/\.[^.]+$/, "")
+      // 清理文件名中的非法字符
+      const safeTitle = newTitle.replace(/[\/\\:*?"<>|]/g, "_").slice(0, 100)
+      const newFilename = safeTitle + ext
+
       const blob = new Blob([editContent], { type: "text/markdown" })
-      const file = new File([blob], activeFile)
+      const file = new File([blob], newFilename)
       const formData = new FormData()
       formData.append("file", file)
-      await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(activeFile)}`,
-        { method: "DELETE" }
-      )
+
+      // 如果文件名变了，先删除旧文件再上传新文件
+      if (newFilename !== activeFile) {
+        await fetch(
+          `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(activeFile)}`,
+          { method: "DELETE" }
+        )
+      }
       const res = await fetch(
         `/api/projects/${encodeURIComponent(projectId)}/files`,
         { method: "POST", body: formData }
@@ -710,6 +728,12 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       if (res.ok) {
         setFileContent(editContent)
         setEditMode(false)
+        if (newFilename !== activeFile) {
+          setActiveFile(newFilename)
+          // 更新 URL 路径
+          const newUrl = `/docs/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(newFilename)}`
+          router.replace(newUrl)
+        }
         showToast("success", "已保存")
         await fetchFiles()
         triggerAutoIndex()
