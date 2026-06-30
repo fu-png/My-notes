@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidatePath } from "next/cache"
 import { getProject, deletePrefix, readFile, writeFile } from "@/lib/storage"
 
 // GET /api/projects/[id] — get project detail with file list
@@ -47,6 +48,10 @@ export async function PATCH(
     await writeFile(metaPath, JSON.stringify(meta, null, 2), {
       contentType: "application/json",
     })
+
+    // 清除详情页和列表页的路由缓存，确保名称更新立即生效
+    revalidatePath(`/docs/projects/${id}`)
+    revalidatePath("/docs/projects")
 
     return NextResponse.json({ success: true, project: meta })
   } catch {
