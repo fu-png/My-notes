@@ -1018,6 +1018,13 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     if (lastUserMsg) {
       const webIntent = detectWebIntent(lastUserMsg.content)
       if (webIntent) {
+        // 划词搜索：当有划词内容且搜索 query 是指代性描述时，用划词文本替换
+        if (webIntent.action === "search" && selectedText) {
+          const vague = /^(一下)?(这[段个些]|这[段个些]?(话|内容|文[本字]|句子)|它|this).*/
+          if (!webIntent.query || vague.test(webIntent.query)) {
+            webIntent.query = selectedText.length > 200 ? selectedText.slice(0, 200) : selectedText
+          }
+        }
         webSearchTriggered = true
         const webResult = await fetchWebContent(webIntent, aiMsgId)
         if (webResult) {

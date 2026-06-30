@@ -8,6 +8,9 @@ import {
   IconCheck,
   IconVolume,
   IconRobot,
+  IconKey,
+  IconBuildingBridge,
+  IconBrain,
 } from "@tabler/icons-react"
 import {
   Dialog,
@@ -26,6 +29,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // ─── Storage Keys ───
 
@@ -47,6 +58,18 @@ const DEFAULT_MODEL = "gpt-4o-mini"
 const DEFAULT_TTS_MODEL = "tts-1"
 const DEFAULT_TTS_VOICE_HOST = "alloy"
 const DEFAULT_TTS_VOICE_EXPERT = "nova"
+
+// ─── Provider Presets ───
+
+const PROVIDER_PRESETS = [
+  { name: "OpenAI", apiBase: "https://api.openai.com/v1", models: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1", "o4-mini"] },
+  { name: "DeepSeek", apiBase: "https://api.deepseek.com", models: ["deepseek-chat", "deepseek-reasoner"] },
+  { name: "硅基流动", apiBase: "https://api.siliconflow.cn/v1", models: ["deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"] },
+  { name: "Moonshot", apiBase: "https://api.moonshot.cn/v1", models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
+  { name: "通义千问", apiBase: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen-plus", "qwen-turbo", "qwen-max"] },
+  { name: "智谱 GLM", apiBase: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-flash", "glm-4-air", "glm-4"] },
+  { name: "自定义", apiBase: "", models: [] },
+]
 
 // ─── TTS Voice Options ───
 
@@ -72,7 +95,6 @@ export function getAIConfig() {
 
 export function getTTSConfig() {
   if (typeof window === "undefined") return null
-  // TTS 可以复用 AI 的 API Key，也可以单独配置
   const aiConfig = getAIConfig()
   const ttsApiKey = localStorage.getItem(STORAGE_KEY_TTS_API_KEY) || aiConfig?.apiKey || ""
   const ttsApiBase = localStorage.getItem(STORAGE_KEY_TTS_API_BASE) || aiConfig?.apiBase || DEFAULT_API_BASE
@@ -107,6 +129,7 @@ export function SettingsDialog() {
   const [apiKey, setApiKey] = React.useState("")
   const [apiBase, setApiBase] = React.useState(DEFAULT_API_BASE)
   const [model, setModel] = React.useState(DEFAULT_MODEL)
+  const [provider, setProvider] = React.useState("自定义")
 
   // TTS 配置
   const [ttsApiKey, setTtsApiKey] = React.useState("")
@@ -116,12 +139,28 @@ export function SettingsDialog() {
   const [ttsVoiceExpert, setTtsVoiceExpert] = React.useState(DEFAULT_TTS_VOICE_EXPERT)
   const [useSameKey, setUseSameKey] = React.useState(true)
 
+  // 可选模型列表（基于当前 provider）
+  const [modelOptions, setModelOptions] = React.useState<string[]>([])
+
+  // 检测当前 provider
+  const detectProvider = (base: string) => {
+    const found = PROVIDER_PRESETS.find((p) => p.apiBase === base)
+    return found ? found.name : "自定义"
+  }
+
   // Load saved config on open
   React.useEffect(() => {
     if (open) {
-      setApiKey(localStorage.getItem(STORAGE_KEY_API_KEY) || "")
-      setApiBase(localStorage.getItem(STORAGE_KEY_API_BASE) || DEFAULT_API_BASE)
-      setModel(localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL)
+      const savedKey = localStorage.getItem(STORAGE_KEY_API_KEY) || ""
+      const savedBase = localStorage.getItem(STORAGE_KEY_API_BASE) || DEFAULT_API_BASE
+      const savedModel = localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL
+      setApiKey(savedKey)
+      setApiBase(savedBase)
+      setModel(savedModel)
+      const detected = detectProvider(savedBase)
+      setProvider(detected)
+      const preset = PROVIDER_PRESETS.find((p) => p.name === detected)
+      setModelOptions(preset?.models || [])
 
       const savedTtsKey = localStorage.getItem(STORAGE_KEY_TTS_API_KEY) || ""
       setTtsApiKey(savedTtsKey)
@@ -129,19 +168,30 @@ export function SettingsDialog() {
       setTtsModel(localStorage.getItem(STORAGE_KEY_TTS_MODEL) || DEFAULT_TTS_MODEL)
       setTtsVoiceHost(localStorage.getItem(STORAGE_KEY_TTS_VOICE_HOST) || DEFAULT_TTS_VOICE_HOST)
       setTtsVoiceExpert(localStorage.getItem(STORAGE_KEY_TTS_VOICE_EXPERT) || DEFAULT_TTS_VOICE_EXPERT)
-      // 如果没有单独配置 TTS Key，说明复用 AI 的 Key
       setUseSameKey(!savedTtsKey)
       setSaved(false)
     }
   }, [open])
 
+  // 切换服务商时自动填充 API Base 和模型列表
+  const handleProviderChange = (name: string) => {
+    setProvider(name)
+    const preset = PROVIDER_PRESETS.find((p) => p.name === name)
+    if (preset) {
+      if (preset.apiBase) setApiBase(preset.apiBase)
+      setModelOptions(preset.models)
+      // 如果当前模型不在预设列表中，且预设列表非空，自动选择第一个
+      if (preset.models.length > 0 && !preset.models.includes(model)) {
+        setModel(preset.models[0])
+      }
+    }
+  }
+
   const handleSave = () => {
-    // 保存 AI 配置
     localStorage.setItem(STORAGE_KEY_API_KEY, apiKey.trim())
     localStorage.setItem(STORAGE_KEY_API_BASE, apiBase.trim() || DEFAULT_API_BASE)
     localStorage.setItem(STORAGE_KEY_MODEL, model.trim() || DEFAULT_MODEL)
 
-    // 保存 TTS 配置
     if (useSameKey) {
       localStorage.removeItem(STORAGE_KEY_TTS_API_KEY)
       localStorage.removeItem(STORAGE_KEY_TTS_API_BASE)
@@ -185,9 +235,32 @@ export function SettingsDialog() {
             AI 对话
           </div>
 
+          {/* 服务商快捷选择 */}
+          <div className="space-y-2">
+            <Label>服务商</Label>
+            <Select value={provider} onValueChange={handleProviderChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="选择服务商" />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDER_PRESETS.map((p) => (
+                  <SelectItem key={p.name} value={p.name}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              选择服务商可自动填充 API 地址和推荐模型。
+            </p>
+          </div>
+
           {/* API Key */}
           <div className="space-y-2">
-            <Label htmlFor="api-key">API Key</Label>
+            <Label htmlFor="api-key" className="flex items-center gap-1.5">
+              <IconKey className="size-3.5 text-muted-foreground" />
+              API Key
+            </Label>
             <div className="relative">
               <Input
                 id="api-key"
@@ -214,28 +287,54 @@ export function SettingsDialog() {
 
           {/* API Base URL */}
           <div className="space-y-2">
-            <Label htmlFor="api-base">API Base URL</Label>
+            <Label htmlFor="api-base" className="flex items-center gap-1.5">
+              <IconBuildingBridge className="size-3.5 text-muted-foreground" />
+              API Base URL
+            </Label>
             <Input
               id="api-base"
               type="url"
               placeholder={DEFAULT_API_BASE}
               value={apiBase}
-              onChange={(e) => setApiBase(e.target.value)}
+              onChange={(e) => {
+                setApiBase(e.target.value)
+                setProvider(detectProvider(e.target.value))
+                const preset = PROVIDER_PRESETS.find((p) => p.apiBase === e.target.value)
+                setModelOptions(preset?.models || [])
+              }}
             />
             <p className="text-xs text-muted-foreground">
-              默认为 OpenAI 官方地址，也可配置为兼容服务（如 DeepSeek、Azure 等）。
+              默认为 OpenAI 官方地址，也可配置为兼容服务。
             </p>
           </div>
 
           {/* Model */}
           <div className="space-y-2">
-            <Label htmlFor="model">对话模型</Label>
-            <Input
-              id="model"
-              placeholder="gpt-4o-mini、deepseek-chat"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            />
+            <Label htmlFor="model" className="flex items-center gap-1.5">
+              <IconBrain className="size-3.5 text-muted-foreground" />
+              对话模型
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="model"
+                placeholder="gpt-4o-mini、deepseek-chat"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="flex-1"
+              />
+              {modelOptions.length > 0 && (
+                <Select value="" onValueChange={(v) => v && setModel(v)}>
+                  <SelectTrigger className="w-28 shrink-0">
+                    <SelectValue placeholder="推荐" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {modelOptions.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">
               用于 AI 对话和笔记本指南生成。
             </p>
@@ -255,17 +354,15 @@ export function SettingsDialog() {
           </p>
 
           {/* 复用 AI Key 开关 */}
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="use-same-key"
-              checked={useSameKey}
-              onChange={(e) => setUseSameKey(e.target.checked)}
-              className="size-3.5 accent-primary"
-            />
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
             <Label htmlFor="use-same-key" className="text-sm font-normal cursor-pointer">
               使用与 AI 对话相同的 API Key 和地址
             </Label>
+            <Switch
+              id="use-same-key"
+              checked={useSameKey}
+              onCheckedChange={setUseSameKey}
+            />
           </div>
 
           {/* 独立 TTS API Key（仅在未勾选时展示） */}
@@ -324,29 +421,29 @@ export function SettingsDialog() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="tts-voice-host">主持人语音</Label>
-              <select
-                id="tts-voice-host"
-                value={ttsVoiceHost}
-                onChange={(e) => setTtsVoiceHost(e.target.value)}
-                className="h-9 w-full border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                {TTS_VOICE_OPTIONS.map((v) => (
-                  <option key={v.value} value={v.value}>{v.label}</option>
-                ))}
-              </select>
+              <Select value={ttsVoiceHost} onValueChange={setTtsVoiceHost}>
+                <SelectTrigger id="tts-voice-host" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TTS_VOICE_OPTIONS.map((v) => (
+                    <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="tts-voice-expert">专家语音</Label>
-              <select
-                id="tts-voice-expert"
-                value={ttsVoiceExpert}
-                onChange={(e) => setTtsVoiceExpert(e.target.value)}
-                className="h-9 w-full border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                {TTS_VOICE_OPTIONS.map((v) => (
-                  <option key={v.value} value={v.value}>{v.label}</option>
-                ))}
-              </select>
+              <Select value={ttsVoiceExpert} onValueChange={setTtsVoiceExpert}>
+                <SelectTrigger id="tts-voice-expert" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TTS_VOICE_OPTIONS.map((v) => (
+                    <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
