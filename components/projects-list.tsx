@@ -333,11 +333,12 @@ export function ProjectsList() {
                     <IconNotebook className="size-4 text-muted-foreground" />
                   </div>
                   {editingId === project.id ? (
-                    <div className="relative z-20 flex min-w-0 flex-1 items-center gap-1" onClick={(e) => e.preventDefault()}>
+                    <div className="relative z-20 flex min-w-0 flex-1 items-center gap-1" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
                       <Input
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         onKeyDown={(e) => {
+                          e.stopPropagation()
                           if (e.key === "Enter") handleRename()
                           if (e.key === "Escape") cancelEditing()
                         }}
@@ -346,14 +347,14 @@ export function ProjectsList() {
                         disabled={saving}
                       />
                       <button
-                        onClick={handleRename}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRename() }}
                         disabled={saving || !editName.trim()}
                         className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
                       >
                         {saving ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconCheck className="size-3.5" />}
                       </button>
                       <button
-                        onClick={cancelEditing}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); cancelEditing() }}
                         disabled={saving}
                         className="shrink-0 p-1 text-muted-foreground hover:text-destructive"
                       >
@@ -438,11 +439,12 @@ export function ProjectsList() {
               </div>
               <div className="min-w-0 flex-1">
                 {editingId === project.id ? (
-                  <div className="relative z-20 flex items-center gap-1" onClick={(e) => e.preventDefault()}>
+                  <div className="relative z-20 flex items-center gap-1" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
                     <Input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       onKeyDown={(e) => {
+                        e.stopPropagation()
                         if (e.key === "Enter") handleRename()
                         if (e.key === "Escape") cancelEditing()
                       }}
@@ -451,14 +453,14 @@ export function ProjectsList() {
                       disabled={saving}
                     />
                     <button
-                      onClick={handleRename}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRename() }}
                       disabled={saving || !editName.trim()}
                       className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
                     >
                       {saving ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconCheck className="size-3.5" />}
                     </button>
                     <button
-                      onClick={cancelEditing}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); cancelEditing() }}
                       disabled={saving}
                       className="shrink-0 p-1 text-muted-foreground hover:text-destructive"
                     >
