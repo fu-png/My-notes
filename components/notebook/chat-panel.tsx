@@ -24,6 +24,7 @@ import {
   IconFileText,
   IconSend,
   IconWorld,
+  IconBrain,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -54,6 +55,7 @@ export interface ChatPanelProps {
   chatInput: string
   chatLoading: boolean
   chatModel: string
+  deepThinkMode: boolean
 
   // Conversation history
   conversations: Conversation[]
@@ -102,6 +104,7 @@ export interface ChatPanelProps {
   onSetShowSources: (v: boolean | ((v: boolean) => boolean)) => void
   onSetChatInput: (v: string) => void
   onSendMessage: () => void
+  onToggleDeepThink: () => void
   onStartNewConversation: () => void
   onLoadConversation: (conv: Conversation) => void
   onDeleteConversation: (convId: string) => void
@@ -135,6 +138,7 @@ export function ChatPanel({
   chatInput,
   chatLoading,
   chatModel,
+  deepThinkMode,
   conversations,
   activeConversationId,
   showHistory,
@@ -160,6 +164,7 @@ export function ChatPanel({
   onSetShowSources,
   onSetChatInput,
   onSendMessage,
+  onToggleDeepThink,
   onStartNewConversation,
   onLoadConversation,
   onDeleteConversation,
@@ -335,7 +340,19 @@ export function ChatPanel({
                     </div>
                   ) : (
                     <div className="w-full overflow-hidden text-[13px] leading-relaxed [&_article]:max-w-none [&_article]:text-[13px] [&_article]:leading-relaxed [&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[13px] [&_h1]:mt-3 [&_h1]:mb-1.5 [&_h2]:mt-2.5 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-1.5 [&_p]:leading-relaxed [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_pre]:text-xs [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:text-xs [&_blockquote]:my-2 [&_blockquote]:text-[13px] [&_hr]:my-3 [&_table]:text-xs [&_img]:max-w-full">
-                      {!msg.content && chatLoading && !msg.audioMeta ? (
+                      {/* 深度思考推理过程 */}
+                      {msg.reasoning && (
+                        <details className="mb-2 border border-primary/20 bg-primary/5 text-xs" open>
+                          <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-primary/80 hover:text-primary">
+                            <IconBrain className="size-3" />
+                            思考过程
+                          </summary>
+                          <div className="border-t border-primary/10 px-2.5 py-2 text-muted-foreground [&_p]:my-1 [&_p]:leading-relaxed">
+                            <MarkdownRenderer content={msg.reasoning} />
+                          </div>
+                        </details>
+                      )}
+                      {!msg.content && !msg.reasoning && chatLoading && !msg.audioMeta ? (
                         <div className="px-1 py-2">
                           <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
                         </div>
@@ -515,9 +532,30 @@ export function ChatPanel({
             className="w-full resize-none bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
           />
           <div className="flex items-center justify-between pt-1">
-            <span className="text-[11px] text-muted-foreground/70">
-              {chatModel}{ragEnabled && indexStatus?.indexed ? " · RAG" : ""}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onToggleDeepThink}
+                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors ${
+                      deepThinkMode
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground/70 hover:text-foreground"
+                    }`}
+                  >
+                    <IconBrain className="size-3" />
+                    深度思考
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {deepThinkMode ? "深度思考已开启，AI 会先推理再回答" : "开启深度思考模式"}
+                </TooltipContent>
+              </Tooltip>
+              <span className="text-[11px] text-muted-foreground/70">
+                {chatModel}{ragEnabled && indexStatus?.indexed ? " · RAG" : ""}
+              </span>
+            </div>
             <Button
               size="icon"
               className="size-6"

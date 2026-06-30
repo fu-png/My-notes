@@ -205,6 +205,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const [chatInput, setChatInput] = React.useState("")
   const [chatLoading, setChatLoading] = React.useState(false)
   const [chatModel, setChatModel] = React.useState("gpt-4o-mini")
+  const [deepThinkMode, setDeepThinkMode] = React.useState(false)
 
   React.useEffect(() => {
     setChatModel(getConfiguredModel())
@@ -934,7 +935,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
   // ─── Chat ───
 
-  const streamAI = async (userMessages: ChatMessage[], aiMsgId: string) => {
+  const streamAI = async (userMessages: ChatMessage[], aiMsgId: string, deepThink: boolean = false) => {
     const config = getAIConfig()
     if (!config) {
       setChatMessages((prev) =>
@@ -1042,6 +1043,11 @@ ${fileContent}` : ""}${webContextBlock}
       systemPrompt = "你是一个笔记 AI 助手，具备互联网搜索能力。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。用户也可以发送链接或以「搜索」开头来搜索互联网内容。回复请使用中文。"
     }
 
+    // 深度思考模式：在系统提示词末尾追加深度思考指令
+    if (deepThink) {
+      systemPrompt += "\n\n## 深度思考模式\n用户已开启深度思考模式。请在回答前进行深入的逐步推理：\n1. 先分析问题的核心要素和关键约束\n2. 考虑多种可能的思路和方法\n3. 逐步推导，权衡不同方案的优劣\n4. 验证你的推理过程是否有逻辑漏洞\n5. 最后给出经过深思熟虑的结论\n\n请将你的推理过程放在回答前面，用「## 思考过程」标题标注。然后给出最终回答。"
+    }
+
     const apiMessages = [
       { role: "system", content: systemPrompt },
       ...userMessages.filter((m) => m.id !== "welcome").map((m) => ({
@@ -1059,6 +1065,7 @@ ${fileContent}` : ""}${webContextBlock}
           apiKey: config.apiKey,
           apiBase: config.apiBase,
           model: chatModel,
+          deepThink,
         }),
       })
 
@@ -1085,6 +1092,7 @@ ${fileContent}` : ""}${webContextBlock}
       const decoder = new TextDecoder()
       let buffer = ""
       let fullContent = ""
+      let fullReasoning = ""
       let rafScheduled = false
 
       while (true) {
@@ -1108,6 +1116,9 @@ ${fileContent}` : ""}${webContextBlock}
             } else if (parsed.content) {
               fullContent += parsed.content
             }
+            if (parsed.reasoning) {
+              fullReasoning += parsed.reasoning
+            }
           } catch {
             // Skip malformed
           }
@@ -1116,9 +1127,10 @@ ${fileContent}` : ""}${webContextBlock}
         if (!rafScheduled) {
           rafScheduled = true
           const snapshot = fullContent
+          const reasoningSnapshot = fullReasoning
           requestAnimationFrame(() => {
             setChatMessages((prev) =>
-              prev.map((m) => (m.id === aiMsgId ? { ...m, content: snapshot } : m))
+              prev.map((m) => (m.id === aiMsgId ? { ...m, content: snapshot, reasoning: reasoningSnapshot || undefined } : m))
             )
             rafScheduled = false
           })
@@ -1134,6 +1146,9 @@ ${fileContent}` : ""}${webContextBlock}
               fullContent += `\n⚠️ ${parsed.error}`
             } else if (parsed.content) {
               fullContent += parsed.content
+            }
+            if (parsed.reasoning) {
+              fullReasoning += parsed.reasoning
             }
           } catch {
             // Skip malformed
@@ -1151,7 +1166,7 @@ ${fileContent}` : ""}${webContextBlock}
       }
 
       setChatMessages((prev) =>
-        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate, ragSources, webSources } : m))
+        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate, ragSources, webSources, reasoning: fullReasoning || undefined } : m))
       )
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "网络错误"
@@ -1188,7 +1203,7 @@ ${fileContent}` : ""}${webContextBlock}
     setChatLoading(true)
     isStreamingRef.current = true
 
-    await streamAI(newMessages, aiMsgId)
+    await streamAI(newMessages, aiMsgId, deepThinkMode)
     isStreamingRef.current = false
     setChatLoading(false)
   }
@@ -2036,6 +2051,7 @@ ${fileContent}` : ""}${webContextBlock}
           chatInput={chatInput}
           chatLoading={chatLoading}
           chatModel={chatModel}
+          deepThinkMode={deepThinkMode}
           conversations={conversations}
           activeConversationId={activeConversationId}
           showHistory={showHistory}
@@ -2061,6 +2077,7 @@ ${fileContent}` : ""}${webContextBlock}
           onSetShowSources={setShowSources}
           onSetChatInput={setChatInput}
           onSendMessage={handleSendMessage}
+          onToggleDeepThink={() => setDeepThinkMode((v) => !v)}
           onStartNewConversation={startNewConversation}
           onLoadConversation={loadConversation}
           onDeleteConversation={deleteConversation}

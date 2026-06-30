@@ -95,10 +95,15 @@ export async function POST(request: NextRequest) {
 
               try {
                 const parsed = JSON.parse(data)
-                const content = parsed.choices?.[0]?.delta?.content
+                const delta = parsed.choices?.[0]?.delta
+                const content = delta?.content
+                const reasoningContent = delta?.reasoning_content || delta?.reasoning
                 const finishReason = parsed.choices?.[0]?.finish_reason
                 if (content) {
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                }
+                if (reasoningContent) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ reasoning: reasoningContent })}\n\n`))
                 }
                 if (finishReason) {
                   console.log(`[Chat API] Stream finish_reason: ${finishReason}`)
@@ -117,9 +122,14 @@ export async function POST(request: NextRequest) {
             if (trimmed.startsWith("data: ") && trimmed.slice(6) !== "[DONE]") {
               try {
                 const parsed = JSON.parse(trimmed.slice(6))
-                const content = parsed.choices?.[0]?.delta?.content
+                const delta = parsed.choices?.[0]?.delta
+                const content = delta?.content
+                const reasoningContent = delta?.reasoning_content || delta?.reasoning
                 if (content) {
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                }
+                if (reasoningContent) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ reasoning: reasoningContent })}\n\n`))
                 }
               } catch {
                 // Skip

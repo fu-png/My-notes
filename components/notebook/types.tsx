@@ -38,6 +38,8 @@ export interface ChatMessage {
     url?: string
     snippet: string
   }[]
+  /** 深度思考的推理过程内容 */
+  reasoning?: string
   /** 笔记本指南生成的元信息 */
   generateMeta?: {
     type: string
