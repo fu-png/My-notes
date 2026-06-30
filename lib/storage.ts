@@ -152,7 +152,7 @@ export async function readFile(pathname: string): Promise<string | null> {
     try {
       const blobInfo = await findBlobByPathname(pathname)
       if (!blobInfo) return null
-      const response = await fetch(blobInfo.url)
+      const response = await fetch(blobInfo.url, { cache: "no-store" })
       if (!response.ok) return null
       return response.text()
     } catch {
@@ -172,7 +172,7 @@ export async function readFileBuffer(pathname: string): Promise<Buffer | null> {
     try {
       const blobInfo = await findBlobByPathname(pathname)
       if (!blobInfo) return null
-      const response = await fetch(blobInfo.url)
+      const response = await fetch(blobInfo.url, { cache: "no-store" })
       if (!response.ok) return null
       const arrayBuffer = await response.arrayBuffer()
       return Buffer.from(arrayBuffer)
@@ -386,7 +386,7 @@ export async function getProjects(): Promise<ProjectMeta[]> {
     const projects: ProjectMeta[] = []
     for (const metaBlob of metaBlobs) {
       try {
-        const response = await fetch(metaBlob.url)
+        const response = await fetch(metaBlob.url, { cache: "no-store" })
         if (!response.ok) continue
         const meta = await response.json() as ProjectMeta
 
