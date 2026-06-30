@@ -1,23 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
-import { exec } from "child_process"
-import { promisify } from "util"
-
-const execAsync = promisify(exec)
 
 export const maxDuration = 60
 
 /**
  * Agent Reach API 路由
  *
- * 封装 agent-reach 上游工具调用，为 AI 助手提供互联网内容获取能力。
+ * 为 AI 助手提供互联网内容获取能力。纯 HTTP 实现，无 CLI 依赖，兼容 Vercel serverless。
  * 支持的 action：
- *  - search: 全网语义搜索（Exa）
+ *  - search: 全网搜索（Tavily Search API）
  *  - web: 读取指定 URL 的网页内容（Jina Reader）
- *  - youtube: 提取 YouTube 视频字幕
- *  - github: 读取 GitHub 仓库信息
+ *  - youtube: 提取 YouTube 视频信息（通过 Jina Reader）
+ *  - github: 读取 GitHub 仓库信息（GitHub REST API）
  *  - bilibili: 搜索 B 站内容
- *  - rss: 读取 RSS 订阅源
- *  - doctor: 诊断各平台可用性
  */
 export async function POST(request: NextRequest) {
   try {
@@ -36,10 +30,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "搜索需要 query 参数" }, { status: 400 })
         }
         const num = count || 5
-        // 使用 mcporter 调用 Exa 搜索
-        result = await runCommand(
-          `mcporter call 'exa.web_search_exa(query: "${escapeShell(query)}", numResults: ${num})'`
-        )
+        result = await tavilySearch(query, num)
         break
       }
 
@@ -47,10 +38,7 @@ export async function POST(request: NextRequest) {
         if (!url) {
           return NextResponse.json({ error: "网页读取需要 url 参数" }, { status: 400 })
         }
-        // 使用 Jina Reader 读取网页
-        result = await runCommand(
-          `curl -s -m 30 "https://r.jina.ai/${escapeShell(url)}"`
-        )
+        result = await jinaRead(url)
         break
       }
 
@@ -58,10 +46,7 @@ export async function POST(request: NextRequest) {
         if (!url) {
           return NextResponse.json({ error: "YouTube 需要 url 参数" }, { status: 400 })
         }
-        // 使用 yt-dlp 提取视频信息和字幕
-        result = await runCommand(
-          `yt-dlp --skip-download --print "Title: %(title)s\\nChannel: %(channel)s\\nDuration: %(duration_string)s\\nDescription: %(description).500s" "${escapeShell(url)}" 2>/dev/null`
-        )
+        result = await jinaRead(url)
         break
       }
 
@@ -69,14 +54,7 @@ export async function POST(request: NextRequest) {
         if (!query) {
           return NextResponse.json({ error: "GitHub 需要 query 参数（仓库名或搜索词）" }, { status: 400 })
         }
-        // 判断是仓库路径还是搜索
-        if (query.includes("/")) {
-          result = await runCommand(`gh repo view "${escapeShell(query)}" 2>/dev/null`)
-        } else {
-          result = await runCommand(
-            `gh search repos "${escapeShell(query)}" --limit ${count || 5} 2>/dev/null`
-          )
-        }
+        result = await githubSearch(query, count || 5)
         break
       }
 
@@ -85,37 +63,10 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "B站搜索需要 query 或 url 参数" }, { status: 400 })
         }
         if (url) {
-          result = await runCommand(
-            `yt-dlp --skip-download --print "Title: %(title)s\\nUploader: %(uploader)s\\nDuration: %(duration_string)s\\nView Count: %(view_count)s\\nDescription: %(description).500s" "${escapeShell(url)}" 2>/dev/null`
-          )
+          result = await jinaRead(url)
         } else {
-          // B站搜索 API
-          const encodedQuery = encodeURIComponent(query!)
-          result = await runCommand(
-            `curl -s "https://api.bilibili.com/x/web-interface/search/all/v2?keyword=${encodedQuery}&page=1&page_size=${count || 5}" 2>/dev/null`
-          )
+          result = await bilibiliSearch(query!, count || 5)
         }
-        break
-      }
-
-      case "rss": {
-        if (!url) {
-          return NextResponse.json({ error: "RSS 读取需要 url 参数" }, { status: 400 })
-        }
-        const rssCount = count || 10
-        // 使用 Python feedparser 读取 RSS
-        const pyScript = `
-import feedparser, json
-feed = feedparser.parse('${escapeShell(url)}')
-items = [{'title': e.get('title',''), 'link': e.get('link',''), 'published': e.get('published',''), 'summary': e.get('summary','')[:200]} for e in feed.entries[:${rssCount}]]
-print(json.dumps({'title': feed.feed.get('title',''), 'items': items}, ensure_ascii=False, indent=2))
-`.trim()
-        result = await runCommand(`python3 -c "${escapeShell(pyScript)}" 2>/dev/null`)
-        break
-      }
-
-      case "doctor": {
-        result = await runCommand("agent-reach doctor --json 2>/dev/null || agent-reach doctor 2>/dev/null")
         break
       }
 
@@ -141,29 +92,177 @@ print(json.dumps({'title': feed.feed.get('title',''), 'items': items}, ensure_as
   }
 }
 
-/** 执行 shell 命令并返回输出 */
-async function runCommand(cmd: string): Promise<string> {
-  try {
-    const home = process.env.HOME || "/Users/fzchun"
-    const { stdout, stderr } = await execAsync(cmd, {
-      timeout: 30000,
-      maxBuffer: 1024 * 1024 * 5, // 5MB
-      env: {
-        ...process.env,
-        PATH: `${home}/.local/share/mise/shims:${home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`,
-      },
-    })
-    return stdout || stderr || "(无输出)"
-  } catch (err: unknown) {
-    if (err && typeof err === "object" && "stdout" in err) {
-      const execErr = err as { stdout?: string; stderr?: string; message?: string }
-      return execErr.stdout || execErr.stderr || execErr.message || "命令执行失败"
+// ─── Tavily Search (REST API, 免费额度 1000 次/月) ───
+
+async function tavilySearch(query: string, maxResults: number): Promise<string> {
+  const apiKey = process.env.TAVILY_API_KEY
+  if (!apiKey) {
+    throw new Error("未配置 TAVILY_API_KEY 环境变量。请前往 https://app.tavily.com 获取免费 API Key，然后在 Vercel 项目设置或 .env.local 中添加。")
+  }
+
+  const res = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      query,
+      max_results: Math.min(maxResults, 10),
+      search_depth: "basic",
+      include_answer: true,
+      include_raw_content: false,
+      include_images: false,
+    }),
+    signal: AbortSignal.timeout(25000),
+  })
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "")
+    throw new Error(`Tavily API 请求失败 (${res.status}): ${errBody}`)
+  }
+
+  const data = await res.json()
+  const results = data.results || []
+
+  if (results.length === 0 && !data.answer) {
+    return `没有找到与「${query}」相关的搜索结果。`
+  }
+
+  // 构建格式化输出
+  const parts: string[] = []
+
+  // 如果有 AI 生成的摘要答案
+  if (data.answer) {
+    parts.push(`**摘要**: ${data.answer}`)
+    parts.push("")
+  }
+
+  // 格式化各条搜索结果
+  if (results.length > 0) {
+    parts.push(`搜索「${query}」的结果（共 ${results.length} 条）：`)
+    parts.push("")
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i] as {
+        title?: string
+        url?: string
+        content?: string
+        score?: number
+      }
+      const lines = [`${i + 1}. ${r.title || "无标题"}`]
+      if (r.url) lines.push(`   URL: ${r.url}`)
+      if (r.content) lines.push(`   内容: ${r.content.slice(0, 600)}`)
+      parts.push(lines.join("\n"))
     }
-    throw err
+  }
+
+  return parts.join("\n")
+}
+
+// ─── Jina Reader ───
+
+async function jinaRead(targetUrl: string): Promise<string> {
+  const res = await fetch(`https://r.jina.ai/${targetUrl}`, {
+    headers: {
+      Accept: "text/plain",
+    },
+    signal: AbortSignal.timeout(25000),
+  })
+
+  if (!res.ok) {
+    throw new Error(`Jina Reader 请求失败 (${res.status})`)
+  }
+
+  const text = await res.text()
+  return text || "(页面内容为空)"
+}
+
+// ─── GitHub Search (REST API, no auth needed for public) ───
+
+async function githubSearch(query: string, count: number): Promise<string> {
+  if (query.includes("/")) {
+    const res = await fetch(`https://api.github.com/repos/${query}`, {
+      headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "MyNotes-Agent" },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) {
+      throw new Error(`GitHub API 请求失败 (${res.status})`)
+    }
+    const repo = await res.json()
+    return [
+      `仓库: ${repo.full_name}`,
+      `描述: ${repo.description || "无"}`,
+      `语言: ${repo.language || "未知"}`,
+      `Stars: ${repo.stargazers_count} | Forks: ${repo.forks_count}`,
+      `创建时间: ${repo.created_at}`,
+      `最后更新: ${repo.updated_at}`,
+      `主页: ${repo.homepage || "无"}`,
+      `链接: ${repo.html_url}`,
+    ].join("\n")
+  } else {
+    const res = await fetch(
+      `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&per_page=${count}`,
+      {
+        headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "MyNotes-Agent" },
+        signal: AbortSignal.timeout(15000),
+      }
+    )
+    if (!res.ok) {
+      throw new Error(`GitHub 搜索失败 (${res.status})`)
+    }
+    const data = await res.json()
+    const items = data.items || []
+    if (items.length === 0) return `没有找到与「${query}」相关的 GitHub 仓库。`
+
+    return items
+      .map(
+        (r: { full_name?: string; description?: string; stargazers_count?: number; language?: string; html_url?: string }, i: number) =>
+          `${i + 1}. ${r.full_name} ⭐${r.stargazers_count}\n   ${r.description || "无描述"}\n   语言: ${r.language || "未知"} | ${r.html_url}`
+      )
+      .join("\n\n")
   }
 }
 
-/** 转义 shell 特殊字符 */
-function escapeShell(str: string): string {
-  return str.replace(/(['"\\$`!])/g, "\\$1")
+// ─── Bilibili Search ───
+
+async function bilibiliSearch(query: string, count: number): Promise<string> {
+  const encodedQuery = encodeURIComponent(query)
+  const res = await fetch(
+    `https://api.bilibili.com/x/web-interface/search/all/v2?keyword=${encodedQuery}&page=1&page_size=${count}`,
+    {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        Referer: "https://www.bilibili.com",
+      },
+      signal: AbortSignal.timeout(15000),
+    }
+  )
+
+  if (!res.ok) {
+    throw new Error(`B站搜索请求失败 (${res.status})`)
+  }
+
+  const data = await res.json()
+  if (data.code !== 0) {
+    return `B站搜索失败: ${data.message || "未知错误"}`
+  }
+
+  const resultTypes = data.data?.result || []
+  const videoType = resultTypes.find((t: { result_type?: string }) => t.result_type === "video")
+  const videos = videoType?.data || []
+
+  if (videos.length === 0) {
+    return `没有找到与「${query}」相关的B站视频。`
+  }
+
+  return videos
+    .slice(0, count)
+    .map(
+      (v: { title?: string; author?: string; play?: number; description?: string; arcurl?: string }, i: number) => {
+        const title = (v.title || "").replace(/<[^>]+>/g, "")
+        return `${i + 1}. ${title}\n   UP主: ${v.author || "未知"} | 播放: ${v.play || 0}\n   简介: ${(v.description || "").slice(0, 100)}\n   链接: ${v.arcurl || ""}`
+      }
+    )
+    .join("\n\n")
 }
