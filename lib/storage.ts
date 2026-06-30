@@ -445,6 +445,23 @@ export async function getProjects(): Promise<ProjectMeta[]> {
   return projects
 }
 
+/** 从文件内容第一行提取标题，回退到文件名 */
+function extractTitleFromContent(content: string | null, filename: string): string {
+  const fallback = filename.replace(/\.[^.]+$/, "")
+  if (!content) return fallback
+  const firstLine = content.trim().split("\n")[0]?.trim()
+  if (!firstLine) return fallback
+  // 去掉 Markdown 标题符号（# ）、前后空白
+  const title = firstLine.replace(/^#{1,6}\s*/, "").trim()
+  // 去掉 Markdown 链接、加粗等格式符号
+  .replace(/\*\*(.+?)\*\*/g, "$1")
+  .replace(/\*(.+?)\*/g, "$1")
+  .replace(/\[(.+?)\]\(.+?\)/g, "$1")
+  .replace(/`(.+?)`/g, "$1")
+  .trim()
+  return title || fallback
+}
+
 /** 获取单个项目详情 */
 export async function getProject(id: string): Promise<{ meta: ProjectMeta; files: { filename: string; title: string }[] } | null> {
   const metaContent = await readFile(`projects/${id}/meta.json`)
@@ -456,20 +473,30 @@ export async function getProject(id: string): Promise<{ meta: ProjectMeta; files
     // 列出项目下的所有文件（排除 meta.json 和子目录文件如 .audio/、.rag/）
     const projectPrefix = `projects/${id}/`
     const allFiles = await listFiles(projectPrefix)
-    const files = allFiles
+    const fileList = allFiles
       .filter((f) => !f.pathname.endsWith("/meta.json"))
       .filter((f) => {
         // 只包含直接位于项目目录下的文件，排除子目录（.audio/、.rag/ 等）
         const relativePath = f.pathname.slice(projectPrefix.length)
         return !relativePath.includes("/")
       })
-      .map((f) => {
+
+    // 并行读取每个文件的第一行内容来提取标题
+    const files = await Promise.all(
+      fileList.map(async (f) => {
         const filename = f.pathname.split("/").pop() ?? ""
+        // 仅对文本类文件读取内容提取标题，二进制文件直接用文件名
+        const isText = /\.(md|txt|json|ya?ml|csv|tsv|xml|html?|js|ts|jsx|tsx|css|py|go|java|rs|sh|toml|ini|env|log)$/i.test(filename)
+        let content: string | null = null
+        if (isText) {
+          content = await readFile(f.pathname)
+        }
         return {
           filename,
-          title: filename.replace(/\.[^.]+$/, ""),
+          title: extractTitleFromContent(content, filename),
         }
       })
+    )
 
     return { meta: { ...meta, fileCount: files.length }, files }
   } catch {
@@ -514,10 +541,18 @@ export async function uploadFileToProject(
   const pathname = `projects/${projectId}/${finalFilename}`
   await writeFile(pathname, file, { contentType: file.type || undefined })
 
+  // 从文件内容提取标题
+  let fileContent: string | null = null
+  try {
+    fileContent = await file.text()
+  } catch {
+    // 二进制文件无法读取文本
+  }
+
   return {
     success: true,
     filename: finalFilename,
-    title: finalFilename.replace(/\.[^.]+$/, ""),
+    title: extractTitleFromContent(fileContent, finalFilename),
   }
 }
 

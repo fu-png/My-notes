@@ -1341,6 +1341,8 @@ ${fileContent}` : ""}${webContextBlock}
       )
     )
     showToast("success", "文档已更新")
+    await fetchFiles()
+    triggerAutoIndex()
   }
 
   const handleRejectDocUpdate = (msgId: string) => {
