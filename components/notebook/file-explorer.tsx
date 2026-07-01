@@ -62,7 +62,7 @@ const FileItem = React.memo(function FileItem({
         {getFileIcon(file.filename)}
         <span className="truncate">{file.title}</span>
       </button>
-      <div className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="ml-1 w-0 shrink-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:w-6 group-hover:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
