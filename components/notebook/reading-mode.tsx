@@ -127,7 +127,7 @@ export function ReadingModePanel({
   const sectionNoteRef = React.useRef<HTMLTextAreaElement>(null)
   const animRef = React.useRef<number | null>(null)
   const scrollingRef = React.useRef(false)
-  const scrollAccumRef = React.useRef(0)
+  const scrollPosRef = React.useRef(0)
 
   // ── derived
   const step = STEP_META[currentStep]
@@ -182,6 +182,7 @@ export function ReadingModePanel({
   const startScrolling = React.useCallback(() => {
     const container = scrollContainerRef.current
     if (!container) return
+    scrollPosRef.current = container.scrollTop
     scrollingRef.current = true
     setScrolling(true)
 
@@ -197,13 +198,9 @@ export function ReadingModePanel({
         return
       }
 
-      scrollAccumRef.current += SPEED_VALUES[speedLevel]
-      if (scrollAccumRef.current >= 1) {
-        const px = Math.floor(scrollAccumRef.current)
-        scrollAccumRef.current -= px
-        ct.scrollTop += px
-      }
-      const pct = Math.min(100, (ct.scrollTop / maxScroll) * 100)
+      scrollPosRef.current += SPEED_VALUES[speedLevel]
+      ct.scrollTo({ top: scrollPosRef.current })
+      const pct = Math.min(100, (scrollPosRef.current / maxScroll) * 100)
       setScrollProgress(pct)
 
       // Check if we've passed a section heading — pause for note
@@ -413,6 +410,7 @@ export function ReadingModePanel({
     if (started && step.id === 3) {
       const container = scrollContainerRef.current
       if (container) container.scrollTop = 0
+      scrollPosRef.current = 0
       setScrollProgress(0)
       setActiveSectionIdx(0)
     }
