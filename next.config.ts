@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   },
   // Vectra 动态 require @huggingface/transformers（可选依赖，我们用自己的 embedding API）
   // 通过 serverExternalPackages 让 bundler 不打包这些模块
-  serverExternalPackages: ["vectra", "@huggingface/transformers"],
+  serverExternalPackages: ["vectra", "@huggingface/transformers", "ali-oss"],
   outputFileTracingIncludes: {
     "/api/projects": ["./content/**/*"],
     "/api/projects/[id]": ["./content/**/*"],
