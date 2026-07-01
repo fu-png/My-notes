@@ -179,6 +179,10 @@ export function ReadingModePanel({
   const scrollPosRef = React.useRef(0)
   // For articles without headings — track pause points by scroll position
   const paragraphPauseRef = React.useRef<HTMLElement | null>(null)
+  // Refs to avoid stale closures in scroll engine
+  const activeSectionIdxRef = React.useRef(activeSectionIdx)
+  const pausedSectionRef = React.useRef(-1)
+  React.useEffect(() => { activeSectionIdxRef.current = activeSectionIdx }, [activeSectionIdx])
 
   // ── persist on change (must be after all state declarations)
   React.useEffect(() => {
@@ -237,6 +241,16 @@ export function ReadingModePanel({
     }
   }, [started, step.id, detectSections])
 
+  // Initialize pausedSectionRef from existing notes when entering step 3
+  React.useEffect(() => {
+    if (started && step.id === 3) {
+      const step3Notes = notes.filter(n => n.stepId === 3 && n.sectionIndex != null)
+      if (step3Notes.length > 0) {
+        pausedSectionRef.current = Math.max(...step3Notes.map(n => n.sectionIndex!))
+      }
+    }
+  }, [started, step.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Auto-scroll engine
   const startScrolling = React.useCallback(() => {
     const container = scrollContainerRef.current
@@ -262,24 +276,56 @@ export function ReadingModePanel({
       setScrollProgress(pct)
 
       // ── Section-based pause (articles with headings)
+      // Pause when the last content element of the current section reaches the middle of viewport
       if (sections.length > 0) {
         const containerRect = ct.getBoundingClientRect()
-        const readingLineY = containerRect.top + containerRect.height * 0.4
+        const readingLineY = containerRect.top + containerRect.height * 0.5
 
-        for (let i = sections.length - 1; i >= 0; i--) {
-          const sec = sections[i]
-          if (!sec.element) continue
-          const rect = sec.element.getBoundingClientRect()
-          if (rect.top < readingLineY) {
-            if (i > activeSectionIdx) {
-              setActiveSectionIdx(i)
-              scrollingRef.current = false
-              setScrolling(false)
-              setPausedForNote(true)
-              return
+        let currentIdx = activeSectionIdxRef.current
+
+        while (currentIdx < sections.length) {
+          const nextIdx = currentIdx + 1
+          let lastElement: Element | null = null
+
+          if (nextIdx < sections.length && sections[nextIdx].element) {
+            // Find the last non-heading element before the next section's heading
+            let el = sections[nextIdx].element!.previousElementSibling
+            while (el && ['H1', 'H2', 'H3', 'H4'].includes(el.tagName)) {
+              el = el.previousElementSibling
             }
-            break
+            lastElement = el
+          } else {
+            // Last section — use the last element in the article
+            const article = ct.querySelector("article")
+            lastElement = article?.lastElementChild ?? null
           }
+
+          if (lastElement) {
+            const rect = (lastElement as HTMLElement).getBoundingClientRect()
+            if (rect.bottom <= readingLineY) {
+              // This section's content has fully scrolled past the middle line
+              if (pausedSectionRef.current !== currentIdx) {
+                // Pause for note-taking on this section
+                pausedSectionRef.current = currentIdx
+                setActiveSectionIdx(currentIdx)
+                scrollingRef.current = false
+                setScrolling(false)
+                setPausedForNote(true)
+                return
+              } else {
+                // Already paused for this section, skip to next
+                currentIdx++
+                continue
+              }
+            }
+          }
+          break
+        }
+
+        // Update active section if we've moved forward
+        if (currentIdx !== activeSectionIdxRef.current) {
+          activeSectionIdxRef.current = currentIdx
+          setActiveSectionIdx(currentIdx)
         }
       } else {
         // ── Paragraph-based pause (articles without headings)
@@ -315,7 +361,7 @@ export function ReadingModePanel({
     }
 
     animRef.current = requestAnimationFrame(tick)
-  }, [scrollContainerRef, speedLevel, sections, activeSectionIdx])
+  }, [scrollContainerRef, speedLevel, sections])
 
   const pauseScrolling = React.useCallback(() => {
     scrollingRef.current = false
@@ -500,6 +546,8 @@ export function ReadingModePanel({
     setManualNote(false)
     setSectionNote("")
     paragraphPauseRef.current = null
+    pausedSectionRef.current = -1
+    activeSectionIdxRef.current = 0
   }
 
   // ── Auto-focus
@@ -550,7 +598,7 @@ export function ReadingModePanel({
           position: absolute;
           left: 0;
           right: 0;
-          top: 40%;
+          top: 50%;
           height: 2px;
           background: hsl(var(--primary) / 0.2);
           pointer-events: none;
