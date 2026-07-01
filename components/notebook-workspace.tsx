@@ -130,6 +130,7 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
   // Reading mode
   const [readingMode, setReadingMode] = React.useState(false)
+  const prevShowAIRef = React.useRef(true)
 
   // RAG state
   const [ragEnabled, setRagEnabled] = React.useState(false)
@@ -328,6 +329,19 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     if (typeof window === "undefined") return true
     return window.innerWidth >= 768
   })
+
+  const toggleReadingMode = React.useCallback((forceOff?: boolean) => {
+    setReadingMode((prev) => {
+      const next = forceOff ? false : !prev
+      if (next && !prev) {
+        prevShowAIRef.current = showAI
+        setShowAI(false)
+      } else if (!next && prev) {
+        setShowAI(prevShowAIRef.current)
+      }
+      return next
+    })
+  }, [showAI])
 
   // AI config
   const [aiConfigured, setAiConfigured] = React.useState(false)
@@ -1915,7 +1929,7 @@ ${fileContent}` : ""}${webContextBlock}
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full overflow-hidden">
         {/* ─── Left Panel: File Explorer ─── */}
-        <FileExplorer
+        {!readingMode && <FileExplorer
           projectName={currentProjectName}
           files={files}
           loadingFiles={loadingFiles}
@@ -1936,7 +1950,7 @@ ${fileContent}` : ""}${webContextBlock}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-        />
+        />}
 
         {/* ─── Center: Document Viewer / Editor ─── */}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -1966,7 +1980,7 @@ ${fileContent}` : ""}${webContextBlock}
             {activeFile && !editMode && (
               <ReadingModeButton
                 active={readingMode}
-                onClick={() => setReadingMode(!readingMode)}
+                onClick={() => toggleReadingMode()}
               />
             )}
             <Button variant="ghost" size="sm" onClick={() => setShowAI(!showAI)}>
@@ -1980,8 +1994,9 @@ ${fileContent}` : ""}${webContextBlock}
               <div className="h-[50vh]">
                 <ReadingModePanel
                   content={fileContent}
+                  fileKey={`${projectId}/${activeFile}`}
                   scrollContainerRef={docContentRef}
-                  onClose={() => setReadingMode(false)}
+                  onClose={() => toggleReadingMode(true)}
                 />
               </div>
             </div>
@@ -2046,7 +2061,7 @@ ${fileContent}` : ""}${webContextBlock}
                     <>
                       <ReadingModeButton
                         active={readingMode}
-                        onClick={() => setReadingMode(!readingMode)}
+                        onClick={() => toggleReadingMode()}
                       />
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -2082,7 +2097,7 @@ ${fileContent}` : ""}${webContextBlock}
 
           {/* Content area */}
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            {activeFile && !editMode && fileContent && !readingMode && (
+            {activeFile && !editMode && fileContent && (
               <TableOfContents content={fileContent} />
             )}
             <div id="doc-content-scroll" ref={docContentRef} className="min-w-0 flex-1 overflow-y-auto">
@@ -2110,8 +2125,9 @@ ${fileContent}` : ""}${webContextBlock}
               <div className="hidden w-80 shrink-0 border-l md:block">
                 <ReadingModePanel
                   content={fileContent}
+                  fileKey={`${projectId}/${activeFile}`}
                   scrollContainerRef={docContentRef}
-                  onClose={() => setReadingMode(false)}
+                  onClose={() => toggleReadingMode(true)}
                 />
               </div>
             )}

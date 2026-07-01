@@ -95,22 +95,71 @@ const STEP_META = [
 
 // ─── Reading Mode Panel Component ───
 
+/** Persisted reading session data */
+interface ReadingSession {
+  currentStep: number
+  completedSteps: number[]
+  notes: ReadingNote[]
+  started: boolean
+  updatedAt: number
+}
+
+function getStorageKey(fileKey: string) {
+  return `reading-mode:${fileKey}`
+}
+
+function loadSession(fileKey: string): ReadingSession | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(getStorageKey(fileKey))
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function saveSession(fileKey: string, session: ReadingSession) {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(getStorageKey(fileKey), JSON.stringify(session))
+  } catch { /* quota exceeded — silent */ }
+}
+
 interface ReadingModePanelProps {
   content: string
+  /** Unique key for persistence, e.g. `${projectId}/${filename}` */
+  fileKey: string
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
   onClose: () => void
 }
 
 export function ReadingModePanel({
   content,
+  fileKey,
   scrollContainerRef,
   onClose,
 }: ReadingModePanelProps) {
+  // ── restore from localStorage
+  const saved = React.useMemo(() => loadSession(fileKey), [fileKey])
+
   // ── global state
-  const [currentStep, setCurrentStep] = React.useState(0)
-  const [completedSteps, setCompletedSteps] = React.useState<Set<number>>(new Set())
-  const [notes, setNotes] = React.useState<ReadingNote[]>([])
-  const [started, setStarted] = React.useState(false)
+  const [currentStep, setCurrentStep] = React.useState(saved?.currentStep ?? 0)
+  const [completedSteps, setCompletedSteps] = React.useState<Set<number>>(
+    new Set(saved?.completedSteps ?? [])
+  )
+  const [notes, setNotes] = React.useState<ReadingNote[]>(saved?.notes ?? [])
+  const [started, setStarted] = React.useState(saved?.started ?? false)
+
+  // ── persist on change
+  React.useEffect(() => {
+    saveSession(fileKey, {
+      currentStep,
+      completedSteps: Array.from(completedSteps),
+      notes,
+      started,
+      updatedAt: Date.now(),
+    })
+  }, [fileKey, currentStep, completedSteps, notes, started])
 
   // ── step-local input
   const [currentNote, setCurrentNote] = React.useState("")
