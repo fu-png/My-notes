@@ -164,6 +164,10 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
   const [aiPanelWidth, setAiPanelWidth] = React.useState(320)
   const aiPanelRef = React.useRef<HTMLDivElement>(null)
 
+  // Reading mode panel resize
+  const [readingPanelWidth, setReadingPanelWidth] = React.useState(320)
+  const readingPanelRef = React.useRef<HTMLDivElement>(null)
+
   // 划词问答
   const [selectedText, setSelectedText] = React.useState("")
   const docContentRef = React.useRef<HTMLDivElement>(null)
@@ -220,6 +224,43 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
       setAiPanelWidth(latestWidth)
+    }
+
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+  }, [])
+
+  // Reading mode panel resize handler
+  const handleReadingResizeStart = React.useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = readingPanelRef.current?.offsetWidth ?? 320
+    let rafId: number | null = null
+    let latestWidth = startWidth
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      // 向左拖拽增大宽度（面板在右侧）
+      const delta = startX - ev.clientX
+      latestWidth = Math.min(Math.max(startWidth + delta, 260), 600)
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          if (readingPanelRef.current) {
+            readingPanelRef.current.style.width = `${latestWidth}px`
+          }
+          rafId = null
+        })
+      }
+    }
+
+    const handleMouseUp = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      setReadingPanelWidth(latestWidth)
     }
 
     document.addEventListener("mousemove", handleMouseMove)
@@ -2144,17 +2185,26 @@ ${fileContent}` : ""}${webContextBlock}
                 </div>
               )}
             </div>
-            {/* Reading mode panel */}
-            {activeFile && !editMode && fileContent && readingMode && (
-              <div className="hidden w-80 shrink-0 border-l md:block">
-                <ReadingModePanel
-                  content={fileContent}
-                  fileKey={`${projectId}/${activeFile}`}
-                  scrollContainerRef={docContentRef}
-                  onClose={() => toggleReadingMode(true)}
-                />
-              </div>
-            )}
+              {/* Reading mode panel */}
+              {activeFile && !editMode && fileContent && readingMode && (
+                <div
+                  ref={readingPanelRef}
+                  className="relative hidden shrink-0 border-l md:block"
+                  style={{ width: readingPanelWidth }}
+                >
+                  {/* Drag handle */}
+                  <div
+                    className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
+                    onMouseDown={handleReadingResizeStart}
+                  />
+                  <ReadingModePanel
+                    content={fileContent}
+                    fileKey={`${projectId}/${activeFile}`}
+                    scrollContainerRef={docContentRef}
+                    onClose={() => toggleReadingMode(true)}
+                  />
+                </div>
+              )}
           </div>
         </div>
 
