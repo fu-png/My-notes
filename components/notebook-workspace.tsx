@@ -1956,36 +1956,50 @@ ${fileContent}` : ""}${webContextBlock}
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Mobile header */}
           <div className="flex items-center justify-between border-b px-3 py-2 md:hidden">
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1.5">
-                  <IconFile className="size-4" />
-                  <span className="max-w-[120px] truncate">{activeTitle || "选择文件"}</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0">
-                <MobileFileList
-                  projectName={currentProjectName}
-                  files={files}
-                  activeFile={activeFile}
-                  deleting={deleting}
-                  onSelectFile={selectFile}
-                  onDeleteRequest={(filename: string) => {
-                    deleteTargetRef.current = filename
-                    setDeleteTarget(filename)
-                  }}
-                />
-              </SheetContent>
-            </Sheet>
-            {activeFile && !editMode && (
+            {readingMode ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => toggleReadingMode(true)}
+              >
+                <IconX className="size-4" />
+                退出精读
+              </Button>
+            ) : (
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-1.5">
+                    <IconFile className="size-4" />
+                    <span className="max-w-[120px] truncate">{activeTitle || "选择文件"}</span>
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-72 p-0">
+                  <MobileFileList
+                    projectName={currentProjectName}
+                    files={files}
+                    activeFile={activeFile}
+                    deleting={deleting}
+                    onSelectFile={selectFile}
+                    onDeleteRequest={(filename: string) => {
+                      deleteTargetRef.current = filename
+                      setDeleteTarget(filename)
+                    }}
+                  />
+                </SheetContent>
+              </Sheet>
+            )}
+            {activeFile && !editMode && !readingMode && (
               <ReadingModeButton
                 active={readingMode}
                 onClick={() => toggleReadingMode()}
               />
             )}
-            <Button variant="ghost" size="sm" onClick={() => setShowAI(!showAI)}>
-              <IconLayoutSidebarRightExpand className="size-4" />
-            </Button>
+            {!readingMode && (
+              <Button variant="ghost" size="sm" onClick={() => setShowAI(!showAI)}>
+                <IconLayoutSidebarRightExpand className="size-4" />
+              </Button>
+            )}
           </div>
 
           {/* Mobile reading mode panel */}
@@ -2011,7 +2025,17 @@ ${fileContent}` : ""}${webContextBlock}
               )}
             </div>
             <div className="flex items-center gap-1">
-              {activeFile && (
+              {activeFile && readingMode ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => toggleReadingMode(true)}
+                >
+                  <IconX className="size-3.5" />
+                  退出精读
+                </Button>
+              ) : activeFile ? (
                 <>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2081,8 +2105,8 @@ ${fileContent}` : ""}${webContextBlock}
                     </>
                   )}
                 </>
-              )}
-              {!showAI && (
+              ) : null}
+              {!showAI && !readingMode && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="sm" onClick={() => setShowAI(true)}>
