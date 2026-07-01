@@ -1,28 +1,30 @@
 import { NextResponse } from "next/server"
-import { list } from "@vercel/blob"
+import { listFiles } from "@/lib/storage"
 
 export async function GET() {
   const info = {
-    deployVersion: "v4-retry-on-exists",
-    deployTime: "2026-06-28T22:00:00Z",
-    hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
-    hasBlobStoreId: !!process.env.BLOB_STORE_ID,
-    hasOidcToken: !!process.env.VERCEL_OIDC_TOKEN,
+    deployVersion: "v5-oss-migration",
+    deployTime: "2026-07-01T00:00:00Z",
+    hasOSSKeyId: !!process.env.OSS_ACCESS_KEY_ID,
+    hasOSSKeySecret: !!process.env.OSS_ACCESS_KEY_SECRET,
+    ossBucket: process.env.OSS_BUCKET || "(not set)",
+    ossRegion: process.env.OSS_REGION || "(not set)",
     nodeEnv: process.env.NODE_ENV,
   }
 
   try {
-    const result = await list({ prefix: "projects/", limit: 10 })
+    const files = await listFiles("projects/")
     return NextResponse.json({
       ...info,
-      blobListSuccess: true,
-      blobCount: result.blobs.length,
+      ossListSuccess: true,
+      fileCount: files.length,
+      sampleFiles: files.slice(0, 5).map((f) => f.pathname),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json({
       ...info,
-      blobListSuccess: false,
+      ossListSuccess: false,
       error: message,
     }, { status: 500 })
   }
