@@ -2058,7 +2058,7 @@ ${fileContent}` : ""}${webContextBlock}
           )}
 
           {/* Desktop header */}
-          <div className="hidden items-center justify-between border-b px-4 py-2 md:flex">
+          <div className={`items-center justify-between border-b px-4 py-2 ${activeFile ? "hidden md:flex" : "hidden"}`}>
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-medium">{activeTitle || "未选择文件"}</h2>
               {wordCount && (
