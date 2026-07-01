@@ -17,6 +17,8 @@ import {
   IconPlayerPause,
   IconMinus,
   IconPlus,
+  IconRefresh,
+  IconClipboardList,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -35,19 +37,16 @@ interface ReadingNote {
   timestamp: number
 }
 
-/** A section is a heading + all content until the next same-or-higher heading */
 interface Section {
   index: number
   title: string
   level: number
-  /** The DOM element of this heading inside the scroll container */
   element: HTMLElement | null
 }
 
 // ─── Constants ───
 
 const SPEED_LABELS = ["慢速", "适中", "快速", "极速"] as const
-/** px per animation-frame tick at each speed level */
 const SPEED_VALUES = [0.15, 0.35, 0.7, 1.2] as const
 
 const STEP_META = [
@@ -73,7 +72,7 @@ const STEP_META = [
     subtitle: "自动滚动 + 逐段复述",
     icon: <IconMessageCircle className="size-4" />,
     description: "文章自动滚动阅读，每到一个小节结束时暂停，让你用自己的话复述关键点。",
-    tips: ["不要照抄原文，用自己的话表达", "说不清的地方回头再看", "可随时暂停/调速"],
+    tips: ["不要照抄原文，用自己的话表达", "说不清的地方回头再看", "可随时暂停/调速，按空格也能控制"],
   },
   {
     id: 4,
@@ -93,9 +92,8 @@ const STEP_META = [
   },
 ]
 
-// ─── Reading Mode Panel Component ───
+// ─── Persistence ───
 
-/** Persisted reading session data */
 interface ReadingSession {
   currentStep: number
   completedSteps: number[]
@@ -125,9 +123,17 @@ function saveSession(fileKey: string, session: ReadingSession) {
   } catch { /* quota exceeded — silent */ }
 }
 
+function clearSession(fileKey: string) {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.removeItem(getStorageKey(fileKey))
+  } catch { /* silent */ }
+}
+
+// ─── Reading Mode Panel ───
+
 interface ReadingModePanelProps {
   content: string
-  /** Unique key for persistence, e.g. `${projectId}/${filename}` */
   fileKey: string
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
   onClose: () => void
@@ -139,8 +145,8 @@ export function ReadingModePanel({
   scrollContainerRef,
   onClose,
 }: ReadingModePanelProps) {
-  // ── restore from localStorage
   const saved = React.useMemo(() => loadSession(fileKey), [fileKey])
+  const hasSavedProgress = !!(saved?.started && (saved.completedSteps.length > 0 || saved.notes.length > 0))
 
   // ── global state
   const [currentStep, setCurrentStep] = React.useState(saved?.currentStep ?? 0)
@@ -149,6 +155,7 @@ export function ReadingModePanel({
   )
   const [notes, setNotes] = React.useState<ReadingNote[]>(saved?.notes ?? [])
   const [started, setStarted] = React.useState(saved?.started ?? false)
+  const [showSummary, setShowSummary] = React.useState(false)
 
   // ── persist on change
   React.useEffect(() => {
@@ -165,7 +172,7 @@ export function ReadingModePanel({
   const [currentNote, setCurrentNote] = React.useState("")
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
-  // ── step 3 (auto-scroll reading) state
+  // ── step 3 state
   const [scrolling, setScrolling] = React.useState(false)
   const [speedLevel, setSpeedLevel] = React.useState(0)
   const [scrollProgress, setScrollProgress] = React.useState(0)
@@ -177,6 +184,8 @@ export function ReadingModePanel({
   const animRef = React.useRef<number | null>(null)
   const scrollingRef = React.useRef(false)
   const scrollPosRef = React.useRef(0)
+  // For articles without headings — track pause points by scroll position
+  const paragraphPauseRef = React.useRef<HTMLElement | null>(null)
 
   // ── derived
   const step = STEP_META[currentStep]
@@ -199,9 +208,7 @@ export function ReadingModePanel({
   const estimatedMinutes = Math.max(1, Math.ceil(wordCount / 400))
   const overallProgress = started ? Math.round((completedSteps.size / STEP_META.length) * 100) : 0
 
-  // ──────────────────────────────────────
-  // Section detection — scan rendered DOM for headings
-  // ──────────────────────────────────────
+  // ── Section detection
   const detectSections = React.useCallback(() => {
     const container = scrollContainerRef.current
     if (!container) return
@@ -216,18 +223,14 @@ export function ReadingModePanel({
     setSections(result)
   }, [scrollContainerRef])
 
-  // Re-detect when entering step 3
   React.useEffect(() => {
     if (started && step.id === 3) {
-      // Delay to ensure markdown is rendered
       const t = setTimeout(detectSections, 200)
       return () => clearTimeout(t)
     }
   }, [started, step.id, detectSections])
 
-  // ──────────────────────────────────────
-  // Auto-scroll engine
-  // ──────────────────────────────────────
+  // ── Auto-scroll engine
   const startScrolling = React.useCallback(() => {
     const container = scrollContainerRef.current
     if (!container) return
@@ -240,7 +243,6 @@ export function ReadingModePanel({
       const ct = container
       const maxScroll = ct.scrollHeight - ct.clientHeight
       if (maxScroll <= 0) {
-        // Content fits without scroll — auto-complete
         scrollingRef.current = false
         setScrolling(false)
         setScrollProgress(100)
@@ -252,20 +254,17 @@ export function ReadingModePanel({
       const pct = Math.min(100, (scrollPosRef.current / maxScroll) * 100)
       setScrollProgress(pct)
 
-      // Check if we've passed a section heading — pause for note
+      // ── Section-based pause (articles with headings)
       if (sections.length > 0) {
         const containerRect = ct.getBoundingClientRect()
-        // The "reading line" is 40% down the visible viewport
         const readingLineY = containerRect.top + containerRect.height * 0.4
 
         for (let i = sections.length - 1; i >= 0; i--) {
           const sec = sections[i]
           if (!sec.element) continue
           const rect = sec.element.getBoundingClientRect()
-          // When the heading crosses above the reading line, that section is "active"
           if (rect.top < readingLineY) {
             if (i > activeSectionIdx) {
-              // We just passed a new section boundary → pause
               setActiveSectionIdx(i)
               scrollingRef.current = false
               setScrolling(false)
@@ -275,9 +274,29 @@ export function ReadingModePanel({
             break
           }
         }
+      } else {
+        // ── Paragraph-based pause (articles without headings)
+        const article = ct.querySelector("article")
+        if (article) {
+          const containerRect = ct.getBoundingClientRect()
+          const readingLineY = containerRect.top + containerRect.height * 0.5
+          const paragraphs = article.querySelectorAll("p")
+          for (let i = 0; i < paragraphs.length; i++) {
+            const p = paragraphs[i] as HTMLElement
+            if (p === paragraphPauseRef.current) continue
+            const rect = p.getBoundingClientRect()
+            // When a paragraph's bottom crosses the reading line, pause
+            if (rect.bottom < readingLineY && rect.bottom > containerRect.top) {
+              paragraphPauseRef.current = p
+              scrollingRef.current = false
+              setScrolling(false)
+              setPausedForNote(true)
+              return
+            }
+          }
+        }
       }
 
-      // Reached the bottom
       if (ct.scrollTop >= maxScroll - 1) {
         scrollingRef.current = false
         setScrolling(false)
@@ -308,29 +327,32 @@ export function ReadingModePanel({
     }
   }, [scrolling, pauseScrolling, startScrolling])
 
-  // Speed change while scrolling → restart with new speed
-  const changeSpeed = React.useCallback(
-    (delta: number) => {
-      setSpeedLevel((prev) => {
-        const next = Math.max(0, Math.min(SPEED_VALUES.length - 1, prev + delta))
-        return next
-      })
-    },
-    []
-  )
+  // ── Keyboard: Space to play/pause in step 3
+  React.useEffect(() => {
+    if (step.id !== 3 || pausedForNote) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.code === "Space" && document.activeElement?.tagName !== "TEXTAREA" && document.activeElement?.tagName !== "INPUT") {
+        e.preventDefault()
+        toggleScrolling()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [step.id, pausedForNote, toggleScrolling])
 
-  // When speed changes and we're scrolling, restart the animation loop
+  const changeSpeed = React.useCallback((delta: number) => {
+    setSpeedLevel((prev) => Math.max(0, Math.min(SPEED_VALUES.length - 1, prev + delta)))
+  }, [])
+
   React.useEffect(() => {
     if (scrolling) {
       pauseScrolling()
-      // Micro-delay so state flushes
       const t = setTimeout(() => startScrolling(), 16)
       return () => clearTimeout(t)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speedLevel])
 
-  // Cleanup on unmount
   React.useEffect(() => {
     return () => {
       scrollingRef.current = false
@@ -338,10 +360,9 @@ export function ReadingModePanel({
     }
   }, [])
 
-  // Highlight active section heading
+  // ── Highlight active section heading
   React.useEffect(() => {
     if (step.id !== 3) return
-    // Clear all highlights first
     sections.forEach((s) => {
       if (s.element) {
         s.element.style.removeProperty("background-color")
@@ -351,7 +372,6 @@ export function ReadingModePanel({
         s.element.style.removeProperty("transition")
       }
     })
-    // Apply highlight to active
     const active = sections[activeSectionIdx]
     if (active?.element) {
       active.element.style.setProperty("background-color", "hsl(var(--primary) / 0.08)")
@@ -373,9 +393,7 @@ export function ReadingModePanel({
     }
   }, [step.id, sections, activeSectionIdx])
 
-  // ──────────────────────────────────────
-  // Handle section note save (during auto-scroll pause)
-  // ──────────────────────────────────────
+  // ── Section note save
   const handleSectionNoteSave = () => {
     if (sectionNote.trim()) {
       setNotes((prev) => [
@@ -385,19 +403,10 @@ export function ReadingModePanel({
     }
     setSectionNote("")
     setPausedForNote(false)
-    // Resume scrolling after a brief pause
     setTimeout(() => startScrolling(), 300)
   }
 
-  const handleSkipSectionNote = () => {
-    setSectionNote("")
-    setPausedForNote(false)
-    setTimeout(() => startScrolling(), 100)
-  }
-
-  // ──────────────────────────────────────
-  // Generic note save (steps 1, 2, 4, 5)
-  // ──────────────────────────────────────
+  // ── Generic note save (steps 1, 2, 4, 5)
   const handleSaveNote = () => {
     if (!currentNote.trim()) return
     setNotes((prev) => [...prev, { stepId: step.id, content: currentNote.trim(), timestamp: Date.now() }])
@@ -408,7 +417,6 @@ export function ReadingModePanel({
     }
   }
 
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
@@ -416,10 +424,9 @@ export function ReadingModePanel({
     }
   }
 
-  // Navigate to step — only allow going to already-completed steps or the current one
+  // ── Step navigation (only to completed or adjacent steps)
   const goToStep = React.useCallback(
     (idx: number) => {
-      // Can only go back to completed steps, not forward to uncompleted ones
       const targetStep = STEP_META[idx]
       if (!targetStep) return
       if (idx > currentStep && !completedSteps.has(STEP_META[currentStep].id)) return
@@ -435,7 +442,6 @@ export function ReadingModePanel({
     [step.id, currentStep, completedSteps, pauseScrolling]
   )
 
-  // Mark step 3 complete
   const finishStep3 = () => {
     pauseScrolling()
     setPausedForNote(false)
@@ -445,16 +451,33 @@ export function ReadingModePanel({
     }
   }
 
-  // Auto-focus textarea
+  // ── Reset session
+  const handleReset = () => {
+    clearSession(fileKey)
+    setCurrentStep(0)
+    setCompletedSteps(new Set())
+    setNotes([])
+    setStarted(false)
+    setShowSummary(false)
+    setCurrentNote("")
+    setScrolling(false)
+    setScrollProgress(0)
+    setActiveSectionIdx(0)
+    setPausedForNote(false)
+    setSectionNote("")
+    paragraphPauseRef.current = null
+  }
+
+  // ── Auto-focus
   React.useEffect(() => {
-    if (started && textareaRef.current) textareaRef.current.focus()
-  }, [currentStep, started])
+    if (started && textareaRef.current && !showSummary) textareaRef.current.focus()
+  }, [currentStep, started, showSummary])
 
   React.useEffect(() => {
     if (pausedForNote && sectionNoteRef.current) sectionNoteRef.current.focus()
   }, [pausedForNote])
 
-  // Scroll to top when entering step 3
+  // ── Scroll to top when entering step 3
   React.useEffect(() => {
     if (started && step.id === 3) {
       const container = scrollContainerRef.current
@@ -462,12 +485,21 @@ export function ReadingModePanel({
       scrollPosRef.current = 0
       setScrollProgress(0)
       setActiveSectionIdx(0)
+      paragraphPauseRef.current = null
     }
   }, [started, step.id, scrollContainerRef])
 
-  // ─────────────────────────────────
+  // ── Show summary when all steps completed
+  React.useEffect(() => {
+    if (completedSteps.size === STEP_META.length && currentStep === STEP_META.length - 1) {
+      const t = setTimeout(() => setShowSummary(true), 500)
+      return () => clearTimeout(t)
+    }
+  }, [completedSteps, currentStep])
+
+  // ═══════════════════════════════════════
   // RENDER — Welcome screen
-  // ─────────────────────────────────
+  // ═══════════════════════════════════════
   if (!started) {
     return (
       <div className="flex h-full flex-col">
@@ -494,31 +526,114 @@ export function ReadingModePanel({
                 <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                   {s.icon}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs font-medium">{s.title}</div>
                   <div className="text-[11px] text-muted-foreground">{s.subtitle}</div>
                 </div>
+                {hasSavedProgress && completedSteps.has(s.id) && (
+                  <IconCheck className="size-3.5 shrink-0 text-primary" />
+                )}
               </div>
             ))}
           </div>
           <div className="mb-4 text-[11px] text-muted-foreground">
             全文约 {wordCount} 字 · 预计精读 {estimatedMinutes} 分钟
           </div>
-          <Button onClick={() => setStarted(true)} className="gap-2">
-            <IconPlayerPlay className="size-4" />
-            开始精读
+          <div className="flex items-center gap-2">
+            {hasSavedProgress && (
+              <Button variant="outline" className="gap-2" onClick={handleReset}>
+                <IconRefresh className="size-4" />
+                重新开始
+              </Button>
+            )}
+            <Button onClick={() => setStarted(true)} className="gap-2">
+              <IconPlayerPlay className="size-4" />
+              {hasSavedProgress ? "继续精读" : "开始精读"}
+            </Button>
+          </div>
+          {hasSavedProgress && (
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              上次进度：第 {currentStep + 1} 步 · 已完成 {completedSteps.size}/{STEP_META.length} 步
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════
+  // RENDER — Summary screen
+  // ═══════════════════════════════════════
+  if (showSummary) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <div className="flex items-center gap-2">
+            <IconClipboardList className="size-4 text-primary" />
+            <span className="text-sm font-medium">精读笔记汇总</span>
+          </div>
+          <Button variant="ghost" size="icon" className="size-7" onClick={onClose}>
+            <IconX className="size-4" />
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-4 flex items-center gap-2 rounded-md bg-primary/5 px-3 py-2.5">
+            <IconSparkles className="size-4 shrink-0 text-primary" />
+            <span className="text-[12px] text-foreground/80">
+              完成了五步精读法全部步骤，共记录 {notes.length} 条笔记
+            </span>
+          </div>
+          {STEP_META.map((s) => {
+            const stepNotes = notes.filter((n) => n.stepId === s.id)
+            return (
+              <div key={s.id} className="mb-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    {s.icon}
+                  </div>
+                  <span className="text-[12px] font-medium">{s.title}</span>
+                  <span className="text-[10px] text-muted-foreground">{stepNotes.length} 条笔记</span>
+                </div>
+                {stepNotes.length > 0 ? (
+                  <div className="ml-7 space-y-1.5">
+                    {stepNotes.map((note, i) => (
+                      <div key={i} className="rounded-md border bg-muted/20 px-3 py-2">
+                        {note.sectionIndex != null && sections[note.sectionIndex] && (
+                          <div className="mb-1 text-[10px] font-medium text-primary/70">
+                            {sections[note.sectionIndex].title}
+                          </div>
+                        )}
+                        <div className="text-[12px] leading-relaxed text-foreground/80">{note.content}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="ml-7 text-[11px] text-muted-foreground/60">—</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div className="flex items-center gap-2 border-t px-4 py-3">
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleReset}>
+            <IconRefresh className="size-3.5" />
+            重新精读
+          </Button>
+          <Button size="sm" className="flex-1 gap-1.5 text-xs" onClick={onClose}>
+            <IconCheck className="size-3.5" />
+            完成
           </Button>
         </div>
       </div>
     )
   }
 
-  // ─────────────────────────────────
+  // ═══════════════════════════════════════
   // RENDER — Active steps
-  // ─────────────────────────────────
+  // ═══════════════════════════════════════
   return (
     <div className="flex h-full flex-col">
-      {/* Header with progress */}
+      {/* Header */}
       <div className="border-b">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
@@ -535,7 +650,7 @@ export function ReadingModePanel({
         <Progress value={overallProgress} className="h-0.5" />
       </div>
 
-      {/* Step indicator dots */}
+      {/* Step dots */}
       <div className="flex items-center justify-center gap-1 border-b px-4 py-2.5">
         {STEP_META.map((s, i) => (
           <React.Fragment key={s.id}>
@@ -566,7 +681,6 @@ export function ReadingModePanel({
 
       {/* Step body */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* Step header */}
         <div className="mb-4">
           <div className="mb-1 flex items-center gap-2">
             <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -642,23 +756,11 @@ export function ReadingModePanel({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-muted-foreground">滚动速度</span>
                 <div className="flex items-center gap-1.5">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-6"
-                    onClick={() => changeSpeed(-1)}
-                    disabled={speedLevel === 0}
-                  >
+                  <Button variant="ghost" size="icon" className="size-6" onClick={() => changeSpeed(-1)} disabled={speedLevel === 0}>
                     <IconMinus className="size-3" />
                   </Button>
                   <span className="w-8 text-center text-[11px] font-medium">{SPEED_LABELS[speedLevel]}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-6"
-                    onClick={() => changeSpeed(1)}
-                    disabled={speedLevel === SPEED_VALUES.length - 1}
-                  >
+                  <Button variant="ghost" size="icon" className="size-6" onClick={() => changeSpeed(1)} disabled={speedLevel === SPEED_VALUES.length - 1}>
                     <IconPlus className="size-3" />
                   </Button>
                 </div>
@@ -667,7 +769,7 @@ export function ReadingModePanel({
 
             {/* Play / Pause */}
             {!pausedForNote && (
-              <div className="mb-4 flex items-center justify-center">
+              <div className="mb-4 flex flex-col items-center gap-1.5">
                 <Button variant={scrolling ? "outline" : "default"} className="gap-2" onClick={toggleScrolling}>
                   {scrolling ? (
                     <>
@@ -681,10 +783,11 @@ export function ReadingModePanel({
                     </>
                   )}
                 </Button>
+                <span className="text-[10px] text-muted-foreground/70">按空格键播放/暂停</span>
               </div>
             )}
 
-            {/* Section list with active indicator */}
+            {/* Section navigation */}
             {sections.length > 0 && !pausedForNote && (
               <div className="mb-4 rounded-md border bg-muted/20 p-3">
                 <div className="mb-2 text-[11px] font-medium text-muted-foreground">章节导航</div>
@@ -714,17 +817,20 @@ export function ReadingModePanel({
               </div>
             )}
 
-            {/* Section-level note prompt (when paused at section boundary) */}
+            {/* Section note prompt */}
             {pausedForNote && (
               <div className="mb-4 rounded-md border-2 border-primary/30 bg-primary/5 p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <span className="size-1.5 rounded-full bg-primary" />
                   <span className="text-[12px] font-medium">
-                    {sections[activeSectionIdx]?.title || `第 ${activeSectionIdx + 1} 节`} — 暂停复述
+                    {sections.length > 0
+                      ? (sections[activeSectionIdx]?.title || `第 ${activeSectionIdx + 1} 节`)
+                      : "段落暂停"
+                    } — 复述要点
                   </span>
                 </div>
                 <p className="mb-3 text-[11px] text-muted-foreground">
-                  刚读完一个小节，停下来用自己的话复述一下关键点吧。
+                  停下来用自己的话复述一下刚读到的关键点吧。
                 </p>
                 <textarea
                   ref={sectionNoteRef}
@@ -741,20 +847,17 @@ export function ReadingModePanel({
                 />
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-muted-foreground">⌘+Enter 保存</span>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" className="gap-1 text-xs" onClick={handleSectionNoteSave}>
-                      <IconCheck className="size-3.5" />
-                      保存 & 继续
-                    </Button>
-                  </div>
+                  <Button size="sm" className="gap-1 text-xs" onClick={handleSectionNoteSave}>
+                    <IconCheck className="size-3.5" />
+                    保存 & 继续
+                  </Button>
                 </div>
               </div>
             )}
 
-            {/* Section notes collected so far */}
             <PreviousNotes notes={notes} stepId={3} sections={sections} />
 
-            {/* Complete step 3 button */}
+            {/* Complete step 3 */}
             {scrollProgress >= 99 && !scrolling && !pausedForNote && (
               <div className="flex items-center justify-center pt-2">
                 <Button size="sm" className="gap-1.5 text-xs" onClick={finishStep3}>
@@ -801,7 +904,7 @@ export function ReadingModePanel({
         )}
       </div>
 
-      {/* Footer navigation */}
+      {/* Footer */}
       <div className="flex items-center justify-between border-t px-4 py-3">
         <Button
           variant="ghost"
@@ -814,9 +917,9 @@ export function ReadingModePanel({
           上一步
         </Button>
         {currentStep === STEP_META.length - 1 && completedSteps.size === STEP_META.length ? (
-          <Button size="sm" className="gap-1 text-xs" onClick={onClose}>
-            <IconCheck className="size-3.5" />
-            完成精读
+          <Button size="sm" className="gap-1 text-xs" onClick={() => setShowSummary(true)}>
+            <IconClipboardList className="size-3.5" />
+            查看笔记汇总
           </Button>
         ) : (
           <Button
@@ -831,21 +934,6 @@ export function ReadingModePanel({
           </Button>
         )}
       </div>
-
-      {/* Completion celebration */}
-      {completedSteps.size === STEP_META.length && (
-        <div className="border-t bg-primary/5 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <IconSparkles className="size-4 text-primary" />
-            <div>
-              <div className="text-xs font-medium">精读完成！</div>
-              <div className="text-[11px] text-muted-foreground">
-                你已经完成了五步精读法的全部步骤，共记录了 {notes.length} 条笔记。
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
