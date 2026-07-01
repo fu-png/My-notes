@@ -356,11 +356,6 @@ export function ReadingModePanel({
     }
   }
 
-  const handleSkipStep = () => {
-    setCompletedSteps((prev) => new Set([...prev, step.id]))
-    setCurrentNote("")
-    if (currentStep < STEP_META.length - 1) setCurrentStep(currentStep + 1)
-  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -369,9 +364,14 @@ export function ReadingModePanel({
     }
   }
 
-  // Navigate to step — cleanup scroll state when leaving step 3
+  // Navigate to step — only allow going to already-completed steps or the current one
   const goToStep = React.useCallback(
     (idx: number) => {
+      // Can only go back to completed steps, not forward to uncompleted ones
+      const targetStep = STEP_META[idx]
+      if (!targetStep) return
+      if (idx > currentStep && !completedSteps.has(STEP_META[currentStep].id)) return
+      if (idx > currentStep && !completedSteps.has(targetStep.id) && idx !== currentStep + 1) return
       if (step.id === 3) {
         pauseScrolling()
         setPausedForNote(false)
@@ -380,7 +380,7 @@ export function ReadingModePanel({
       setCurrentNote("")
       setCurrentStep(idx)
     },
-    [step.id, pauseScrolling]
+    [step.id, currentStep, completedSteps, pauseScrolling]
   )
 
   // Mark step 3 complete
@@ -490,12 +490,13 @@ export function ReadingModePanel({
               <TooltipTrigger asChild>
                 <button
                   onClick={() => goToStep(i)}
+                  disabled={i > currentStep && !completedSteps.has(s.id)}
                   className={`flex size-7 items-center justify-center rounded-full text-xs transition-all ${
                     i === currentStep
                       ? "bg-primary text-primary-foreground"
                       : completedSteps.has(s.id)
-                        ? "bg-primary/20 text-primary"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        ? "bg-primary/20 text-primary cursor-pointer"
+                        : "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
                   }`}
                 >
                   {completedSteps.has(s.id) ? <IconCheck className="size-3.5" /> : s.id}
@@ -551,7 +552,6 @@ export function ReadingModePanel({
               placeholder="写下你对文章结构的理解…"
               action="浏览文章结构，了解大意"
               onSave={handleSaveNote}
-              onSkip={handleSkipStep}
             />
             <PreviousNotes notes={notes} stepId={1} />
           </>
@@ -569,7 +569,6 @@ export function ReadingModePanel({
               placeholder="写下你想弄清楚的问题…"
               action="写下你的问题，然后进入精读"
               onSave={handleSaveNote}
-              onSkip={handleSkipStep}
             />
             <PreviousNotes notes={notes} stepId={2} />
           </>
@@ -690,9 +689,6 @@ export function ReadingModePanel({
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-muted-foreground">⌘+Enter 保存</span>
                   <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={handleSkipSectionNote}>
-                      跳过继续
-                    </Button>
                     <Button size="sm" className="gap-1 text-xs" onClick={handleSectionNoteSave}>
                       <IconCheck className="size-3.5" />
                       保存 & 继续
@@ -729,7 +725,6 @@ export function ReadingModePanel({
               placeholder="写下联想到的经验或知识…"
               action="写下你联想到的经验或知识"
               onSave={handleSaveNote}
-              onSkip={handleSkipStep}
             />
             <PreviousNotes notes={notes} stepId={4} />
           </>
@@ -747,7 +742,6 @@ export function ReadingModePanel({
               placeholder="用最简单的话讲给朋友听…"
               action="写一段总结，假装讲给朋友听"
               onSave={handleSaveNote}
-              onSkip={handleSkipStep}
             />
             <PreviousNotes notes={notes} stepId={5} />
           </>
@@ -777,7 +771,7 @@ export function ReadingModePanel({
             size="sm"
             className="gap-1 text-xs"
             onClick={() => goToStep(Math.min(STEP_META.length - 1, currentStep + 1))}
-            disabled={currentStep === STEP_META.length - 1}
+            disabled={currentStep === STEP_META.length - 1 || !completedSteps.has(step.id)}
           >
             下一步
             <IconChevronRight className="size-3.5" />
@@ -828,11 +822,10 @@ interface NoteInputProps {
   placeholder: string
   action: string
   onSave: () => void
-  onSkip: () => void
 }
 
 const NoteInput = React.forwardRef<HTMLTextAreaElement, NoteInputProps>(
-  ({ value, onChange, onKeyDown, placeholder, action, onSave, onSkip }, ref) => (
+  ({ value, onChange, onKeyDown, placeholder, action, onSave }, ref) => (
     <div className="space-y-2">
       <label className="text-[11px] font-medium text-muted-foreground">{action}</label>
       <textarea
@@ -843,17 +836,11 @@ const NoteInput = React.forwardRef<HTMLTextAreaElement, NoteInputProps>(
         placeholder={placeholder}
         className="min-h-[100px] w-full resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
       />
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground">⌘+Enter 保存</span>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={onSkip}>
-            跳过
-          </Button>
-          <Button size="sm" className="gap-1 text-xs" onClick={onSave} disabled={!value.trim()}>
-            <IconCheck className="size-3.5" />
-            完成
-          </Button>
-        </div>
+      <div className="flex items-center justify-end">
+        <Button size="sm" className="gap-1 text-xs" onClick={onSave} disabled={!value.trim()}>
+          <IconCheck className="size-3.5" />
+          完成
+        </Button>
       </div>
     </div>
   )
