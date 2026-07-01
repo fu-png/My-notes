@@ -9,7 +9,6 @@ import {
   IconLoader2,
   IconFileText,
   IconNotebook,
-  IconSearch,
   IconLayoutGrid,
   IconList,
   IconSortAscending,
@@ -230,18 +229,9 @@ export function ProjectsList() {
         </Button>
       </div>
 
-      {/* Toolbar: search + sort + view toggle */}
+      {/* Toolbar: sort + view toggle */}
       <div className="mb-6 flex items-center gap-2">
-        {/* Search */}
-        <div className="relative flex-1">
-          <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="搜索笔记..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
-        </div>
+        <div className="flex-1" />
 
         {/* Sort dropdown */}
         <DropdownMenu>
