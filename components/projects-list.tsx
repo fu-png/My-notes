@@ -221,70 +221,67 @@ export function ProjectsList() {
             管理你的读书笔记与项目文档
           </p>
         </div>
-        <Button asChild size="default">
-          <Link href="/docs/projects/new">
-            <IconPlus className="size-4" data-icon="inline-start" />
-            新建笔记
-          </Link>
-        </Button>
-      </div>
-
-      {/* Toolbar: sort + view toggle */}
-      <div className="mb-6 flex items-center gap-2">
-        <div className="flex-1" />
-
-        {/* Sort dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="default" className="shrink-0 gap-1.5">
-              {sortOrder === "asc" ? (
-                <IconSortAscending className="size-3.5" />
-              ) : (
-                <IconSortDescending className="size-3.5" />
-              )}
-              <span className="hidden sm:inline">{currentSortOption?.label}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {SORT_OPTIONS.map((option) => (
-              <DropdownMenuItem
-                key={option.field}
-                onClick={() => {
-                  if (sortField === option.field) {
-                    setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
-                  } else {
-                    setSortField(option.field)
-                    setSortOrder("desc")
-                  }
-                }}
-                className="gap-2"
-              >
-                {option.icon}
-                {option.label}
-                {sortField === option.field && (
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {sortOrder === "asc" ? "↑" : "↓"}
-                  </span>
+        <div className="flex items-center gap-2">
+          {/* Sort dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="default" className="shrink-0 gap-1.5">
+                {sortOrder === "asc" ? (
+                  <IconSortAscending className="size-3.5" />
+                ) : (
+                  <IconSortDescending className="size-3.5" />
                 )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                <span className="hidden sm:inline">{currentSortOption?.label}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {SORT_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.field}
+                  onClick={() => {
+                    if (sortField === option.field) {
+                      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+                    } else {
+                      setSortField(option.field)
+                      setSortOrder("desc")
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  {option.icon}
+                  {option.label}
+                  {sortField === option.field && (
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {sortOrder === "asc" ? "↑" : "↓"}
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* View toggle */}
-        <ToggleGroup
-          type="single"
-          value={viewMode}
-          onValueChange={(v) => v && setViewMode(v as ViewMode)}
-          className="shrink-0"
-        >
-          <ToggleGroupItem value="grid" aria-label="网格视图" className="px-2">
-            <IconLayoutGrid className="size-3.5" />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="list" aria-label="列表视图" className="px-2">
-            <IconList className="size-3.5" />
-          </ToggleGroupItem>
-        </ToggleGroup>
+          {/* View toggle */}
+          <ToggleGroup
+            type="single"
+            value={viewMode}
+            onValueChange={(v) => v && setViewMode(v as ViewMode)}
+            className="shrink-0"
+          >
+            <ToggleGroupItem value="grid" aria-label="网格视图" className="px-2">
+              <IconLayoutGrid className="size-3.5" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="list" aria-label="列表视图" className="px-2">
+              <IconList className="size-3.5" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+
+          <Button asChild size="default">
+            <Link href="/docs/projects/new">
+              <IconPlus className="size-4" data-icon="inline-start" />
+              新建笔记
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Notes content */}
