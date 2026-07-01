@@ -127,6 +127,7 @@ export function ReadingModePanel({
   const sectionNoteRef = React.useRef<HTMLTextAreaElement>(null)
   const animRef = React.useRef<number | null>(null)
   const scrollingRef = React.useRef(false)
+  const scrollAccumRef = React.useRef(0)
 
   // ── derived
   const step = STEP_META[currentStep]
@@ -196,7 +197,12 @@ export function ReadingModePanel({
         return
       }
 
-      ct.scrollTop += SPEED_VALUES[speedLevel]
+      scrollAccumRef.current += SPEED_VALUES[speedLevel]
+      if (scrollAccumRef.current >= 1) {
+        const px = Math.floor(scrollAccumRef.current)
+        scrollAccumRef.current -= px
+        ct.scrollTop += px
+      }
       const pct = Math.min(100, (ct.scrollTop / maxScroll) * 100)
       setScrollProgress(pct)
 
