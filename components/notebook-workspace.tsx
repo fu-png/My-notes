@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   IconFile,
   IconLoader2,
@@ -88,7 +88,8 @@ interface NotebookWorkspaceProps {
 }
 
 export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceProps) {
-  const router = useRouter()
+const router = useRouter()
+const searchParams = useSearchParams()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const chatEndRef = React.useRef<HTMLDivElement>(null)
   const chatScrollRef = React.useRef<HTMLDivElement>(null)
@@ -583,11 +584,13 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
     fetchFiles()
   }, [fetchFiles])
 
-  React.useEffect(() => {
-    if (!loadingFiles && files.length > 0 && !activeFile) {
-      selectFile(files[0].filename)
-    }
-  }, [loadingFiles, files])
+React.useEffect(() => {
+if (!loadingFiles && files.length > 0 && !activeFile) {
+const fileParam = searchParams.get("file")
+const target = fileParam && files.some(f => f.filename === fileParam) ? fileParam : files[0].filename
+selectFile(target)
+}
+}, [loadingFiles, files]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadFileContent = React.useCallback(async (filename: string) => {
     setLoadingContent(true)

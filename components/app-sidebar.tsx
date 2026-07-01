@@ -77,7 +77,7 @@ export function TopNav() {
   const handleSelect = (result: SearchResult) => {
     setOpen(false)
     setSearch("")
-    router.push(`/docs/projects/${encodeURIComponent(result.projectId)}/${encodeURIComponent(result.filename)}`)
+    router.push(`/docs/projects/${encodeURIComponent(result.projectId)}?file=${encodeURIComponent(result.filename)}`)
   }
 
   // 键盘快捷键 Cmd+K / Ctrl+K
