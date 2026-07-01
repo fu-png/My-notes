@@ -68,6 +68,7 @@ import {
 } from "./notebook/types"
 import { TableOfContents } from "./notebook/table-of-contents"
 import { FileExplorer, MobileFileList } from "./notebook/file-explorer"
+import { ReadingModePanel, ReadingModeButton } from "./notebook/reading-mode"
 const ChatPanel = dynamic(
   () => import("./notebook/chat-panel").then((m) => ({ default: m.ChatPanel })),
   {
@@ -126,6 +127,9 @@ export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceP
 
   // Translation
   const [translating, setTranslating] = React.useState(false)
+
+  // Reading mode
+  const [readingMode, setReadingMode] = React.useState(false)
 
   // RAG state
   const [ragEnabled, setRagEnabled] = React.useState(false)
@@ -1959,10 +1963,28 @@ ${fileContent}` : ""}${webContextBlock}
                 />
               </SheetContent>
             </Sheet>
+            {activeFile && !editMode && (
+              <ReadingModeButton
+                active={readingMode}
+                onClick={() => setReadingMode(!readingMode)}
+              />
+            )}
             <Button variant="ghost" size="sm" onClick={() => setShowAI(!showAI)}>
               <IconLayoutSidebarRightExpand className="size-4" />
             </Button>
           </div>
+
+          {/* Mobile reading mode panel */}
+          {activeFile && !editMode && fileContent && readingMode && (
+            <div className="border-b md:hidden">
+              <div className="h-[50vh]">
+                <ReadingModePanel
+                  content={fileContent}
+                  onClose={() => setReadingMode(false)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Desktop header */}
           <div className="hidden items-center justify-between border-b px-4 py-2 md:flex">
@@ -2020,21 +2042,27 @@ ${fileContent}` : ""}${webContextBlock}
                     </>
                   )}
                   {!editMode && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="gap-1.5 text-xs"
-                          onClick={handleTranslate}
-                          disabled={translating}
-                        >
-                          {translating ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconLanguage className="size-3.5" />}
-                          翻译
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>翻译为中文</TooltipContent>
-                    </Tooltip>
+                    <>
+                      <ReadingModeButton
+                        active={readingMode}
+                        onClick={() => setReadingMode(!readingMode)}
+                      />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 text-xs"
+                            onClick={handleTranslate}
+                            disabled={translating}
+                          >
+                            {translating ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconLanguage className="size-3.5" />}
+                            翻译
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>翻译为中文</TooltipContent>
+                      </Tooltip>
+                    </>
                   )}
                 </>
               )}
@@ -2053,7 +2081,7 @@ ${fileContent}` : ""}${webContextBlock}
 
           {/* Content area */}
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            {activeFile && !editMode && fileContent && (
+            {activeFile && !editMode && fileContent && !readingMode && (
               <TableOfContents content={fileContent} />
             )}
             <div id="doc-content-scroll" ref={docContentRef} className="min-w-0 flex-1 overflow-y-auto">
@@ -2076,6 +2104,15 @@ ${fileContent}` : ""}${webContextBlock}
                 </div>
               )}
             </div>
+            {/* Reading mode panel */}
+            {activeFile && !editMode && fileContent && readingMode && (
+              <div className="hidden w-80 shrink-0 border-l md:block">
+                <ReadingModePanel
+                  content={fileContent}
+                  onClose={() => setReadingMode(false)}
+                />
+              </div>
+            )}
           </div>
         </div>
 
