@@ -100,6 +100,9 @@ interface ReadingSession {
   notes: ReadingNote[]
   started: boolean
   updatedAt: number
+  scrollProgress?: number
+  speedLevel?: number
+  activeSectionIdx?: number
 }
 
 function getStorageKey(fileKey: string) {
@@ -157,7 +160,27 @@ export function ReadingModePanel({
   const [started, setStarted] = React.useState(saved?.started ?? false)
   const [showSummary, setShowSummary] = React.useState(false)
 
-  // ── persist on change
+  // ── step-local input
+  const [currentNote, setCurrentNote] = React.useState("")
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+
+  // ── step 3 state
+  const [scrolling, setScrolling] = React.useState(false)
+  const [speedLevel, setSpeedLevel] = React.useState(saved?.speedLevel ?? 0)
+  const [scrollProgress, setScrollProgress] = React.useState(saved?.scrollProgress ?? 0)
+  const [sections, setSections] = React.useState<Section[]>([])
+  const [activeSectionIdx, setActiveSectionIdx] = React.useState(saved?.activeSectionIdx ?? 0)
+  const [pausedForNote, setPausedForNote] = React.useState(false)
+  const [sectionNote, setSectionNote] = React.useState("")
+  const [manualNote, setManualNote] = React.useState(false)
+  const sectionNoteRef = React.useRef<HTMLTextAreaElement>(null)
+  const animRef = React.useRef<number | null>(null)
+  const scrollingRef = React.useRef(false)
+  const scrollPosRef = React.useRef(0)
+  // For articles without headings — track pause points by scroll position
+  const paragraphPauseRef = React.useRef<HTMLElement | null>(null)
+
+  // ── persist on change (must be after all state declarations)
   React.useEffect(() => {
     saveSession(fileKey, {
       currentStep,
@@ -165,27 +188,11 @@ export function ReadingModePanel({
       notes,
       started,
       updatedAt: Date.now(),
+      scrollProgress,
+      speedLevel,
+      activeSectionIdx,
     })
-  }, [fileKey, currentStep, completedSteps, notes, started])
-
-  // ── step-local input
-  const [currentNote, setCurrentNote] = React.useState("")
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
-
-  // ── step 3 state
-  const [scrolling, setScrolling] = React.useState(false)
-  const [speedLevel, setSpeedLevel] = React.useState(0)
-  const [scrollProgress, setScrollProgress] = React.useState(0)
-  const [sections, setSections] = React.useState<Section[]>([])
-  const [activeSectionIdx, setActiveSectionIdx] = React.useState(0)
-  const [pausedForNote, setPausedForNote] = React.useState(false)
-  const [sectionNote, setSectionNote] = React.useState("")
-  const sectionNoteRef = React.useRef<HTMLTextAreaElement>(null)
-  const animRef = React.useRef<number | null>(null)
-  const scrollingRef = React.useRef(false)
-  const scrollPosRef = React.useRef(0)
-  // For articles without headings — track pause points by scroll position
-  const paragraphPauseRef = React.useRef<HTMLElement | null>(null)
+  }, [fileKey, currentStep, completedSteps, notes, started, scrollProgress, speedLevel, activeSectionIdx])
 
   // ── derived
   const step = STEP_META[currentStep]
@@ -393,7 +400,7 @@ export function ReadingModePanel({
     }
   }, [step.id, sections, activeSectionIdx])
 
-  // ── Section note save
+  // ── Section note save (handles both auto-paused and manual notes)
   const handleSectionNoteSave = () => {
     if (sectionNote.trim()) {
       setNotes((prev) => [
@@ -402,11 +409,35 @@ export function ReadingModePanel({
       ])
     }
     setSectionNote("")
-    setPausedForNote(false)
-    setTimeout(() => startScrolling(), 300)
+    if (manualNote) {
+      // Manual note — just close the panel, don't auto-resume
+      setManualNote(false)
+    } else {
+      // Auto-paused — auto-resume scrolling
+      setPausedForNote(false)
+      setTimeout(() => startScrolling(), 300)
+    }
   }
 
-  // ── Generic note save (steps 1, 2, 4, 5)
+  // ── Add a note to the current step (without advancing)
+  const handleAddNote = () => {
+    if (!currentNote.trim()) return
+    setNotes((prev) => [...prev, { stepId: step.id, content: currentNote.trim(), timestamp: Date.now() }])
+    setCurrentNote("")
+    // Re-focus for the next note
+    setTimeout(() => textareaRef.current?.focus(), 50)
+  }
+
+  // ── Mark current step complete and advance
+  const handleCompleteStep = () => {
+    setCompletedSteps((prev) => new Set([...prev, step.id]))
+    setCurrentNote("")
+    if (currentStep < STEP_META.length - 1) {
+      setTimeout(() => setCurrentStep(currentStep + 1), 300)
+    }
+  }
+
+  // ── Generic note save — for backward compat (single-note steps use handleAddNote + handleCompleteStep)
   const handleSaveNote = () => {
     if (!currentNote.trim()) return
     setNotes((prev) => [...prev, { stepId: step.id, content: currentNote.trim(), timestamp: Date.now() }])
@@ -417,10 +448,11 @@ export function ReadingModePanel({
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  // ── Add-note keydown (for multi-note steps)
+  const handleAddKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
-      handleSaveNote()
+      handleAddNote()
     }
   }
 
@@ -434,6 +466,7 @@ export function ReadingModePanel({
       if (step.id === 3) {
         pauseScrolling()
         setPausedForNote(false)
+        setManualNote(false)
         setSectionNote("")
       }
       setCurrentNote("")
@@ -464,6 +497,7 @@ export function ReadingModePanel({
     setScrollProgress(0)
     setActiveSectionIdx(0)
     setPausedForNote(false)
+    setManualNote(false)
     setSectionNote("")
     paragraphPauseRef.current = null
   }
@@ -474,18 +508,61 @@ export function ReadingModePanel({
   }, [currentStep, started, showSummary])
 
   React.useEffect(() => {
-    if (pausedForNote && sectionNoteRef.current) sectionNoteRef.current.focus()
-  }, [pausedForNote])
+    if ((pausedForNote || manualNote) && sectionNoteRef.current) sectionNoteRef.current.focus()
+  }, [pausedForNote, manualNote])
 
   // ── Scroll to top when entering step 3
   React.useEffect(() => {
     if (started && step.id === 3) {
       const container = scrollContainerRef.current
-      if (container) container.scrollTop = 0
-      scrollPosRef.current = 0
-      setScrollProgress(0)
-      setActiveSectionIdx(0)
+      if (container) {
+        // Restore saved scroll position or start from top
+        if (scrollProgress > 0 && scrollProgress < 100) {
+          const maxScroll = container.scrollHeight - container.clientHeight
+          container.scrollTop = (scrollProgress / 100) * maxScroll
+          scrollPosRef.current = container.scrollTop
+        } else {
+          container.scrollTop = 0
+          scrollPosRef.current = 0
+          setScrollProgress(0)
+        }
+      }
       paragraphPauseRef.current = null
+    }
+  }, [started, step.id, scrollContainerRef]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Reading line visual indicator
+  React.useEffect(() => {
+    if (started && step.id === 3) {
+      const container = scrollContainerRef.current
+      if (!container) return
+      // Inject a CSS pseudo reading line via a style element
+      const styleId = "reading-line-style"
+      let styleEl = document.getElementById(styleId) as HTMLStyleElement | null
+      if (!styleEl) {
+        styleEl = document.createElement("style")
+        styleEl.id = styleId
+        document.head.appendChild(styleEl)
+      }
+      styleEl.textContent = `
+        .reading-mode-line::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 40%;
+          height: 2px;
+          background: hsl(var(--primary) / 0.2);
+          pointer-events: none;
+          z-index: 10;
+        }
+      `
+      container.classList.add("relative", "reading-mode-line")
+      return () => {
+        container.classList.remove("relative", "reading-mode-line")
+        const el = document.getElementById(styleId)
+        if (el) el.remove()
+      }
     }
   }, [started, step.id, scrollContainerRef])
 
@@ -715,10 +792,13 @@ export function ReadingModePanel({
               ref={textareaRef}
               value={currentNote}
               onChange={setCurrentNote}
-              onKeyDown={handleKeyDown}
+              onKeyDown={handleAddKeyDown}
               placeholder="写下你对文章结构的理解…"
               action="浏览文章结构，了解大意"
-              onSave={handleSaveNote}
+              onSave={handleCompleteStep}
+              onAdd={handleAddNote}
+              hasNotes={notes.some((n) => n.stepId === 1)}
+              completeLabel="完成本步"
             />
             <PreviousNotes notes={notes} stepId={1} />
           </>
@@ -732,10 +812,13 @@ export function ReadingModePanel({
               ref={textareaRef}
               value={currentNote}
               onChange={setCurrentNote}
-              onKeyDown={handleKeyDown}
+              onKeyDown={handleAddKeyDown}
               placeholder="写下你想弄清楚的问题…"
               action="写下你的问题，然后进入精读"
-              onSave={handleSaveNote}
+              onSave={handleCompleteStep}
+              onAdd={handleAddNote}
+              hasNotes={notes.some((n) => n.stepId === 2)}
+              completeLabel="完成本步"
             />
             <PreviousNotes notes={notes} stepId={2} />
           </>
@@ -767,8 +850,8 @@ export function ReadingModePanel({
               </div>
             </div>
 
-            {/* Play / Pause */}
-            {!pausedForNote && (
+            {/* Play / Pause + Manual note */}
+            {!pausedForNote && !manualNote && (
               <div className="mb-4 flex flex-col items-center gap-1.5">
                 <Button variant={scrolling ? "outline" : "default"} className="gap-2" onClick={toggleScrolling}>
                   {scrolling ? (
@@ -783,7 +866,18 @@ export function ReadingModePanel({
                     </>
                   )}
                 </Button>
-                <span className="text-[10px] text-muted-foreground/70">按空格键播放/暂停</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-muted-foreground/70">空格键播放/暂停</span>
+                  {!scrolling && scrollProgress > 0 && scrollProgress < 100 && (
+                    <button
+                      onClick={() => { pauseScrolling(); setManualNote(true) }}
+                      className="text-[10px] text-primary/70 hover:text-primary"
+                    >
+                      <IconPencil className="mr-0.5 inline size-3" />
+                      写笔记
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -817,21 +911,35 @@ export function ReadingModePanel({
               </div>
             )}
 
-            {/* Section note prompt */}
-            {pausedForNote && (
+            {/* Section note prompt (auto-paused or manual) */}
+            {(pausedForNote || manualNote) && (
               <div className="mb-4 rounded-md border-2 border-primary/30 bg-primary/5 p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="size-1.5 rounded-full bg-primary" />
-                  <span className="text-[12px] font-medium">
-                    {sections.length > 0
-                      ? (sections[activeSectionIdx]?.title || `第 ${activeSectionIdx + 1} 节`)
-                      : "段落暂停"
-                    } — 复述要点
-                  </span>
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="size-1.5 rounded-full bg-primary" />
+                    <span className="text-[12px] font-medium">
+                      {manualNote
+                        ? "随手笔记"
+                        : (sections.length > 0
+                          ? (sections[activeSectionIdx]?.title || `第 ${activeSectionIdx + 1} 节`)
+                          : "段落暂停") + " — 复述要点"
+                      }
+                    </span>
+                  </div>
+                  {manualNote && (
+                    <button
+                      onClick={() => { setManualNote(false); setSectionNote("") }}
+                      className="text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      <IconX className="size-3" />
+                    </button>
+                  )}
                 </div>
-                <p className="mb-3 text-[11px] text-muted-foreground">
-                  停下来用自己的话复述一下刚读到的关键点吧。
-                </p>
+                {!manualNote && (
+                  <p className="mb-3 text-[11px] text-muted-foreground">
+                    停下来用自己的话复述一下刚读到的关键点吧。
+                  </p>
+                )}
                 <textarea
                   ref={sectionNoteRef}
                   value={sectionNote}
@@ -842,14 +950,14 @@ export function ReadingModePanel({
                       handleSectionNoteSave()
                     }
                   }}
-                  placeholder="用自己的话复述这一节的要点…"
+                  placeholder={manualNote ? "随时记录想法…" : "用自己的话复述这一节的要点…"}
                   className="mb-2 min-h-[80px] w-full resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-muted-foreground">⌘+Enter 保存</span>
                   <Button size="sm" className="gap-1 text-xs" onClick={handleSectionNoteSave}>
                     <IconCheck className="size-3.5" />
-                    保存 & 继续
+                    {manualNote ? "保存笔记" : "保存 & 继续"}
                   </Button>
                 </div>
               </div>
@@ -877,10 +985,13 @@ export function ReadingModePanel({
               ref={textareaRef}
               value={currentNote}
               onChange={setCurrentNote}
-              onKeyDown={handleKeyDown}
+              onKeyDown={handleAddKeyDown}
               placeholder="写下联想到的经验或知识…"
               action="写下你联想到的经验或知识"
-              onSave={handleSaveNote}
+              onSave={handleCompleteStep}
+              onAdd={handleAddNote}
+              hasNotes={notes.some((n) => n.stepId === 4)}
+              completeLabel="完成本步"
             />
             <PreviousNotes notes={notes} stepId={4} />
           </>
@@ -894,10 +1005,13 @@ export function ReadingModePanel({
               ref={textareaRef}
               value={currentNote}
               onChange={setCurrentNote}
-              onKeyDown={handleKeyDown}
+              onKeyDown={handleAddKeyDown}
               placeholder="用最简单的话讲给朋友听…"
               action="写一段总结，假装讲给朋友听"
-              onSave={handleSaveNote}
+              onSave={handleCompleteStep}
+              onAdd={handleAddNote}
+              hasNotes={notes.some((n) => n.stepId === 5)}
+              completeLabel="完成本步"
             />
             <PreviousNotes notes={notes} stepId={5} />
           </>
@@ -963,10 +1077,15 @@ interface NoteInputProps {
   placeholder: string
   action: string
   onSave: () => void
+  /** If provided, shows an "Add" button alongside "Complete" — for multi-note steps */
+  onAdd?: () => void
+  /** Whether there are already notes for this step — enables completion without typing */
+  hasNotes?: boolean
+  /** Label for the complete button */  completeLabel?: string
 }
 
 const NoteInput = React.forwardRef<HTMLTextAreaElement, NoteInputProps>(
-  ({ value, onChange, onKeyDown, placeholder, action, onSave }, ref) => (
+  ({ value, onChange, onKeyDown, placeholder, action, onSave, onAdd, hasNotes, completeLabel = "完成本步" }, ref) => (
     <div className="space-y-2">
       <label className="text-[11px] font-medium text-muted-foreground">{action}</label>
       <textarea
@@ -977,11 +1096,22 @@ const NoteInput = React.forwardRef<HTMLTextAreaElement, NoteInputProps>(
         placeholder={placeholder}
         className="min-h-[100px] w-full resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
       />
-      <div className="flex items-center justify-end">
-        <Button size="sm" className="gap-1 text-xs" onClick={onSave} disabled={!value.trim()}>
-          <IconCheck className="size-3.5" />
-          完成
-        </Button>
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-muted-foreground">
+          {onAdd ? "⌘+Enter 添加笔记" : "⌘+Enter 保存"}
+        </span>
+        <div className="flex items-center gap-2">
+          {onAdd && (
+            <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={onAdd} disabled={!value.trim()}>
+              <IconPlus className="size-3" />
+              添加
+            </Button>
+          )}
+          <Button size="sm" className="gap-1 text-xs" onClick={onSave} disabled={!value.trim() && !hasNotes}>
+            <IconCheck className="size-3.5" />
+            {onAdd ? completeLabel : "完成"}
+          </Button>
+        </div>
       </div>
     </div>
   )

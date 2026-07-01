@@ -231,3 +231,50 @@
 .dark .tiptap mark {
   background-color: oklch(0.4 0.1 100);
 }
+/* ─── Reading mode typography optimization ─── */
+.reading-mode-active article {
+  font-size: 1.0625rem;
+  line-height: 1.9;
+  letter-spacing: 0.01em;
+}
+
+.reading-mode-active article p {
+  margin-bottom: 1.5em;
+}
+
+.reading-mode-active article h1,
+.reading-mode-active article h2,
+.reading-mode-active article h3,
+.reading-mode-active article h4 {
+  margin-top: 2em;
+  margin-bottom: 0.8em;
+}
+
+.reading-mode-active article pre {
+  margin-bottom: 1.5em;
+}
+
+.reading-mode-active article blockquote {
+  margin: 1.5em 0;
+  padding-left: 1.2em;
+  border-left-width: 3px;
+  opacity: 0.9;
+}
+
+.reading-mode-active article ul,
+.reading-mode-active article ol {
+  margin-bottom: 1.5em;
+  padding-left: 1.8em;
+}
+
+.reading-mode-active article li {
+  margin-bottom: 0.5em;
+}
+
+.reading-mode-active article code {
+  font-size: 0.95em;
+}
+
+.reading-mode-active article img {
+  margin: 1.5em auto;
+}

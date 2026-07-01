@@ -2124,7 +2124,7 @@ ${fileContent}` : ""}${webContextBlock}
             {activeFile && !editMode && fileContent && (
               <TableOfContents content={fileContent} />
             )}
-            <div id="doc-content-scroll" ref={docContentRef} className="min-w-0 flex-1 overflow-y-auto">
+            <div id="doc-content-scroll" ref={docContentRef} className={`min-w-0 flex-1 overflow-y-auto ${readingMode && !editMode ? "reading-mode-active" : ""}`}>
               {loadingContent ? (
                 <div className="flex items-center justify-center py-20">
                   <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
