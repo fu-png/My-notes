@@ -914,36 +914,6 @@ export function ReadingModePanel({
               </div>
             )}
 
-            {/* Section navigation */}
-            {sections.length > 0 && !pausedForNote && (
-              <div className="mb-4 rounded-md border bg-muted/20 p-3">
-                <div className="mb-2 text-[11px] font-medium text-muted-foreground">章节导航</div>
-                <div className="space-y-1">
-                  {sections.map((s, i) => (
-                    <button
-                      key={i}
-                      onClick={() => {
-                        if (s.element) {
-                          s.element.scrollIntoView({ behavior: "smooth", block: "start" })
-                          setActiveSectionIdx(i)
-                        }
-                      }}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] transition-colors ${
-                        i === activeSectionIdx
-                          ? "bg-primary/10 font-medium text-primary"
-                          : "text-foreground/60 hover:bg-muted/50 hover:text-foreground/80"
-                      }`}
-                      style={{ paddingLeft: `${(s.level - 1) * 10 + 8}px` }}
-                    >
-                      {i < activeSectionIdx && <IconCheck className="size-3 shrink-0 text-primary/60" />}
-                      {i === activeSectionIdx && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
-                      <span className="truncate">{s.title}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Section note prompt (auto-paused or manual) */}
             {(pausedForNote || manualNote) && (
               <div className="mb-4 rounded-md border-2 border-primary/30 bg-primary/5 p-3">
