@@ -755,7 +755,17 @@ export function ReadingModePanel({
             <IconBook className="size-4 text-primary" />
             <span className="text-sm font-medium">精读模式</span>
           </div>
-          <span className="text-[11px] text-muted-foreground">{completedSteps.size}/{STEP_META.length}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">{completedSteps.size}/{STEP_META.length}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-6" onClick={handleReset}>
+                  <IconRefresh className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>重新精读</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
         <Progress value={overallProgress} className="h-0.5" />
       </div>
