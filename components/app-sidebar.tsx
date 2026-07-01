@@ -121,7 +121,7 @@ export function TopNav() {
               onChange={(e) => setSearch(e.target.value)}
               onFocus={() => { if (search.trim() && results.length > 0) setOpen(true) }}
               placeholder="搜索文件… ⌘K"
-              className="h-8 w-full rounded-md border border-transparent bg-muted pl-8 pr-8 text-sm placeholder:text-muted-foreground/60 focus:border-primary focus:bg-background focus:outline-none"
+              className="h-8 w-full rounded-md border-transparent bg-muted pl-8 pr-8 text-sm placeholder:text-muted-foreground/60 focus:bg-muted focus:outline-none"
             />
             {search && (
               <button
