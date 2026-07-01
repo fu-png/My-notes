@@ -48,7 +48,7 @@ interface Section {
 
 const SPEED_LABELS = ["慢速", "适中", "快速", "极速"] as const
 /** px per animation-frame tick at each speed level */
-const SPEED_VALUES = [0.4, 0.8, 1.5, 2.5] as const
+const SPEED_VALUES = [0.15, 0.35, 0.7, 1.2] as const
 
 const STEP_META = [
   {
@@ -118,7 +118,7 @@ export function ReadingModePanel({
 
   // ── step 3 (auto-scroll reading) state
   const [scrolling, setScrolling] = React.useState(false)
-  const [speedLevel, setSpeedLevel] = React.useState(1)
+  const [speedLevel, setSpeedLevel] = React.useState(0)
   const [scrollProgress, setScrollProgress] = React.useState(0)
   const [sections, setSections] = React.useState<Section[]>([])
   const [activeSectionIdx, setActiveSectionIdx] = React.useState(0)
