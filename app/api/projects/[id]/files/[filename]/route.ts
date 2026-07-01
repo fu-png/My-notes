@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { readFile, deleteFile, fileExists, renameFile } from "@/lib/storage"
+import { readFile, deleteFile, fileExists, renameFile, writeFile } from "@/lib/storage"
 
 // GET /api/projects/[id]/files/[filename] — read file content
 export async function GET(
@@ -23,6 +23,35 @@ export async function GET(
     })
   } catch {
     return NextResponse.json({ error: "读取失败" }, { status: 500 })
+  }
+}
+
+// PUT /api/projects/[id]/files/[filename] — update file content
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; filename: string }> }
+) {
+  const { id, filename } = await params
+  const decodedFilename = decodeURIComponent(filename)
+  const pathname = `projects/${id}/${decodedFilename}`
+
+  try {
+    const body = await request.json()
+    const content = body.content as string | undefined
+    if (content === undefined || content === null) {
+      return NextResponse.json({ error: "缺少 content 字段" }, { status: 400 })
+    }
+
+    const exists = await fileExists(pathname)
+    if (!exists) {
+      return NextResponse.json({ error: "文件不存在" }, { status: 404 })
+    }
+
+    await writeFile(pathname, content, { contentType: "text/markdown; charset=utf-8" })
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "保存失败"
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
