@@ -1980,6 +1980,7 @@ ${fileContent}` : ""}${webContextBlock}
               <div className="h-[50vh]">
                 <ReadingModePanel
                   content={fileContent}
+                  scrollContainerRef={docContentRef}
                   onClose={() => setReadingMode(false)}
                 />
               </div>
@@ -2109,6 +2110,7 @@ ${fileContent}` : ""}${webContextBlock}
               <div className="hidden w-80 shrink-0 border-l md:block">
                 <ReadingModePanel
                   content={fileContent}
+                  scrollContainerRef={docContentRef}
                   onClose={() => setReadingMode(false)}
                 />
               </div>
