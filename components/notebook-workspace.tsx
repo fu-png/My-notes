@@ -2081,27 +2081,22 @@ ${fileContent}` : ""}${webContextBlock}
                 </Button>
               ) : activeFile ? (
                 <>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1.5 text-xs"
-                        onClick={() => {
-                          if (editMode) {
-                            setEditContent(fileContent)
-                            setEditMode(false)
-                          } else {
-                            setEditMode(true)
-                          }
-                        }}
-                      >
-                        {editMode ? <IconEye className="size-3.5" /> : <IconEdit className="size-3.5" />}
-                        {editMode ? "预览" : "编辑"}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{editMode ? "切换到预览模式" : "切换到编辑模式"}</TooltipContent>
-                  </Tooltip>
+                  {!editMode && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5 text-xs"
+                          onClick={() => setEditMode(true)}
+                        >
+                          <IconEdit className="size-3.5" />
+                          编辑
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>切换到编辑模式</TooltipContent>
+                    </Tooltip>
+                  )}
                   {editMode && (
                     <>
                       <Button
