@@ -33,7 +33,7 @@ function getOSSClient(): OSS {
       accessKeyId: process.env.OSS_ACCESS_KEY_ID!,
       accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET!,
       bucket: process.env.OSS_BUCKET || "my-notes-fzc",
-      timeout: 120000, // 120s — 默认 60s 在跨区域（Vercel US → OSS Beijing）上传大文件时不够
+      timeout: 300000, // 300s — Vercel US → OSS Beijing 跨区域上传音频文件需要足够长的超时
     })
   }
   return _ossClient
@@ -83,6 +83,10 @@ export async function writeFile(
     const ossOptions: OSS.PutObjectOptions = {}
     if (options?.contentType) {
       ossOptions.headers = { "Content-Type": options.contentType }
+    }
+    // 对大文件（>500KB）使用更长的超时，防止跨区域上传失败
+    if (buffer.length > 512 * 1024) {
+      ossOptions.timeout = 600000 // 10 分钟
     }
 
     const result = await client.put(pathname, buffer, ossOptions)
