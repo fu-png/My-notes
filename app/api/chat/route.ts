@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
         model: chatModel,
         messages,
         temperature: 0.7,
-        max_tokens: 16384,
+        max_tokens: 32768,
         stream: true,
       }),
       signal: controller.signal,

@@ -1129,6 +1129,7 @@ selectFile(target)
       let buffer = ""
       let fullContent = ""
       let fullReasoning = ""
+      let finishReason = ""
       let rafScheduled = false
 
       while (true) {
@@ -1154,6 +1155,9 @@ selectFile(target)
             }
             if (parsed.reasoning) {
               fullReasoning += parsed.reasoning
+            }
+            if (parsed.finish_reason) {
+              finishReason = parsed.finish_reason
             }
           } catch {
             // Skip malformed
@@ -1194,6 +1198,11 @@ selectFile(target)
       }
 
       if (!fullContent) fullContent = "抱歉，未能获取到回复。"
+
+      // 检测是否因 token 上限导致截断
+      if (finishReason === "length") {
+        fullContent += "\n\n---\n⚠️ **回答被截断**：已达到模型最大输出长度限制。你可以发送「继续」来获取剩余内容。"
+      }
 
       // 从 content 中解析「## 思考过程」（兼容不支持 reasoning_content 的模型）
       const parsedFinal = parseReasoningFromContent(fullContent, fullReasoning)
