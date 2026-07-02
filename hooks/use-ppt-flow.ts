@@ -23,7 +23,6 @@ export interface PptSession {
 
 interface UsePptFlowOptions {
   projectId: string
-  activeFile: string | null
   ragEnabled: boolean
   chatMessages: ChatMessage[]
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
@@ -51,7 +50,6 @@ interface UsePptFlowReturn {
 export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
   const {
     projectId,
-    activeFile,
     ragEnabled,
     chatMessages,
     setChatMessages,
@@ -85,8 +83,6 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
 
   /** Start PPT flow — called when intent detected or guide button clicked */
   const startPptFlow = (userText: string) => {
-    const contextHint = activeFile ? `（当前打开：${activeFile}）` : ""
-    const fullText = userText + (contextHint && activeFile && !userText.includes(activeFile) ? ` ${contextHint}` : "")
     const aiMsgId = `ppt-${Date.now()}`
     const userMsg: ChatMessage = {
       id: `user-ppt-${Date.now()}`,
@@ -97,13 +93,11 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     const aiMsg: ChatMessage = {
       id: aiMsgId,
       role: "assistant",
-      content: activeFile
-        ? `好的！我来基于「${activeFile.replace(/\.md$/i, "")}」为你生成 PPT 演示文稿。每页幻灯片将由 AI 生图模型渲染为高清图片。\n\n请先选择一个视觉风格：`
-        : "好的！我来帮你生成 PPT 演示文稿。每页幻灯片将由 AI 生图模型渲染为高清图片。\n\n请先选择一个视觉风格：",
+      content: "好的！我将基于整个笔记本的所有文档为你生成 PPT 演示文稿。每页幻灯片将由 AI 生图模型渲染为高清图片。\n\n请先选择一个视觉风格：",
       timestamp: new Date(),
       pptMeta: {
         step: "style-select",
-        userIntent: fullText,
+        userIntent: userText,
         stylePreset: "corporate",
       },
     }
@@ -112,9 +106,9 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
       active: true,
       step: "style-select",
       stylePreset: "corporate",
-      slideCount: 3,
+      slideCount: 8,
       customPrompt: "",
-      userIntent: fullText,
+      userIntent: userText,
       outlineMsgId: null,
       imagesMsgId: null,
     })
@@ -140,7 +134,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     const aiMsg: ChatMessage = {
       id: newMsgId,
       role: "assistant",
-      content: `已选择「${preset?.name}」风格（${preset?.colors}）。\n\n需要生成几页幻灯片？（3-15 页，默认 3 页）`,
+      content: `已选择「${preset?.name}」风格（${preset?.colors}）。\n\n需要生成几页幻灯片？（3-15 页，默认 8 页）`,
       timestamp: new Date(),
       pptMeta: {
         step: "slide-count",
@@ -228,7 +222,6 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
           slideCount: pptSession.slideCount,
           ragEnabled,
           conversationContext,
-          activeFileName: activeFile || undefined,
         }),
         signal: abortCtrl.signal,
       })
@@ -414,7 +407,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     const aiMsg: ChatMessage = {
       id: imagesMsgId,
       role: "assistant",
-      content: `大纲已确认！正在生成幻灯片图片（共 ${editedOutline.slides.length} 页，2-3 页并发，预计 ${Math.ceil(editedOutline.slides.length / 3) * 2}-${Math.ceil(editedOutline.slides.length / 3) * 4} 分钟）...`,
+      content: `大纲已确认！正在生成幻灯片图片（共 ${editedOutline.slides.length} 页，全部并发生成中）...`,
       timestamp: new Date(),
       pptMeta: {
         step: "generating-images",
@@ -433,17 +426,12 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     const abortCtrl = new AbortController()
     pptAbortRef.current = abortCtrl
 
-    const CONCURRENCY = 3
-    for (let i = 0; i < total; i += CONCURRENCY) {
-      if (abortCtrl.signal.aborted) break
-      const batch = editedOutline.slides.slice(i, i + CONCURRENCY)
-      await Promise.allSettled(
-        batch.map((slide, j) =>
-          generateSingleSlide(imagesMsgId, slide, i + j, total, preset, imageConfig, pptSession.customPrompt, abortCtrl)
-        )
+    await Promise.allSettled(
+      editedOutline.slides.map((slide, i) =>
+        generateSingleSlide(imagesMsgId, slide, i, total, preset, imageConfig, pptSession.customPrompt, abortCtrl)
       )
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
-    }
+    )
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
 
     pptAbortRef.current = null
 

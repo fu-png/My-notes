@@ -578,7 +578,6 @@ const searchParams = useSearchParams()
   // ─── PPT Generation (via hook) ───
   const pptFlow = usePptFlow({
     projectId,
-    activeFile,
     ragEnabled,
     chatMessages,
     setChatMessages,
@@ -1326,6 +1325,22 @@ selectFile(target)
   const isStreamingRef = React.useRef(false)
   const abortControllerRef = React.useRef<AbortController | null>(null)
 
+  const handleStopGeneration = React.useCallback(() => {
+    // 停止 AI 流式回复
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    // 停止 PPT 生成
+    if (pptAbortRef.current) {
+      pptAbortRef.current.abort()
+      pptAbortRef.current = null
+    }
+    isStreamingRef.current = false
+    setChatLoading(false)
+    setGenerating(false)
+  }, [pptAbortRef])
+
   const handleChatScroll = React.useCallback(() => {
     const el = chatScrollRef.current
     if (!el) return
@@ -1891,6 +1906,7 @@ selectFile(target)
           onSetShowSources={setShowSources}
           onSetChatInput={setChatInput}
           onSendMessage={handleSendMessage}
+          onStopGeneration={handleStopGeneration}
           onToggleDeepThink={() => setDeepThinkMode((v) => !v)}
           selectedText={selectedText}
           onClearSelectedText={() => setSelectedText("")}

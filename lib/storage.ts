@@ -386,6 +386,7 @@ export async function getProjects(): Promise<ProjectMeta[]> {
           (f) =>
             f.pathname.startsWith(projectPrefix) &&
             f.pathname !== metaBlob.pathname &&
+            !f.pathname.endsWith("/chat-history.json") &&
             !f.pathname.slice(projectPrefix.length).includes("/")
         )
         projects.push({ ...meta, fileCount: allFiles.length })
@@ -418,7 +419,7 @@ export async function getProjects(): Promise<ProjectMeta[]> {
       const meta = JSON.parse(raw) as ProjectMeta
       const files = fs
         .readdirSync(path.join(projectsDir, entry.name))
-        .filter((f) => f !== "meta.json" && !f.startsWith("."))
+          .filter((f) => f !== "meta.json" && f !== "chat-history.json" && !f.startsWith("."))
       projects.push({ ...meta, fileCount: files.length })
     } catch {
       continue
@@ -458,6 +459,7 @@ export async function getProject(id: string): Promise<{ meta: ProjectMeta; files
     const allFiles = await listFiles(projectPrefix)
     const fileList = allFiles
       .filter((f) => !f.pathname.endsWith("/meta.json"))
+      .filter((f) => !f.pathname.endsWith("/chat-history.json"))
       .filter((f) => {
         const relativePath = f.pathname.slice(projectPrefix.length)
         return !relativePath.includes("/")

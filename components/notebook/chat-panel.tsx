@@ -112,6 +112,7 @@ export interface ChatPanelProps {
   onSetShowSources: (v: boolean | ((v: boolean) => boolean)) => void
   onSetChatInput: (v: string) => void
   onSendMessage: () => void
+  onStopGeneration: () => void
   onToggleDeepThink: () => void
   selectedText: string
   onClearSelectedText: () => void
@@ -197,6 +198,7 @@ export function ChatPanel({
   onSetShowSources,
   onSetChatInput,
   onSendMessage,
+  onStopGeneration,
   onToggleDeepThink,
   selectedText,
   onClearSelectedText,
@@ -527,9 +529,10 @@ export function ChatPanel({
                       )}
                       {/* PPT 生成交互控件 */}
                       {msg.pptMeta && (
-                        <PptFlowControls
-                          msg={msg}
-                          pptSession={pptSession}
+<PptFlowControls
+  msg={msg}
+  projectId={projectId}
+  pptSession={pptSession}
                           chatLoading={chatLoading}
                           onStyleSelect={onPptStyleSelect}
                           onSlideCountSelect={onPptSlideCountSelect}
@@ -627,11 +630,10 @@ export function ChatPanel({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
-                onSendMessage()
+                if (!chatLoading) onSendMessage()
               }
             }}
             placeholder="输入问题，按 Enter 发送..."
-            disabled={chatLoading}
             rows={2}
             className="w-full resize-none bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
           />
@@ -664,14 +666,24 @@ export function ChatPanel({
                 )}
               </span>
             </div>
-            <Button
-              size="icon"
-              className="size-6"
-              onClick={onSendMessage}
-              disabled={chatLoading || !chatInput.trim()}
-            >
-              <IconSend className="size-3" />
-            </Button>
+            {chatLoading || generating ? (
+              <button
+                className="flex size-6 items-center justify-center rounded-md bg-muted transition-colors hover:bg-muted-foreground/20"
+                onClick={onStopGeneration}
+                title="停止生成"
+              >
+                <span className="block size-2.5 rounded-[2px] bg-foreground" />
+              </button>
+            ) : (
+              <Button
+                size="icon"
+                className="size-6"
+                onClick={onSendMessage}
+                disabled={!chatInput.trim()}
+              >
+                <IconSend className="size-3" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -693,10 +705,19 @@ function ReasoningBlock({
   defaultOpen: boolean
 }) {
   const [open, setOpen] = React.useState(defaultOpen)
+  const wasThinkingRef = React.useRef(isThinking)
 
   React.useEffect(() => {
     if (defaultOpen) setOpen(true)
   }, [defaultOpen])
+
+  // 回答完成后自动收起思考过程
+  React.useEffect(() => {
+    if (wasThinkingRef.current && !isThinking) {
+      setOpen(false)
+    }
+    wasThinkingRef.current = isThinking
+  }, [isThinking])
 
   return (
     <div className="mb-2 rounded-md border border-primary/20 bg-primary/5 text-xs">
@@ -1023,6 +1044,7 @@ function isPastStep(msgStep: string, currentStep: string | undefined): boolean {
 
 function PptFlowControls({
   msg,
+  projectId,
   pptSession,
   chatLoading,
   onStyleSelect,
@@ -1034,6 +1056,7 @@ function PptFlowControls({
   onCancel,
 }: {
   msg: ChatMessage
+  projectId: string
   pptSession: ChatPanelProps["pptSession"]
   chatLoading: boolean
   onStyleSelect: (styleId: string) => void
@@ -1052,15 +1075,23 @@ function PptFlowControls({
   const customCountRef = React.useRef<HTMLInputElement>(null)
   const [previewMode, setPreviewMode] = React.useState<"none" | "single" | "all">("none")
   const [previewIndex, setPreviewIndex] = React.useState(0)
+  const [downloading, setDownloading] = React.useState<"none" | "zip" | "pdf">("none")
 
-  // Sync edited outline when meta.outline changes — always sync on new outline
+  // Sync edited outline only when meta.outline itself changes (e.g. new outline from server)
   const outlineJson = meta.outline ? JSON.stringify(meta.outline) : null
-  const editedJson = editedOutline ? JSON.stringify(editedOutline) : null
+  const prevOutlineJsonRef = React.useRef<string | null>(null)
   React.useEffect(() => {
-    if (outlineJson && outlineJson !== editedJson) {
+    if (outlineJson && outlineJson !== prevOutlineJsonRef.current) {
+      prevOutlineJsonRef.current = outlineJson
       setEditedOutline(meta.outline!)
     }
-  }, [outlineJson, editedJson, meta.outline])
+  }, [outlineJson, meta.outline])
+
+  // 如果 PPT 会话不活跃（查看历史记录时），只保留大纲和结果展示，隐藏中间交互控件
+  const isResultStep = meta.step === "generating-images" || meta.step === "done" || meta.step === "outline-review"
+  if (!pptSession?.active && !isResultStep) {
+    return null
+  }
 
   // If the session has moved past this message's step, don't render interactive controls
   if (isPastStep(meta.step, pptSession?.step)) {
@@ -1085,16 +1116,13 @@ function PptFlowControls({
             </button>
           ))}
         </div>
-        <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground" onClick={onCancel}>
-          取消
-        </Button>
       </div>
     )
   }
 
-  // ─── Step: slide-count ───
+  // ─── Step: slide-count ---
   if (meta.step === "slide-count") {
-    const counts = [5, 6, 7, 8, 10, 12, 15]
+    const counts = [3, 5, 8, 10, 12, 15]
     return (
       <div className="mt-2 space-y-1.5">
         <div className="flex flex-wrap gap-1.5">
@@ -1123,13 +1151,13 @@ function PptFlowControls({
               type="number"
               min={3}
               max={15}
-              defaultValue={3}
-              className="w-16 border border-border bg-background px-2 py-1 text-[12px] rounded"
+              defaultValue={8}
+              className="w-16 border border-border bg-background px-2 py-1 text-[12px]"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   const n = parseInt((e.target as HTMLInputElement).value, 10)
                   if (isNaN(n) || n < 3 || n > 15) {
-                    (e.target as HTMLInputElement).value = "3"
+                    (e.target as HTMLInputElement).value = "8"
                     return
                   }
                   onSlideCountSelect(n)
@@ -1145,7 +1173,7 @@ function PptFlowControls({
                 const n = parseInt(val, 10)
                 if (isNaN(n) || n < 3 || n > 15) {
                   if (customCountRef.current) {
-                    customCountRef.current.value = "3"
+                    customCountRef.current.value = "8"
                     customCountRef.current.focus()
                   }
                   return
@@ -1201,7 +1229,7 @@ function PptFlowControls({
     return (
       <div className="mt-2">
         {meta.streamingText ? (
-          <div className="rounded border border-border bg-muted/30 p-2">
+          <div className="border border-border bg-muted/30 p-2">
             <pre className="whitespace-pre-wrap break-all text-[10px] leading-relaxed text-muted-foreground max-h-[200px] overflow-y-auto">
               {meta.streamingText.slice(-500)}
             </pre>
@@ -1212,9 +1240,6 @@ function PptFlowControls({
             正在生成大纲...
           </div>
         )}
-        <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground" onClick={onCancel}>
-          取消
-        </Button>
       </div>
     )
   }
@@ -1233,6 +1258,27 @@ function PptFlowControls({
           <IconRefresh className="size-3" />
           重试
         </Button>
+      </div>
+    )
+  }
+
+  // ─── Step: outline-review (只读，查看历史记录时) ───
+  if (meta.step === "outline-review" && editedOutline && !pptSession?.active) {
+    return (
+      <div className="mt-2 space-y-1.5">
+        <p className="text-[13px] font-medium">{editedOutline.title}</p>
+        {editedOutline.slides.map((slide, i) => (
+          <div key={i} className="border border-border p-2 space-y-1">
+            <div className="flex items-center gap-1.5">
+              <span className="shrink-0 bg-muted px-1.5 py-0.5 text-[10px] font-mono">{i + 1}</span>
+              <span className="shrink-0 bg-primary/10 px-1 py-0.5 text-[10px] text-primary">{slide.layout}</span>
+            </div>
+            <p className="text-[12px] font-medium">{slide.title}</p>
+            <ul className="ml-3 list-disc text-[11px] text-muted-foreground">
+              {slide.bulletPoints.map((bp, j) => <li key={j}>{bp}</li>)}
+            </ul>
+          </div>
+        ))}
       </div>
     )
   }
@@ -1259,11 +1305,11 @@ function PptFlowControls({
           className="w-full bg-transparent text-[13px] font-medium outline-none"
         />
         {editedOutline.slides.map((slide, i) => (
-          <div key={i} className="rounded border border-border p-2 space-y-1.5">
+          <div key={i} className="border border-border p-2 space-y-1.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">{i + 1}</span>
-                <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">{slide.layout}</span>
+                <span className="shrink-0 bg-muted px-1.5 py-0.5 text-[10px] font-mono">{i + 1}</span>
+                <span className="shrink-0 bg-primary/10 px-1 py-0.5 text-[10px] text-primary">{slide.layout}</span>
               </div>
               <button onClick={() => deleteSlide(i)} className="p-0.5 text-destructive/60 hover:text-destructive">
                 <IconTrash className="size-3" />
@@ -1278,7 +1324,7 @@ function PptFlowControls({
               value={slide.bulletPoints.join("\n")}
               onChange={(e) => updateSlide(i, { bulletPoints: e.target.value.split("\n").filter(Boolean) })}
               rows={Math.min(slide.bulletPoints.length, 4)}
-              className="w-full resize-none bg-muted/30 px-1.5 py-1 text-[11px] outline-none rounded"
+              className="w-full resize-none bg-muted/30 px-1.5 py-1 text-[11px] outline-none"
             />
           </div>
         ))}
@@ -1322,24 +1368,19 @@ function PptFlowControls({
           <span className="text-[11px] text-muted-foreground">
             {meta.step === "generating-images" ? `生成中 ${doneCount}/${total}` : `完成 ${doneCount}/${total}${errorCount ? ` · ${errorCount} 失败` : ""}`}
           </span>
-          <div className="flex-1 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="flex-1 h-1.5 overflow-hidden bg-muted">
             <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
+              className="h-full bg-primary transition-all duration-500"
               style={{ width: `${(doneCount / total) * 100}%` }}
             />
           </div>
-          {meta.step === "generating-images" && (
-            <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground" onClick={onCancel}>
-              取消
-            </Button>
-          )}
         </div>
 
         {/* Image grid */}
         <div className="grid grid-cols-2 gap-1.5">
           {meta.slideImages.map((img, i) => (
-            <div key={i} className="group relative overflow-hidden rounded border border-border bg-muted/30">
-              <span className="absolute left-1 top-1 z-10 rounded bg-black/50 px-1 py-0.5 text-[9px] text-white">{i + 1}</span>
+            <div key={i} className="group relative overflow-hidden border border-border bg-muted/30">
+              <span className="absolute left-1 top-1 z-10 bg-black/50 px-1 py-0.5 text-[9px] text-white">{i + 1}</span>
               {img.status === "done" && img.url ? (
                 <div
                   className="relative aspect-video cursor-pointer"
@@ -1348,7 +1389,7 @@ function PptFlowControls({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={img.url} alt={`Slide ${i + 1}`} className="size-full object-cover" />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                    <span className="flex items-center gap-0.5 rounded-md bg-white/95 px-2.5 py-1 text-[10px] font-medium text-black shadow-sm">
+                    <span className="flex items-center gap-0.5 bg-white/95 px-2.5 py-1 text-[10px] font-medium text-black shadow-sm">
                       <IconEye className="size-3" />预览
                     </span>
                   </div>
@@ -1406,44 +1447,73 @@ function PptFlowControls({
               variant="outline"
               size="sm"
               className="h-7 gap-1 text-[11px]"
-              onClick={() => {
-                meta.slideImages!.forEach((img, i) => {
-                  if (img.status === "done" && img.url) {
-                    setTimeout(() => {
-                      const a = document.createElement("a")
-                      a.href = img.url!
-                      a.download = `slide-${i + 1}-${meta.outline?.title || "presentation"}.png`
-                      a.click()
-                    }, i * 300)
-                  }
-                })
+              disabled={downloading !== "none"}
+              onClick={async () => {
+                const doneImages = meta.slideImages!.filter((img) => img.status === "done" && img.url)
+                if (doneImages.length === 0) return
+                setDownloading("zip")
+                try {
+                  const res = await fetch(`/api/projects/${projectId}/download`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      format: "zip",
+                      title: meta.outline?.title || "presentation",
+                      images: doneImages.map((img) => img.url),
+                    }),
+                  })
+                  if (!res.ok) throw new Error("下载失败")
+                  const blob = await res.blob()
+                  const a = document.createElement("a")
+                  a.href = URL.createObjectURL(blob)
+                  a.download = `${meta.outline?.title || "presentation"}.zip`
+                  a.click()
+                  URL.revokeObjectURL(a.href)
+                } catch (e) {
+                  console.error("ZIP download failed:", e)
+                } finally {
+                  setDownloading("none")
+                }
               }}
             >
-              <IconDownload className="size-3" />
-              全部下载 PNG
+              {downloading === "zip" ? <IconLoader2 className="size-3 animate-spin" /> : <IconDownload className="size-3" />}
+              {downloading === "zip" ? "打包中..." : "全部下载 PNG"}
             </Button>
             <Button
               variant="outline"
               size="sm"
               className="h-7 gap-1 text-[11px]"
+              disabled={downloading !== "none"}
               onClick={async () => {
                 const doneImages = meta.slideImages!.filter((img) => img.status === "done" && img.url)
                 if (doneImages.length === 0) return
-                const win = window.open("", "_blank")
-                if (!win) return
-                win.document.write(`<html><head><title>${meta.outline?.title || "Presentation"}</title>
-                  <style>body{margin:0;display:flex;flex-direction:column}img{width:100%;page-break-after:always}</style>
-                  </head><body>`)
-                for (const img of doneImages) {
-                  win.document.write(`<img src="${img.url}" />`)
+                setDownloading("pdf")
+                try {
+                  const res = await fetch(`/api/projects/${projectId}/download`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      format: "pdf",
+                      title: meta.outline?.title || "presentation",
+                      images: doneImages.map((img) => img.url),
+                    }),
+                  })
+                  if (!res.ok) throw new Error("导出失败")
+                  const blob = await res.blob()
+                  const a = document.createElement("a")
+                  a.href = URL.createObjectURL(blob)
+                  a.download = `${meta.outline?.title || "presentation"}.pdf`
+                  a.click()
+                  URL.revokeObjectURL(a.href)
+                } catch (e) {
+                  console.error("PDF export failed:", e)
+                } finally {
+                  setDownloading("none")
                 }
-                win.document.write("</body></html>")
-                win.document.close()
-                setTimeout(() => win.print(), 1000)
               }}
             >
-              <IconDownload className="size-3" />
-              导出 PDF
+              {downloading === "pdf" ? <IconLoader2 className="size-3 animate-spin" /> : <IconDownload className="size-3" />}
+              {downloading === "pdf" ? "导出中..." : "导出 PDF"}
             </Button>
           </div>
         )}
@@ -1454,7 +1524,7 @@ function PptFlowControls({
           if (doneImages.length === 0) return null
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewMode("none")}>
-              <div className="relative flex h-[90vh] w-[90vw] max-w-5xl flex-col rounded-xl bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="relative flex h-[90vh] w-[90vw] max-w-5xl flex-col bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
                   <span className="text-sm font-medium">
@@ -1471,7 +1541,7 @@ function PptFlowControls({
                     <img
                       src={meta.slideImages![previewIndex]?.url || doneImages[0].url!}
                       alt={`Slide ${previewIndex + 1}`}
-                      className="max-h-full max-w-full rounded-lg border border-border object-contain shadow-lg"
+                      className="max-h-full max-w-full border border-border object-contain shadow-lg"
                     />
                   </div>
                 ) : (
@@ -1479,9 +1549,9 @@ function PptFlowControls({
                     <div className="mx-auto grid max-w-4xl gap-4">
                       {doneImages.map((img, i) => (
                         <div key={i} className="relative">
-                          <span className="absolute left-3 top-3 z-10 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white">{i + 1}</span>
+                          <span className="absolute left-3 top-3 z-10 bg-black/60 px-2 py-1 text-xs font-medium text-white">{i + 1}</span>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={img.url!} alt={`Slide ${i + 1}`} className="w-full rounded-lg border border-border shadow-md" />
+                          <img src={img.url!} alt={`Slide ${i + 1}`} className="w-full border border-border shadow-md" />
                         </div>
                       ))}
                     </div>

@@ -118,15 +118,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const systemPrompt = `你是一个专业的 PPT 大纲设计师。请基于用户提供的文档内容，生成一个 ${count} 页的演示文稿大纲。
 
-要求：
+核心原则：
 1. 严格基于文档内容，不要编造文档中没有的信息
-2. 第一页为封面（layout: "cover"），最后一页为总结/结尾（layout: "closing"）
-3. 中间页面根据内容分为章节页（layout: "section"）或内容页（layout: "content"）
-4. 每页 3-5 个要点，简洁有力
-5. 为每页提供演讲备注（speakerNote）
-6. 为每页提供视觉描述提示（imageHint，用英文描述，用于 AI 生图）
-7. 风格：${styleDesc}
-${customPrompt ? `8. 用户补充要求：${customPrompt}` : ""}
+2. 必须充分覆盖文档中的核心内容和关键知识点，不能只做泛泛的总结
+3. 如果文档包含多个章节或主题，每个重要章节/主题至少分配一页幻灯片
+4. 内容页的要点应该包含具体的信息、数据、概念名称、技术术语，避免空泛的描述
+
+页面布局规则：
+- 第一页为封面（layout: "cover"），包含PPT主标题和副标题
+- 最后一页为总结/结尾（layout: "closing"），归纳核心要点和行动建议
+- 如果文档有多个章节，在每个章节的第一页使用章节页（layout: "section"）作为分隔
+- 其余为内容页（layout: "content"），展开讲解具体内容
+
+内容质量要求：
+- 每页 3-5 个要点，每个要点应是一句完整的、有信息量的陈述，而非简单的标题词
+- bulletPoints 中要包含文档中的关键概念、核心观点、具体方法或示例
+- speakerNote 应包含更详细的解释、补充背景信息和过渡语句（100-200字）
+- imageHint 用英文描述，应与该页核心主题相关，描述具体的视觉场景（不要用抽象词汇）
+
+风格：${styleDesc}
+${customPrompt ? `用户补充要求：${customPrompt}` : ""}
 
 输出严格的 JSON 格式（不要包含 markdown 代码块标记），结构如下：
 {
@@ -136,10 +147,10 @@ ${customPrompt ? `8. 用户补充要求：${customPrompt}` : ""}
     {
       "pageNumber": 1,
       "title": "页面标题",
-      "bulletPoints": ["要点1", "要点2", "要点3"],
-      "speakerNote": "演讲备注...",
+      "bulletPoints": ["具体的要点陈述1", "具体的要点陈述2", "具体的要点陈述3"],
+      "speakerNote": "详细的演讲备注，包含过渡语、补充解释等...",
       "layout": "cover",
-      "imageHint": "visual description for image generation in English"
+      "imageHint": "A specific visual scene description in English for AI image generation"
     }
   ]
 }`
