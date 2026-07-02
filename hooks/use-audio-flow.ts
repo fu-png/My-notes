@@ -32,7 +32,6 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
   const [audioPlaying, setAudioPlaying] = React.useState(false)
   const [audioCurrentLine, setAudioCurrentLine] = React.useState(-1)
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
-  const speechRef = React.useRef<{ cancel: () => void } | null>(null)
 
   const handleAudioGenerate = async () => {
     const config = getAIConfig()
@@ -182,9 +181,10 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
           apiKey: ttsConfig?.apiKey || config.apiKey,
           apiBase: ttsConfig?.apiBase || config.apiBase,
           model: chatModel,
-          ttsModel: ttsConfig?.model || "tts-1",
-          voiceHost: ttsConfig?.voiceHost || "alloy",
-          voiceExpert: ttsConfig?.voiceExpert || "nova",
+          ttsModel: ttsConfig?.model || "mimo-v2.5-tts",
+          voiceHost: ttsConfig?.voiceHost || "冰糖",
+          voiceExpert: ttsConfig?.voiceExpert || "苏打",
+          script: msg.audioMeta.script,
         }),
       })
 
@@ -236,7 +236,7 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
           setChatMessages((prev) =>
             prev.map((m) =>
               m.id === msgId
-                ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", progress: "TTS 不可用，可使用浏览器朗读" } }
+                ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: "TTS 服务不可用，请检查 API 配置是否支持语音合成" } }
                 : m
             )
           )
@@ -254,7 +254,7 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
             setChatMessages((prev) =>
               prev.map((m) =>
                 m.id === msgId
-                  ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", progress: "脚本已生成，可使用浏览器朗读" } }
+                  ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: "音频生成失败，请检查 TTS API 配置" } }
                   : m
               )
             )
@@ -295,44 +295,6 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
         audioRef.current.play()
         setAudioPlaying(true)
       }
-    } else if (msg.audioMeta.script && msg.audioMeta.script.length > 0) {
-      const script = msg.audioMeta.script
-      if (audioPlaying) {
-        window.speechSynthesis.cancel()
-        setAudioPlaying(false)
-        setAudioCurrentLine(-1)
-        speechRef.current = null
-        return
-      }
-
-      setAudioPlaying(true)
-      let cancelled = false
-      speechRef.current = {
-        cancel: () => {
-          cancelled = true
-          window.speechSynthesis.cancel()
-        },
-      }
-
-      const speakLine = (index: number) => {
-        if (cancelled || index >= script.length) {
-          setAudioPlaying(false)
-          setAudioCurrentLine(-1)
-          return
-        }
-
-        setAudioCurrentLine(index)
-        const line = script[index]
-        const utterance = new SpeechSynthesisUtterance(line.text)
-        utterance.lang = "zh-CN"
-        utterance.rate = 1.1
-        utterance.pitch = line.speaker === "host" ? 1.0 : 1.3
-        utterance.onend = () => speakLine(index + 1)
-        utterance.onerror = () => speakLine(index + 1)
-        window.speechSynthesis.speak(utterance)
-      }
-
-      speakLine(0)
     }
   }
 
@@ -341,10 +303,6 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
     }
-    if (speechRef.current) {
-      speechRef.current.cancel()
-    }
-    window.speechSynthesis.cancel()
     setAudioPlaying(false)
     setAudioCurrentLine(-1)
   }
@@ -356,7 +314,6 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
         audioRef.current.pause()
         audioRef.current = null
       }
-      window.speechSynthesis?.cancel()
     }
   }, [])
 

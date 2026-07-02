@@ -9,7 +9,7 @@
  * 流程：
  *   1. 读取项目所有文档内容
  *   2. 调用 LLM 生成双人对话脚本（Host + Expert）
- *   3. 调用 OpenAI TTS API 分段合成音频
+ *   3. 调用 MiMo TTS API 分段合成音频
  *   4. 合并音频片段，存入项目目录
  *   5. 返回播放 URL
  */
@@ -26,7 +26,7 @@ interface DialogueLine {
   text: string
 }
 
-const AUDIO_PATH = (projectId: string) => `projects/${projectId}/.audio/overview.mp3`
+const AUDIO_PATH = (projectId: string) => `projects/${projectId}/.audio/overview.wav`
 const SCRIPT_PATH = (projectId: string) => `projects/${projectId}/.audio/script.json`
 
 const DIALOGUE_PROMPT = `你是一个专业的播客脚本撰写人。请基于以下文档内容，生成一段信息密度高、引人入胜的双人对话脚本。
@@ -53,10 +53,60 @@ const DIALOGUE_PROMPT = `你是一个专业的播客脚本撰写人。请基于�
   {"speaker": "expert", "text": "确实是这样..."}
 ]}`
 
+// ─── WAV Audio Helpers ─────────────────────────────────────────────────────
+
+/** Parse WAV header to get audio format info */
+function parseWAVHeader(buf: Buffer): { sampleRate: number; channels: number; bitsPerSample: number } {
+  return {
+    sampleRate: buf.readUInt32LE(24),
+    channels: buf.readUInt16LE(22),
+    bitsPerSample: buf.readUInt16LE(34),
+  }
+}
+
+/** Extract PCM data from a WAV buffer (handles optional extra chunks) */
+function extractPCMFromWAV(buf: Buffer): Buffer {
+  let offset = 12 // Skip RIFF header
+  while (offset + 8 <= buf.length) {
+    const chunkId = buf.toString("ascii", offset, offset + 4)
+    const chunkSize = buf.readUInt32LE(offset + 4)
+    if (chunkId === "data") {
+      return buf.subarray(offset + 8, offset + 8 + chunkSize)
+    }
+    offset += 8 + chunkSize + (chunkSize % 2) // chunks are word-aligned
+  }
+  // Fallback: assume standard 44-byte header
+  return buf.subarray(44)
+}
+
+/** Create a WAV file from PCM data */
+function createWAV(pcm: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
+  const dataLength = pcm.length
+  const buffer = Buffer.alloc(44 + dataLength)
+  // RIFF header
+  buffer.write("RIFF", 0)
+  buffer.writeUInt32LE(36 + dataLength, 4)
+  buffer.write("WAVE", 8)
+  // fmt chunk
+  buffer.write("fmt ", 12)
+  buffer.writeUInt32LE(16, 16)
+  buffer.writeUInt16LE(1, 20) // PCM
+  buffer.writeUInt16LE(channels, 22)
+  buffer.writeUInt32LE(sampleRate, 24)
+  buffer.writeUInt32LE(Math.floor(sampleRate * channels * (bitsPerSample / 8)), 28)
+  buffer.writeUInt16LE(channels * (bitsPerSample / 8), 32)
+  buffer.writeUInt16LE(bitsPerSample, 34)
+  // data chunk
+  buffer.write("data", 36)
+  buffer.writeUInt32LE(dataLength, 40)
+  pcm.copy(buffer, 44)
+  return buffer
+}
+
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
   const body = await request.json()
-  const { action, apiKey, apiBase, model, ttsModel, voiceHost, voiceExpert } = body
+  const { action, apiKey, apiBase, model, ttsModel, voiceHost, voiceExpert, script: providedScript } = body
 
   if (!projectId) {
     return Response.json({ error: "缺少项目 ID" }, { status: 400 })
@@ -79,34 +129,41 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return Response.json({ error: "需要 API Key" }, { status: 400 })
   }
 
-  // ─── 读取项目文档 ───
-  const allFiles = await listFiles(`projects/${projectId}/`)
-  const mdFiles = allFiles.filter(
-    (f) =>
-      !f.pathname.endsWith("/meta.json") &&
-      !f.pathname.includes("/.rag/") &&
-      !f.pathname.includes("/.audio/") &&
-      (f.pathname.endsWith(".md") || f.pathname.endsWith(".txt") || f.pathname.endsWith(".markdown"))
-  )
+  // 如果客户端已提供脚本（action=generate），跳过文档读取
+  let mdFiles: { pathname: string }[] = []
+  let truncatedContent = ""
+  const hasProvidedScript = Array.isArray(providedScript) && providedScript.length > 0
 
-  if (mdFiles.length === 0) {
-    return Response.json({ error: "项目中没有可用的文档" }, { status: 400 })
-  }
+  if (!hasProvidedScript) {
+    // ─── 读取项目文档 ───
+    const allFiles = await listFiles(`projects/${projectId}/`)
+    mdFiles = allFiles.filter(
+      (f) =>
+        !f.pathname.endsWith("/meta.json") &&
+        !f.pathname.includes("/.rag/") &&
+        !f.pathname.includes("/.audio/") &&
+        (f.pathname.endsWith(".md") || f.pathname.endsWith(".txt") || f.pathname.endsWith(".markdown"))
+    )
 
-  const documents: string[] = []
-  for (const file of mdFiles) {
-    const content = await readFile(file.pathname)
-    if (content && content.trim().length > 0) {
-      const filename = file.pathname.split("/").pop() || file.pathname
-      documents.push(`--- 文档: ${filename} ---\n${content}`)
+    if (mdFiles.length === 0) {
+      return Response.json({ error: "项目中没有可用的文档" }, { status: 400 })
     }
-  }
 
-  const fullContent = documents.join("\n\n")
-  const maxChars = 60000
-  const truncatedContent = fullContent.length > maxChars
-    ? fullContent.slice(0, maxChars) + "\n\n[...内容已截断...]"
-    : fullContent
+    const documents: string[] = []
+    for (const file of mdFiles) {
+      const content = await readFile(file.pathname)
+      if (content && content.trim().length > 0) {
+        const filename = file.pathname.split("/").pop() || file.pathname
+        documents.push(`--- 文档: ${filename} ---\n${content}`)
+      }
+    }
+
+    const fullContent = documents.join("\n\n")
+    const maxChars = 60000
+    truncatedContent = fullContent.length > maxChars
+      ? fullContent.slice(0, maxChars) + "\n\n[...内容已截断...]"
+      : fullContent
+  }
 
   // ─── 仅生成脚本 or 完整生成 ───
   if (action === "script" || action === "generate") {
@@ -117,34 +174,34 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          // Step 1: 生成对话脚本
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "script", progress: "正在生成对话脚本..." })}\n\n`))
+          let dialogue: DialogueLine[]
 
-          const chatModel = model || "gpt-4o-mini"
-          const messages = [
-            { role: "system", content: DIALOGUE_PROMPT },
-            { role: "user", content: `以下是项目文档内容（共 ${mdFiles.length} 个文件）：\n\n${truncatedContent}\n\n请直接输出 JSON 对象，格式为 {"dialogue": [...]}，不要包含任何其他文字。注意：text 字段中不要使用未转义的双引号，如需引用请用中文引号「」。` },
-          ]
+          if (hasProvidedScript) {
+            // 客户端已提供脚本，直接使用（跳过 LLM 调用）
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "script_done", script: providedScript, lineCount: providedScript.length })}\n\n`))
+            dialogue = (providedScript as DialogueLine[])
+              .filter((d) => d && typeof d.text === "string" && d.text.trim().length > 0)
+              .map((d) => ({
+                speaker: d.speaker === "expert" ? "expert" as const : "host" as const,
+                text: d.text.trim(),
+              }))
 
-          // 先尝试带 response_format 的请求（确保 JSON 输出）
-          let scriptRes = await fetch(`${apiBaseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              model: chatModel,
-              messages,
-              temperature: 0.7,
-              max_tokens: 4096,
-              response_format: { type: "json_object" },
-            }),
-          })
+            if (dialogue.length === 0) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "提供的脚本没有有效的对话行" })}\n\n`))
+              return
+            }
+          } else {
+            // Step 1: 生成对话脚本
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "script", progress: "正在生成对话脚本..." })}\n\n`))
 
-          // 如果 response_format 不被支持（400/422），去掉它重试
-          if (!scriptRes.ok && (scriptRes.status === 400 || scriptRes.status === 422)) {
-            scriptRes = await fetch(`${apiBaseUrl}/chat/completions`, {
+            const chatModel = model || "gpt-4o-mini"
+            const messages = [
+              { role: "system", content: DIALOGUE_PROMPT },
+              { role: "user", content: `以下是项目文档内容（共 ${mdFiles.length} 个文件）：\n\n${truncatedContent}\n\n请直接输出 JSON 对象，格式为 {"dialogue": [...]}，不要包含任何其他文字。注意：text 字段中不要使用未转义的双引号，如需引用请用中文引号「」。` },
+            ]
+
+            // 先尝试带 response_format 的请求（确保 JSON 输出）
+            let scriptRes = await fetch(`${apiBaseUrl}/chat/completions`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -155,21 +212,37 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 messages,
                 temperature: 0.7,
                 max_tokens: 4096,
+                response_format: { type: "json_object" },
               }),
             })
-          }
 
-          if (!scriptRes.ok) {
-            const err = await scriptRes.text()
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `脚本生成失败: ${scriptRes.status} ${err.slice(0, 200)}` })}\n\n`))
-            return
-          }
+            // 如果 response_format 不被支持（400/422），去掉它重试
+            if (!scriptRes.ok && (scriptRes.status === 400 || scriptRes.status === 422)) {
+              scriptRes = await fetch(`${apiBaseUrl}/chat/completions`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                  model: chatModel,
+                  messages,
+                  temperature: 0.7,
+                  max_tokens: 4096,
+                }),
+              })
+            }
 
-          const scriptData = await scriptRes.json()
-          const rawContent = scriptData.choices?.[0]?.message?.content || ""
+            if (!scriptRes.ok) {
+              const err = await scriptRes.text()
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `脚本生成失败: ${scriptRes.status} ${err.slice(0, 200)}` })}\n\n`))
+              return
+            }
 
-          let dialogue: DialogueLine[]
-          try {
+            const scriptData = await scriptRes.json()
+            const rawContent = scriptData.choices?.[0]?.message?.content || ""
+
+            try {
             // 尝试多种方式提取 JSON
             let jsonStr = ""
 
@@ -275,31 +348,32 @@ export async function POST(request: NextRequest, context: RouteContext) {
             return
           }
 
-          // 保存脚本
-          await writeFile(SCRIPT_PATH(projectId), JSON.stringify(dialogue, null, 2), { contentType: "application/json" })
+            // 保存脚本
+            await writeFile(SCRIPT_PATH(projectId), JSON.stringify(dialogue, null, 2), { contentType: "application/json" })
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "script_done", script: dialogue, lineCount: dialogue.length })}\n\n`))
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "script_done", script: dialogue, lineCount: dialogue.length })}\n\n`))
 
-          // 如果仅生成脚本，到此结束
-          if (action === "script") {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false })}\n\n`))
-            return
-          }
+            // 如果仅生成脚本，到此结束
+            if (action === "script") {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false })}\n\n`))
+              return
+            }
+          } // end of else — LLM 脚本生成
 
           // Step 2: TTS 合成
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts", progress: "正在合成语音..." })}\n\n`))
 
           const audioChunks: Buffer[] = []
-          const hostVoice = voiceHost || "alloy"
-          const expertVoice = voiceExpert || "nova"
-          const ttsModelName = ttsModel || "tts-1"
+          const hostVoice = voiceHost || "冰糖"
+          const expertVoice = voiceExpert || "苏打"
+          const ttsModelName = ttsModel || "mimo-v2.5-tts"
 
           for (let i = 0; i < dialogue.length; i++) {
             const line = dialogue[i]
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `合成语音 (${i + 1}/${dialogue.length})...`, current: i + 1, total: dialogue.length })}\n\n`))
 
             try {
-              const ttsRes = await fetch(`${apiBaseUrl}/audio/speech`, {
+              const ttsRes = await fetch(`${apiBaseUrl}/chat/completions`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -307,20 +381,39 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 },
                 body: JSON.stringify({
                   model: ttsModelName,
-                  input: line.text,
-                  voice: line.speaker === "host" ? hostVoice : expertVoice,
-                  response_format: "mp3",
+                  messages: [
+                    {
+                      role: "user",
+                      content: line.speaker === "host"
+                        ? "用轻松自然的播客主持人语调，语速适中，声音清晰明亮"
+                        : "用专业但亲切的专家语调，语速适中，表达清晰有信心",
+                    },
+                    {
+                      role: "assistant",
+                      content: line.text,
+                    },
+                  ],
+                  audio: {
+                    format: "wav",
+                    voice: line.speaker === "host" ? hostVoice : expertVoice,
+                  },
                 }),
               })
 
               if (!ttsRes.ok) {
-                // TTS API 不可用，返回仅脚本结果
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_unavailable", message: "TTS API 不可用，已生成对话脚本，你可以使用浏览器朗读功能收听" })}\n\n`))
+                const errText = await ttsRes.text().catch(() => "")
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_unavailable", message: `TTS API 调用失败 (${ttsRes.status}): ${errText.slice(0, 200)}` })}\n\n`))
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false, script: dialogue })}\n\n`))
                 return
               }
 
-              const audioBuffer = Buffer.from(await ttsRes.arrayBuffer())
+              const ttsData = await ttsRes.json()
+              const audioBase64 = ttsData.choices?.[0]?.message?.audio?.data
+              if (!audioBase64) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `第 ${i + 1} 段未返回音频数据，跳过` })}\n\n`))
+                continue
+              }
+              const audioBuffer = Buffer.from(audioBase64, "base64")
               audioChunks.push(audioBuffer)
             } catch {
               // 单段失败不中断
@@ -328,10 +421,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
             }
           }
 
-          // Step 3: 合并音频（直接拼接 MP3 frames 是合法的）
+          // Step 3: 合并 WAV 音频（提取 PCM 后拼接，再重建 WAV 头）
           if (audioChunks.length > 0) {
-            const mergedBuffer = Buffer.concat(audioChunks)
-            const stored = await writeFile(AUDIO_PATH(projectId), mergedBuffer, { contentType: "audio/mpeg" })
+            const { sampleRate, channels, bitsPerSample } = parseWAVHeader(audioChunks[0])
+            const pcmChunks = audioChunks.map(extractPCMFromWAV)
+            const mergedPCM = Buffer.concat(pcmChunks)
+            const mergedWav = createWAV(mergedPCM, sampleRate, channels, bitsPerSample)
+            const stored = await writeFile(AUDIO_PATH(projectId), mergedWav, { contentType: "audio/wav" })
 
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: true, audioUrl: stored.url, script: dialogue })}\n\n`))
           } else {

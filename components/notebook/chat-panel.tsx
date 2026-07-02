@@ -975,15 +975,6 @@ function AudioControls({
             <IconMicrophone className="size-3.5" />
             生成音频
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 text-[12px]"
-            onClick={() => onPlay(msg.id)}
-          >
-            <IconPlayerPlay className="size-3.5" />
-            浏览器朗读
-          </Button>
         </div>
       )}
       {/* TTS 合成中 */}
@@ -1005,7 +996,7 @@ function AudioControls({
             {audioPlaying ? (
               <><IconPlayerStop className="size-3.5" />暂停</>
             ) : (
-              <><IconPlayerPlay className="size-3.5" />{msg.audioMeta.audioUrl ? "播放音频" : "浏览器朗读"}</>
+              <><IconPlayerPlay className="size-3.5" />播放音频</>
             )}
           </Button>
           {audioPlaying && (

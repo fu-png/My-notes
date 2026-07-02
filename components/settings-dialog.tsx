@@ -61,9 +61,9 @@ const STORAGE_KEY_IMAGE_MODEL = "ai-image-model"
 
 const DEFAULT_API_BASE = "https://api.openai.com/v1"
 const DEFAULT_MODEL = "gpt-4o-mini"
-const DEFAULT_TTS_MODEL = "tts-1"
-const DEFAULT_TTS_VOICE_HOST = "alloy"
-const DEFAULT_TTS_VOICE_EXPERT = "nova"
+const DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
+const DEFAULT_TTS_VOICE_HOST = "冰糖"
+const DEFAULT_TTS_VOICE_EXPERT = "苏打"
 const DEFAULT_IMAGE_API_BASE = "https://www.hfsyapi.cn"
 const DEFAULT_IMAGE_MODEL = "gpt-image-2"
 
@@ -82,12 +82,14 @@ const PROVIDER_PRESETS = [
 // ─── TTS Voice Options ───
 
 const TTS_VOICE_OPTIONS = [
-  { value: "alloy", label: "Alloy（中性）" },
-  { value: "echo", label: "Echo（男声）" },
-  { value: "fable", label: "Fable（英伦）" },
-  { value: "onyx", label: "Onyx（低沉）" },
-  { value: "nova", label: "Nova（女声）" },
-  { value: "shimmer", label: "Shimmer（温柔）" },
+  { value: "冰糖", label: "冰糖（中文女声）" },
+  { value: "茉莉", label: "茉莉（中文女声）" },
+  { value: "苏打", label: "苏打（中文男声）" },
+  { value: "白桦", label: "白桦（中文男声）" },
+  { value: "Mia", label: "Mia（英文女声）" },
+  { value: "Chloe", label: "Chloe（英文女声）" },
+  { value: "Milo", label: "Milo（英文男声）" },
+  { value: "Dean", label: "Dean（英文男声）" },
 ]
 
 // ─── Multi-provider Utility Functions ───
