@@ -955,6 +955,7 @@ function PptFlowControls({
   const [editedOutline, setEditedOutline] = React.useState<PptOutline | null>(null)
   const [showNotesForSlide, setShowNotesForSlide] = React.useState<number | null>(null)
   const [showCustomCount, setShowCustomCount] = React.useState(false)
+  const customCountRef = React.useRef<HTMLInputElement>(null)
 
   // Sync edited outline when meta.outline changes — always sync on new outline
   const outlineJson = meta.outline ? JSON.stringify(meta.outline) : null
@@ -1022,6 +1023,7 @@ function PptFlowControls({
         {showCustomCount && (
           <div className="flex items-center gap-1.5">
             <input
+              ref={customCountRef}
               type="number"
               min={3}
               max={15}
@@ -1039,8 +1041,7 @@ function PptFlowControls({
             <button
               className="text-[11px] text-primary hover:underline"
               onClick={() => {
-                const input = document.querySelector<HTMLInputElement>("input[type=number]")
-                const n = parseInt(input?.value || "", 10)
+                const n = parseInt(customCountRef.current?.value || "", 10)
                 if (n >= 3 && n <= 15) onSlideCountSelect(n)
               }}
             >
