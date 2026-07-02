@@ -1025,15 +1025,15 @@ function PptFlowControls({
             <input
               ref={customCountRef}
               type="number"
-              min={1}
+              min={3}
               max={15}
-              defaultValue={8}
+              defaultValue={3}
               className="w-16 border border-border bg-background px-2 py-1 text-[12px] rounded"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   const n = parseInt((e.target as HTMLInputElement).value, 10)
-                  if (isNaN(n) || n < 1 || n > 15) {
-                    (e.target as HTMLInputElement).value = "8"
+                  if (isNaN(n) || n < 3 || n > 15) {
+                    (e.target as HTMLInputElement).value = "3"
                     return
                   }
                   onSlideCountSelect(n)
@@ -1047,9 +1047,9 @@ function PptFlowControls({
               onClick={() => {
                 const val = customCountRef.current?.value || ""
                 const n = parseInt(val, 10)
-                if (isNaN(n) || n < 1 || n > 15) {
+                if (isNaN(n) || n < 3 || n > 15) {
                   if (customCountRef.current) {
-                    customCountRef.current.value = "8"
+                    customCountRef.current.value = "3"
                     customCountRef.current.focus()
                   }
                   return
@@ -1170,25 +1170,29 @@ function PptFlowControls({
           className="w-full border-b border-border bg-transparent text-[13px] font-medium outline-none focus:border-primary/50"
         />
         {editedOutline.slides.map((slide, i) => (
-          <div key={i} className="rounded border border-border p-2">
-            <div className="mb-1 flex items-center gap-1.5">
-              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">{i + 1}</span>
-              <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">{slide.layout}</span>
-              <input
-                value={slide.title}
-                onChange={(e) => updateSlide(i, { title: e.target.value })}
-                className="flex-1 border-none bg-transparent text-[12px] font-medium outline-none"
-              />
-              <button onClick={() => moveSlide(i, "up")} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
-                <IconChevronRight className="size-3 rotate-[-90deg]" />
-              </button>
-              <button onClick={() => moveSlide(i, "down")} disabled={i === editedOutline.slides.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
-                <IconChevronRight className="size-3 rotate-90" />
-              </button>
-              <button onClick={() => deleteSlide(i)} className="text-destructive/60 hover:text-destructive">
-                <IconTrash className="size-3" />
-              </button>
+          <div key={i} className="rounded border border-border p-2 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">{i + 1}</span>
+                <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">{slide.layout}</span>
+              </div>
+              <div className="flex items-center gap-0.5">
+                <button onClick={() => moveSlide(i, "up")} disabled={i === 0} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30">
+                  <IconChevronRight className="size-3 rotate-[-90deg]" />
+                </button>
+                <button onClick={() => moveSlide(i, "down")} disabled={i === editedOutline.slides.length - 1} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30">
+                  <IconChevronRight className="size-3 rotate-90" />
+                </button>
+                <button onClick={() => deleteSlide(i)} className="p-0.5 text-destructive/60 hover:text-destructive">
+                  <IconTrash className="size-3" />
+                </button>
+              </div>
             </div>
+            <input
+              value={slide.title}
+              onChange={(e) => updateSlide(i, { title: e.target.value })}
+              className="w-full border-b border-border bg-transparent text-[12px] font-medium outline-none focus:border-primary/50 pb-1"
+            />
             <textarea
               value={slide.bulletPoints.join("\n")}
               onChange={(e) => updateSlide(i, { bulletPoints: e.target.value.split("\n").filter(Boolean) })}

@@ -112,7 +112,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
       active: true,
       step: "style-select",
       stylePreset: "corporate",
-      slideCount: 8,
+      slideCount: 3,
       customPrompt: "",
       userIntent: fullText,
       outlineMsgId: null,
@@ -140,7 +140,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     const aiMsg: ChatMessage = {
       id: newMsgId,
       role: "assistant",
-      content: `已选择「${preset?.name}」风格（${preset?.colors}）。\n\n需要生成几页幻灯片？（1-15 页，默认 8 页）`,
+      content: `已选择「${preset?.name}」风格（${preset?.colors}）。\n\n需要生成几页幻灯片？（3-15 页，默认 3 页）`,
       timestamp: new Date(),
       pptMeta: {
         step: "slide-count",
