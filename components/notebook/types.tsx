@@ -53,6 +53,7 @@ export interface ChatMessage {
     stage: "script" | "confirming" | "synthesizing" | "done" | "error"
     script?: { speaker: string; text: string }[]
     audioUrl?: string
+    manifest?: { chunks: string[]; createdAt: string }
     progress?: string
   }
   /** PPT 生成的元信息 */

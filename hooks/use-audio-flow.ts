@@ -242,11 +242,12 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
           )
         }
         if (parsed.done) {
-          if (parsed.hasAudio && parsed.audioUrl) {
+          if (parsed.hasAudio && parsed.manifest) {
+            const manifest = parsed.manifest as { chunks: string[]; createdAt: string }
             setChatMessages((prev) =>
               prev.map((m) =>
                 m.id === msgId
-                  ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", audioUrl: parsed.audioUrl as string, progress: "音频生成完成" } }
+                  ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", manifest, progress: "音频生成完成" } }
                   : m
               )
             )
@@ -275,26 +276,48 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
     }
   }
 
+  // 用于顺序播放多个 chunk 的索引
+  const chunkIndexRef = React.useRef(0)
+  const chunkListRef = React.useRef<string[]>([])
+
+  const playNextChunk = React.useCallback(() => {
+    const chunks = chunkListRef.current
+    const idx = chunkIndexRef.current
+    if (idx >= chunks.length) {
+      setAudioPlaying(false)
+      setAudioCurrentLine(-1)
+      return
+    }
+    if (audioRef.current) audioRef.current.pause()
+    audioRef.current = new Audio(chunks[idx])
+    setAudioCurrentLine(idx)
+    audioRef.current.onended = () => {
+      chunkIndexRef.current += 1
+      playNextChunk()
+    }
+    audioRef.current.onerror = () => {
+      // 跳过失败的 chunk
+      chunkIndexRef.current += 1
+      playNextChunk()
+    }
+    audioRef.current.play()
+  }, [])
+
   const handleAudioPlay = (msgId: string) => {
     const msg = chatMessages.find((m) => m.id === msgId)
     if (!msg?.audioMeta) return
 
-    if (msg.audioMeta.audioUrl) {
-      if (!audioRef.current || audioRef.current.src !== msg.audioMeta.audioUrl) {
-        if (audioRef.current) audioRef.current.pause()
-        audioRef.current = new Audio(msg.audioMeta.audioUrl)
-        audioRef.current.onended = () => {
-          setAudioPlaying(false)
-          setAudioCurrentLine(-1)
-        }
-      }
-      if (audioPlaying) {
-        audioRef.current.pause()
-        setAudioPlaying(false)
-      } else {
-        audioRef.current.play()
-        setAudioPlaying(true)
-      }
+    const chunks = msg.audioMeta.manifest?.chunks || (msg.audioMeta.audioUrl ? [msg.audioMeta.audioUrl] : [])
+    if (chunks.length === 0) return
+
+    if (audioPlaying) {
+      if (audioRef.current) audioRef.current.pause()
+      setAudioPlaying(false)
+    } else {
+      chunkListRef.current = chunks
+      chunkIndexRef.current = 0
+      setAudioPlaying(true)
+      playNextChunk()
     }
   }
 

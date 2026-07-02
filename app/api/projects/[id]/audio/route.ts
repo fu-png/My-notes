@@ -15,7 +15,7 @@
  */
 
 import { NextRequest } from "next/server"
-import { readFile, listFiles, writeFile, readFileBuffer } from "@/lib/storage"
+import { readFile, listFiles, writeFile } from "@/lib/storage"
 
 export const maxDuration = 300
 
@@ -26,7 +26,8 @@ interface DialogueLine {
   text: string
 }
 
-const AUDIO_PATH = (projectId: string) => `projects/${projectId}/.audio/overview.mp3`
+const AUDIO_CHUNK_PATH = (projectId: string, index: number) => `projects/${projectId}/.audio/chunk-${String(index).padStart(3, '0')}.mp3`
+const AUDIO_MANIFEST_PATH = (projectId: string) => `projects/${projectId}/.audio/manifest.json`
 const SCRIPT_PATH = (projectId: string) => `projects/${projectId}/.audio/script.json`
 
 const DIALOGUE_PROMPT = `你是一个专业的播客脚本撰写人。请基于以下文档内容，生成一段信息密度高、引人入胜的双人对话脚本。
@@ -67,13 +68,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   // ─── 状态查询：检查是否已有缓存音频 ───
   if (action === "status") {
-    const audioBuffer = await readFileBuffer(AUDIO_PATH(projectId))
+    const manifestData = await readFile(AUDIO_MANIFEST_PATH(projectId))
     const scriptData = await readFile(SCRIPT_PATH(projectId))
 
+    let manifest = null
+    if (manifestData) {
+      try { manifest = JSON.parse(manifestData) } catch { /* ignore */ }
+    }
+
     return Response.json({
-      hasAudio: !!audioBuffer,
+      hasAudio: !!manifest,
       hasScript: !!scriptData,
       script: scriptData ? JSON.parse(scriptData) : null,
+      manifest,
     })
   }
 
@@ -313,10 +320,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
             }
           } // end of else — LLM 脚本生成
 
-          // Step 2: TTS 合成
+          // Step 2: TTS 合成 — 逐段合成并上传（避免合并大文件跨区域上传超时）
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts", progress: "正在合成语音..." })}\n\n`))
 
-          const audioChunks: Buffer[] = []
+          const chunkUrls: string[] = []
           const hostVoice = voiceHost || "冰糖"
           const expertVoice = voiceExpert || "苏打"
           const ttsModelName = ttsModel || "mimo-v2.5-tts"
@@ -367,19 +374,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 continue
               }
               const audioBuffer = Buffer.from(audioBase64, "base64")
-              audioChunks.push(audioBuffer)
+
+              // 立即上传这一小段 MP3（几十 KB，秒传）
+              const stored = await writeFile(AUDIO_CHUNK_PATH(projectId, i), audioBuffer, { contentType: "audio/mpeg" })
+              chunkUrls.push(stored.url)
             } catch {
               // 单段失败不中断
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `第 ${i + 1} 段合成失败，跳过` })}\n\n`))
             }
           }
 
-          // Step 3: 合并 MP3 音频（MP3 帧可直接拼接）
-          if (audioChunks.length > 0) {
-            const mergedMp3 = Buffer.concat(audioChunks)
-            const stored = await writeFile(AUDIO_PATH(projectId), mergedMp3, { contentType: "audio/mpeg" })
+          // Step 3: 写入清单文件（JSON，极小，秒传）
+          if (chunkUrls.length > 0) {
+            const manifest = { chunks: chunkUrls, createdAt: new Date().toISOString() }
+            await writeFile(AUDIO_MANIFEST_PATH(projectId), JSON.stringify(manifest), { contentType: "application/json" })
 
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: true, audioUrl: stored.url, script: dialogue })}\n\n`))
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: true, manifest, script: dialogue })}\n\n`))
           } else {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false, script: dialogue })}\n\n`))
           }
