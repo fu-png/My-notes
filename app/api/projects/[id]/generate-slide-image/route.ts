@@ -113,12 +113,10 @@ Slide ${slideIndex + 1} of ${totalSlides}.`
 
     const data = await response.json()
 
-    // 兼容不同的返回格式
-    const imageUrl =
-      data?.data?.[0]?.url ||
-      data?.data?.[0]?.b64_json
-        ? `data:image/png;base64,${data.data[0].b64_json}`
-        : null
+    // 兼容不同的返回格式：优先使用 url，其次 b64_json
+    const rawUrl = data?.data?.[0]?.url
+    const b64 = data?.data?.[0]?.b64_json
+    const imageUrl = rawUrl || (b64 ? `data:image/png;base64,${b64}` : null)
 
     if (!imageUrl) {
       return Response.json({ error: "生图 API 未返回图片 URL" }, { status: 500 })
