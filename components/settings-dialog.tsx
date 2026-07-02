@@ -11,6 +11,7 @@ import {
   IconKey,
   IconBuildingBridge,
   IconBrain,
+  IconPhoto,
 } from "@tabler/icons-react"
 import {
   Dialog,
@@ -51,6 +52,11 @@ const STORAGE_KEY_TTS_MODEL = "ai-tts-model"
 const STORAGE_KEY_TTS_VOICE_HOST = "ai-tts-voice-host"
 const STORAGE_KEY_TTS_VOICE_EXPERT = "ai-tts-voice-expert"
 
+// 生图模型配置
+const STORAGE_KEY_IMAGE_API_KEY = "ai-image-api-key"
+const STORAGE_KEY_IMAGE_API_BASE = "ai-image-api-base"
+const STORAGE_KEY_IMAGE_MODEL = "ai-image-model"
+
 // ─── Defaults ───
 
 const DEFAULT_API_BASE = "https://api.openai.com/v1"
@@ -58,6 +64,8 @@ const DEFAULT_MODEL = "gpt-4o-mini"
 const DEFAULT_TTS_MODEL = "tts-1"
 const DEFAULT_TTS_VOICE_HOST = "alloy"
 const DEFAULT_TTS_VOICE_EXPERT = "nova"
+const DEFAULT_IMAGE_API_BASE = "https://www.hfsyapi.cn"
+const DEFAULT_IMAGE_MODEL = "gpt-image-2"
 
 // ─── Provider Presets ───
 
@@ -117,12 +125,31 @@ export function getConfiguredModel(): string {
   return localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL
 }
 
+// ─── Image Generation Config ───
+
+export function getImageConfig() {
+  if (typeof window === "undefined") return null
+  const aiConfig = getAIConfig()
+  const imageApiKey = localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || aiConfig?.apiKey || ""
+  const imageApiBase = localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || aiConfig?.apiBase?.replace(/\/v1$/, "") || DEFAULT_IMAGE_API_BASE
+  const imageModel = localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL
+  if (!imageApiKey) return null
+  return { apiKey: imageApiKey, apiBase: imageApiBase, model: imageModel }
+}
+
+export function isImageConfigured(): boolean {
+  if (typeof window === "undefined") return false
+  const aiConfig = getAIConfig()
+  return !!(localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || aiConfig?.apiKey)
+}
+
 // ─── Component ───
 
 export function SettingsDialog() {
   const [open, setOpen] = React.useState(false)
   const [showKey, setShowKey] = React.useState(false)
   const [showTtsKey, setShowTtsKey] = React.useState(false)
+  const [showImageKey, setShowImageKey] = React.useState(false)
   const [saved, setSaved] = React.useState(false)
 
   // AI 对话配置
@@ -138,6 +165,12 @@ export function SettingsDialog() {
   const [ttsVoiceHost, setTtsVoiceHost] = React.useState(DEFAULT_TTS_VOICE_HOST)
   const [ttsVoiceExpert, setTtsVoiceExpert] = React.useState(DEFAULT_TTS_VOICE_EXPERT)
   const [useSameKey, setUseSameKey] = React.useState(true)
+
+  // 生图模型配置
+  const [imageApiKey, setImageApiKey] = React.useState("")
+  const [imageApiBase, setImageApiBase] = React.useState(DEFAULT_IMAGE_API_BASE)
+  const [imageModel, setImageModel] = React.useState(DEFAULT_IMAGE_MODEL)
+  const [useSameImageKey, setUseSameImageKey] = React.useState(true)
 
   // 可选模型列表（基于当前 provider）
   const [modelOptions, setModelOptions] = React.useState<string[]>([])
@@ -169,6 +202,13 @@ export function SettingsDialog() {
       setTtsVoiceHost(localStorage.getItem(STORAGE_KEY_TTS_VOICE_HOST) || DEFAULT_TTS_VOICE_HOST)
       setTtsVoiceExpert(localStorage.getItem(STORAGE_KEY_TTS_VOICE_EXPERT) || DEFAULT_TTS_VOICE_EXPERT)
       setUseSameKey(!savedTtsKey)
+
+      const savedImageKey = localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || ""
+      setImageApiKey(savedImageKey)
+      setImageApiBase(localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || DEFAULT_IMAGE_API_BASE)
+      setImageModel(localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL)
+      setUseSameImageKey(!savedImageKey)
+
       setSaved(false)
     }
   }, [open])
@@ -202,6 +242,15 @@ export function SettingsDialog() {
     localStorage.setItem(STORAGE_KEY_TTS_MODEL, ttsModel.trim() || DEFAULT_TTS_MODEL)
     localStorage.setItem(STORAGE_KEY_TTS_VOICE_HOST, ttsVoiceHost)
     localStorage.setItem(STORAGE_KEY_TTS_VOICE_EXPERT, ttsVoiceExpert)
+
+    if (useSameImageKey) {
+      localStorage.removeItem(STORAGE_KEY_IMAGE_API_KEY)
+      localStorage.removeItem(STORAGE_KEY_IMAGE_API_BASE)
+    } else {
+      localStorage.setItem(STORAGE_KEY_IMAGE_API_KEY, imageApiKey.trim())
+      localStorage.setItem(STORAGE_KEY_IMAGE_API_BASE, imageApiBase.trim() || DEFAULT_IMAGE_API_BASE)
+    }
+    localStorage.setItem(STORAGE_KEY_IMAGE_MODEL, imageModel.trim() || DEFAULT_IMAGE_MODEL)
 
     setSaved(true)
     window.dispatchEvent(new CustomEvent("ai-config-changed"))
@@ -445,6 +494,83 @@ export function SettingsDialog() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* ─── Section 3: 生图模型配置 ─── */}
+        <div className="space-y-4 py-1">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <IconPhoto className="size-4 text-primary" />
+            生图模型
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            用于 AI 生成 PPT 幻灯片图片。推荐使用 GPT-Image-2 Pro 等图像生成模型。
+          </p>
+
+          {/* 复用 AI Key 开关 */}
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+            <Label htmlFor="use-same-image-key" className="text-sm font-normal cursor-pointer">
+              使用与 AI 对话相同的 API Key
+            </Label>
+            <Switch
+              id="use-same-image-key"
+              checked={useSameImageKey}
+              onCheckedChange={setUseSameImageKey}
+            />
+          </div>
+
+          {/* 独立生图 API Key（仅在未勾选时展示） */}
+          {!useSameImageKey && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="image-api-key">生图 API Key</Label>
+                <div className="relative">
+                  <Input
+                    id="image-api-key"
+                    type={showImageKey ? "text" : "password"}
+                    placeholder="sk-..."
+                    value={imageApiKey}
+                    onChange={(e) => setImageApiKey(e.target.value)}
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                    onClick={() => setShowImageKey(!showImageKey)}
+                  >
+                    {showImageKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="image-api-base">生图 API Base URL</Label>
+                <Input
+                  id="image-api-base"
+                  type="url"
+                  placeholder={DEFAULT_IMAGE_API_BASE}
+                  value={imageApiBase}
+                  onChange={(e) => setImageApiBase(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Image Model */}
+          <div className="space-y-2">
+            <Label htmlFor="image-model">生图模型</Label>
+            <Input
+              id="image-model"
+              placeholder="gpt-image-2"
+              value={imageModel}
+              onChange={(e) => setImageModel(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              支持 gpt-image-2、gpt-image-2pro、dall-e-3 等图像生成模型。
+            </p>
           </div>
         </div>
 

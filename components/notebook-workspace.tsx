@@ -43,7 +43,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { getAIConfig, getTTSConfig, isAIConfigured, getConfiguredModel } from "@/components/settings-dialog"
+import { getAIConfig, isAIConfigured, getConfiguredModel } from "@/components/settings-dialog"
 import dynamic from "next/dynamic"
 
 // ─── Lazy-loaded heavy sub-components ───
@@ -66,6 +66,10 @@ import {
   countWords,
   WELCOME_MESSAGE,
 } from "./notebook/types"
+import { usePptFlow } from "@/hooks/use-ppt-flow"
+import { useAudioFlow } from "@/hooks/use-audio-flow"
+import { detectIntent } from "@/lib/agents/supervisor"
+import { buildSystemPrompt } from "@/lib/agents/context-manager"
 import { TableOfContents } from "./notebook/table-of-contents"
 import { FileExplorer, MobileFileList } from "./notebook/file-explorer"
 import { ReadingModePanel, ReadingModeButton } from "./notebook/reading-mode"
@@ -153,13 +157,6 @@ const searchParams = useSearchParams()
 
   // AI note generation
   const [generating, setGenerating] = React.useState(false)
-
-  // Audio overview
-  const [audioGenerating, setAudioGenerating] = React.useState(false)
-  const [audioPlaying, setAudioPlaying] = React.useState(false)
-  const [audioCurrentLine, setAudioCurrentLine] = React.useState(-1)
-  const audioRef = React.useRef<HTMLAudioElement | null>(null)
-  const speechRef = React.useRef<{ cancel: () => void } | null>(null)
 
   // AI panel resize
   const [aiPanelWidth, setAiPanelWidth] = React.useState(320)
@@ -336,23 +333,48 @@ const searchParams = useSearchParams()
   }, [chatMessages])
 
   const startNewConversation = () => {
-    // 中断正在进行的流式请求
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
+    if (pptAbortRef.current) {
+      pptAbortRef.current.abort()
+      pptAbortRef.current = null
+    }
     isStreamingRef.current = false
     setChatLoading(false)
     setGenerating(false)
+    setPptSession(null)
     setActiveConversationId(null)
     setChatMessages([WELCOME_MESSAGE])
     setShowHistory(false)
   }
 
   const loadConversation = (conv: Conversation) => {
+    if (pptAbortRef.current) {
+      pptAbortRef.current.abort()
+      pptAbortRef.current = null
+    }
     setActiveConversationId(conv.id)
     setChatMessages(conv.messages)
     setShowHistory(false)
+    // Restore PPT session from last PPT message
+    const lastPptMsg = [...conv.messages].reverse().find((m) => m.pptMeta)
+    if (lastPptMsg?.pptMeta && lastPptMsg.pptMeta.step !== "done" && lastPptMsg.pptMeta.step !== "error") {
+      const pm = lastPptMsg.pptMeta
+      setPptSession({
+        active: false,
+        step: pm.step as "style-select" | "slide-count" | "custom-prompt" | "generating-outline" | "outline-review" | "generating-images" | "done",
+        stylePreset: pm.stylePreset || "corporate",
+        slideCount: pm.slideCount || 8,
+        customPrompt: pm.customPrompt || "",
+        userIntent: pm.userIntent || "",
+        outlineMsgId: null,
+        imagesMsgId: null,
+      })
+    } else {
+      setPptSession(null)
+    }
   }
 
   const deleteConversation = (convId: string) => {
@@ -561,6 +583,30 @@ const searchParams = useSearchParams()
     setToast({ type, msg })
     setTimeout(() => setToast(null), 2500)
   }, [])
+
+  // ─── PPT Generation (via hook) ───
+  const pptFlow = usePptFlow({
+    projectId,
+    activeFile,
+    ragEnabled,
+    chatMessages,
+    setChatMessages,
+    setChatLoading: (v: boolean) => setChatLoading(v),
+    chatEndRef,
+    showToast,
+  })
+  const { pptSession, setPptSession, pptAbortRef } = pptFlow
+
+  // ─── Audio Overview (via hook) ───
+  const audioFlow = useAudioFlow({
+    projectId,
+    chatModel,
+    chatMessages,
+    setChatMessages,
+    setChatLoading: (v: boolean) => setChatLoading(v),
+    showToast,
+  })
+  const { audioGenerating, audioPlaying } = audioFlow
 
   // ─── Data Fetching ───
 
@@ -839,50 +885,7 @@ selectFile(target)
   }, [handleUpload])
 
   // ─── Web Search (Agent Reach) ───
-
-  /** 检测用户消息是否需要互联网搜索 */
-  const detectWebIntent = (text: string): { action: string; query?: string; url?: string } | null => {
-    const trimmed = text.trim()
-
-    // 1. 检测 URL（优先级最高）
-    const urlMatch = trimmed.match(/https?:\/\/[^\s]+/)
-    if (urlMatch) {
-      const url = urlMatch[0]
-      if (/youtube\.com|youtu\.be/i.test(url)) return { action: "youtube", url }
-      if (/github\.com/i.test(url)) {
-        const repoMatch = url.match(/github\.com\/([^/]+\/[^/\s?#]+)/)
-        return repoMatch ? { action: "github", query: repoMatch[1] } : { action: "web", url }
-      }
-      if (/bilibili\.com|b23\.tv/i.test(url)) return { action: "bilibili", url }
-      return { action: "web", url }
-    }
-
-    // 2. 显式搜索前缀
-    const searchPrefixes = ["搜索", "搜一下", "查一下", "帮我搜", "帮我查", "帮我找", "search", "look up", "find"]
-    for (const prefix of searchPrefixes) {
-      if (trimmed.toLowerCase().startsWith(prefix)) {
-        const query = trimmed.slice(prefix.length).replace(/^[：:\s]+/, "").trim()
-        if (query) return { action: "search", query }
-      }
-    }
-
-    // 3. 隐式搜索意图检测（含时效性/外部知识关键词）
-    const implicitPatterns = [
-      /(?:最新|最近|今年|2024|2025|2026).*(?:趋势|动态|进展|新闻|消息|发展|报道)/,
-      /(?:现在|目前|当前|当下).*(?:怎么样|如何|什么情况|状态)/,
-      /(?:有没有|有哪些|推荐一些?).*(?:工具|框架|库|教程|资源|方案|文章)/,
-      /(?:对比|比较|区别|差异).*(?:和|与|vs|VS)/,
-      /(?:怎么评价|如何看待|大家怎么看|口碑|测评|评测)/,
-      /(?:什么是|介绍一下)(?!.*(?:文档|笔记|这个|本文|这篇))/,
-    ]
-    for (const pattern of implicitPatterns) {
-      if (pattern.test(trimmed)) {
-        return { action: "search", query: trimmed }
-      }
-    }
-
-    return null
-  }
+  // Intent detection now handled by @/lib/agents/supervisor
 
   /** 调用 Agent Reach 获取互联网内容 */
   const fetchWebContent = async (
@@ -1010,7 +1013,8 @@ selectFile(target)
     // ── Agent Reach: 互联网内容预取 ──
     let webSearchTriggered = false
     if (lastUserMsg) {
-      const webIntent = detectWebIntent(lastUserMsg.content)
+      const intent = detectIntent(lastUserMsg.content, { hasPptSession: !!pptSession?.active })
+      const webIntent = intent.type === "web_search" ? { action: intent.action, query: intent.query, url: intent.url } : null
       if (webIntent) {
         // 划词搜索：当有划词内容且搜索 query 是指代性描述时，用划词文本替换
         if (webIntent.action === "search" && selectedText) {
@@ -1060,53 +1064,19 @@ selectFile(target)
     }
 
     const activeFileName = activeFile ? (files.find((f) => f.filename === activeFile)?.title || activeFile) : undefined
-    let systemPrompt: string
 
-    // 构建互联网搜索上下文段落
-    const webContextBlock = webContextText
-      ? `\n\n## 互联网检索结果\n以下是实时从互联网获取的内容（${webSources?.[0]?.query ? `搜索词: 「${webSources[0].query}」` : ""}${webSources?.[0]?.url ? `来源: ${webSources[0].url}` : ""}）：\n\n${webContextText}\n\n## 使用说明\n- 请基于以上互联网内容回答用户问题，优先引用搜索结果中的事实和数据\n- 可以结合自己的知识进行补充和分析，但要区分搜索结果和自身推断\n- 如果搜索结果与问题不完全匹配，提取相关部分并说明\n- 回答中引用具体来源时标注 URL 链接`
-      : ""
-
-    if (ragContextText && ragSources && ragSources.length > 0) {
-      const sourceList = ragSources
-        .map((s, i) => `  来源 ${i + 1}: ${s.fileTitle}${s.headingPath.length > 0 ? ` > ${s.headingPath.join(" > ")}` : ""}`)
-        .join("\n")
-
-      systemPrompt = `你是一个基于文档知识库的 AI 助手。你的回答必须严格遵循以下规则：
-
-## 已检索到的参考资料
-以下是从用户笔记本中检索到的相关内容片段：
-
-${ragContextText}
-
-## 来源清单
-${sourceList}
-
-${activeFile ? `## 当前打开的文档
-用户正在查看「${activeFileName}」，文档内容：
-${fileContent}` : ""}${webContextBlock}
-
-## 回答规范
-1. **优先使用检索到的参考资料**回答问题。引用具体内容时，使用 [来源 N] 标注出处。
-2. 如果参考资料中没有足够信息回答问题，你可以基于自己的知识补充，但必须明确说明："以下内容不来自笔记本中的文档，建议独立验证。"
-3. 如果问题完全无法从参考资料和你的知识中回答，坦诚说明你不确定，而不是编造答案。
-4. 回复使用中文。
-5. 如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
-    } else if (webContextText) {
-      systemPrompt = `你是一个笔记 AI 助手，具备互联网搜索能力。${activeFile ? `用户当前正在查看文档「${activeFileName}」。` : ""}${webContextBlock}\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
-    } else if (webSearchTriggered && !webContextText) {
-      // 搜索被触发但结果为空（降级情况）
-      systemPrompt = `你是一个笔记 AI 助手。${activeFile ? `用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}\n\n` : ""}用户的问题可能涉及实时信息，但互联网搜索未能获取到结果。请基于你自己的知识尽力回答，并在回答末尾说明「注：联网搜索未返回结果，以上内容基于模型知识，可能不是最新信息。」\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
-    } else if (activeFile) {
-      systemPrompt = `你是一个笔记 AI 助手。用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
-    } else {
-      systemPrompt = "你是一个笔记 AI 助手，具备互联网搜索能力。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。用户也可以发送链接或以「搜索」开头来搜索互联网内容。回复请使用中文。"
-    }
-
-    // 划词问答：注入用户选中的文本
-    if (selectedText) {
-      systemPrompt += `\n\n## 用户选中的文本\n用户在文档中划选了以下内容，请针对这段内容回答用户的问题：\n\n"""\n${selectedText}\n"""\n\n请围绕这段选中文本来回答，如果用户的问题与选中文本无直接关联，也可以结合全文内容回答。`
-    }
+    // 使用 Context Manager 统一构建 system prompt
+    const systemPrompt = buildSystemPrompt({
+      ragContextText: ragContextText || undefined,
+      ragSources,
+      webContextText: webContextText || undefined,
+      webSources,
+      webSearchTriggered,
+      activeFile,
+      activeFileName,
+      fileContent,
+      selectedText,
+    })
 
     const apiMessages = [
       { role: "system", content: systemPrompt },
@@ -1257,6 +1227,14 @@ ${fileContent}` : ""}${webContextBlock}
   const handleSendMessage = async () => {
     const text = chatInput.trim()
     if (!text || chatLoading) return
+
+    // ─── PPT Intent Detection (via Supervisor) ───
+    const intent = detectIntent(text, { hasPptSession: !!pptSession?.active })
+    if (intent.type === "ppt") {
+      setChatInput("")
+      pptFlow.startPptFlow(text)
+      return
+    }
 
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -1558,373 +1536,6 @@ ${fileContent}` : ""}${webContextBlock}
     isStreamingRef.current = false
     setChatLoading(false)
   }
-
-  // ─── Audio Overview ───
-
-  const handleAudioGenerate = async () => {
-    const config = getAIConfig()
-    if (!config) {
-      showToast("error", "请先配置 API Key")
-      return
-    }
-
-    const aiMsgId = `audio-${Date.now()}`
-
-    const userMsg: ChatMessage = {
-      id: `user-audio-${Date.now()}`,
-      role: "user",
-      content: "生成音频概述",
-      timestamp: new Date(),
-    }
-    const aiMsg: ChatMessage = {
-      id: aiMsgId,
-      role: "assistant",
-      content: "",
-      timestamp: new Date(),
-      audioMeta: { stage: "script", progress: "正在生成对话脚本..." },
-    }
-    setChatMessages((prev) => [...prev, userMsg, aiMsg])
-    setChatLoading(true)
-    setAudioGenerating(true)
-    isStreamingRef.current = true
-
-    try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/audio`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "script",
-          apiKey: config.apiKey,
-          apiBase: config.apiBase,
-          model: chatModel,
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setChatMessages((prev) =>
-          prev.map((m) =>
-            m.id === aiMsgId
-              ? { ...m, content: `⚠️ ${data.error || "脚本生成失败"}`, audioMeta: { stage: "error" } }
-              : m
-          )
-        )
-        return
-      }
-
-      const reader = res.body?.getReader()
-      if (!reader) {
-        setChatMessages((prev) =>
-          prev.map((m) =>
-            m.id === aiMsgId
-              ? { ...m, content: "⚠️ 无法读取响应流", audioMeta: { stage: "error" } }
-              : m
-          )
-        )
-        return
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ""
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith("data: ")) continue
-          try {
-            const parsed = JSON.parse(trimmed.slice(6))
-            if (parsed.error) {
-              setChatMessages((prev) =>
-                prev.map((m) =>
-                  m.id === aiMsgId
-                    ? { ...m, content: `⚠️ ${parsed.error}`, audioMeta: { stage: "error" } }
-                    : m
-                )
-              )
-              return
-            }
-            if (parsed.progress) {
-              setChatMessages((prev) =>
-                prev.map((m) =>
-                  m.id === aiMsgId
-                    ? { ...m, audioMeta: { ...m.audioMeta!, progress: parsed.progress } }
-                    : m
-                )
-              )
-            }
-            if (parsed.step === "script_done" && parsed.script) {
-              const scriptContent = parsed.script
-                .map((line: { speaker: string; text: string }) =>
-                  `**${line.speaker === "host" ? "🎙️ 主持人" : "🎓 专家"}**：${line.text}`
-                )
-                .join("\n\n")
-              setChatMessages((prev) =>
-                prev.map((m) =>
-                  m.id === aiMsgId
-                    ? {
-                        ...m,
-                        content: `以下是为你生成的对话脚本，请确认内容后点击「生成音频」按钮：\n\n${scriptContent}`,
-                        audioMeta: { stage: "confirming", script: parsed.script },
-                      }
-                    : m
-                )
-              )
-            }
-            if (parsed.done) {
-              // action=script 完成
-            }
-          } catch {
-            // skip
-          }
-        }
-      }
-    } catch {
-      setChatMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, content: "⚠️ 网络错误，请重试", audioMeta: { stage: "error" } }
-            : m
-        )
-      )
-    } finally {
-      setAudioGenerating(false)
-      setChatLoading(false)
-      isStreamingRef.current = false
-    }
-  }
-
-  const handleAudioConfirm = async (msgId: string) => {
-    const msg = chatMessages.find((m) => m.id === msgId)
-    if (!msg?.audioMeta?.script) return
-
-    const config = getAIConfig()
-    const ttsConfig = getTTSConfig()
-    if (!config) {
-      showToast("error", "请先配置 API Key")
-      return
-    }
-
-    setChatMessages((prev) =>
-      prev.map((m) =>
-        m.id === msgId
-          ? { ...m, audioMeta: { ...m.audioMeta!, stage: "synthesizing", progress: "正在合成语音..." } }
-          : m
-      )
-    )
-    setChatLoading(true)
-    setAudioGenerating(true)
-
-    try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/audio`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "generate",
-          apiKey: ttsConfig?.apiKey || config.apiKey,
-          apiBase: ttsConfig?.apiBase || config.apiBase,
-          model: chatModel,
-          ttsModel: ttsConfig?.model || "tts-1",
-          voiceHost: ttsConfig?.voiceHost || "alloy",
-          voiceExpert: ttsConfig?.voiceExpert || "nova",
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setChatMessages((prev) =>
-          prev.map((m) =>
-            m.id === msgId
-              ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: data.error || "合成失败" } }
-              : m
-          )
-        )
-        return
-      }
-
-      const reader = res.body?.getReader()
-      if (!reader) {
-        setChatMessages((prev) =>
-          prev.map((m) =>
-            m.id === msgId
-              ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: "无法读取响应流" } }
-              : m
-          )
-        )
-        return
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ""
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith("data: ")) continue
-          try {
-            const parsed = JSON.parse(trimmed.slice(6))
-            if (parsed.error) {
-              setChatMessages((prev) =>
-                prev.map((m) =>
-                  m.id === msgId
-                    ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: parsed.error } }
-                    : m
-                )
-              )
-              return
-            }
-            if (parsed.progress) {
-              setChatMessages((prev) =>
-                prev.map((m) =>
-                  m.id === msgId
-                    ? { ...m, audioMeta: { ...m.audioMeta!, progress: parsed.progress } }
-                    : m
-                )
-              )
-            }
-            if (parsed.step === "tts_unavailable") {
-              setChatMessages((prev) =>
-                prev.map((m) =>
-                  m.id === msgId
-                    ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", progress: "TTS 不可用，可使用浏览器朗读" } }
-                    : m
-                )
-              )
-            }
-            if (parsed.done) {
-              if (parsed.hasAudio && parsed.audioUrl) {
-                setChatMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === msgId
-                      ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", audioUrl: parsed.audioUrl, progress: "音频生成完成" } }
-                      : m
-                  )
-                )
-              } else {
-                setChatMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === msgId
-                      ? { ...m, audioMeta: { ...m.audioMeta!, stage: "done", progress: "脚本已生成，可使用浏览器朗读" } }
-                      : m
-                  )
-                )
-              }
-            }
-          } catch {
-            // skip
-          }
-        }
-      }
-    } catch {
-      setChatMessages((prev) =>
-        prev.map((m) =>
-          m.id === msgId
-            ? { ...m, audioMeta: { ...m.audioMeta!, stage: "error", progress: "网络错误，请重试" } }
-            : m
-        )
-      )
-    } finally {
-      setAudioGenerating(false)
-      setChatLoading(false)
-    }
-  }
-
-  const handleAudioPlay = (msgId: string) => {
-    const msg = chatMessages.find((m) => m.id === msgId)
-    if (!msg?.audioMeta) return
-
-    if (msg.audioMeta.audioUrl) {
-      if (!audioRef.current || audioRef.current.src !== msg.audioMeta.audioUrl) {
-        if (audioRef.current) audioRef.current.pause()
-        audioRef.current = new Audio(msg.audioMeta.audioUrl)
-        audioRef.current.onended = () => {
-          setAudioPlaying(false)
-          setAudioCurrentLine(-1)
-        }
-      }
-      if (audioPlaying) {
-        audioRef.current.pause()
-        setAudioPlaying(false)
-      } else {
-        audioRef.current.play()
-        setAudioPlaying(true)
-      }
-    } else if (msg.audioMeta.script && msg.audioMeta.script.length > 0) {
-      const script = msg.audioMeta.script
-      if (audioPlaying) {
-        window.speechSynthesis.cancel()
-        setAudioPlaying(false)
-        setAudioCurrentLine(-1)
-        speechRef.current = null
-        return
-      }
-
-      setAudioPlaying(true)
-      let cancelled = false
-      speechRef.current = {
-        cancel: () => {
-          cancelled = true
-          window.speechSynthesis.cancel()
-        },
-      }
-
-      const speakLine = (index: number) => {
-        if (cancelled || index >= script.length) {
-          setAudioPlaying(false)
-          setAudioCurrentLine(-1)
-          return
-        }
-
-        setAudioCurrentLine(index)
-        const line = script[index]
-        const utterance = new SpeechSynthesisUtterance(line.text)
-        utterance.lang = "zh-CN"
-        utterance.rate = 1.1
-        utterance.pitch = line.speaker === "host" ? 1.0 : 1.3
-        utterance.onend = () => speakLine(index + 1)
-        utterance.onerror = () => speakLine(index + 1)
-        window.speechSynthesis.speak(utterance)
-      }
-
-      speakLine(0)
-    }
-  }
-
-  const handleAudioStop = () => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-    }
-    if (speechRef.current) {
-      speechRef.current.cancel()
-    }
-    window.speechSynthesis.cancel()
-    setAudioPlaying(false)
-    setAudioCurrentLine(-1)
-  }
-
-  React.useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current = null
-      }
-      window.speechSynthesis?.cancel()
-    }
-  }, [])
 
   // ─── Active file title ───
 
@@ -2233,10 +1844,20 @@ ${fileContent}` : ""}${webContextBlock}
           onRegenerateChat={handleRegenerateChat}
           onApplyDocUpdate={handleApplyDocUpdate}
           onRejectDocUpdate={handleRejectDocUpdate}
-          onAudioGenerate={handleAudioGenerate}
-          onAudioConfirm={handleAudioConfirm}
-          onAudioPlay={handleAudioPlay}
-          onAudioStop={handleAudioStop}
+          onAudioGenerate={audioFlow.handleAudioGenerate}
+          onAudioConfirm={audioFlow.handleAudioConfirm}
+          onAudioPlay={audioFlow.handleAudioPlay}
+          onAudioStop={audioFlow.handleAudioStop}
+          // PPT conversational flow
+          pptSession={pptSession}
+          onPptStyleSelect={pptFlow.handlePptStyleSelect}
+          onPptSlideCountSelect={pptFlow.handlePptSlideCountSelect}
+          onPptStartOutline={pptFlow.handlePptStartOutline}
+          onPptConfirmOutline={pptFlow.handlePptConfirmOutline}
+          onPptRetrySlide={pptFlow.handlePptRetrySlide}
+          onPptRegenerateOutline={pptFlow.handlePptRegenerateOutline}
+          onPptGuideClick={() => pptFlow.startPptFlow(selectedText ? `基于选中内容生成 PPT：${selectedText.slice(0, 100)}` : "生成 PPT")}
+          onPptCancel={pptFlow.handlePptCancel}
         />
       </div>
 

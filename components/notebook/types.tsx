@@ -53,6 +53,17 @@ export interface ChatMessage {
     audioUrl?: string
     progress?: string
   }
+  /** PPT 生成的元信息 */
+  pptMeta?: {
+    step: "style-select" | "slide-count" | "custom-prompt" | "generating-outline" | "outline-review" | "generating-images" | "done" | "error"
+    stylePreset?: string
+    slideCount?: number
+    customPrompt?: string
+    userIntent?: string
+    outline?: PptOutline
+    slideImages?: SlideImage[]
+    streamingText?: string
+  }
 }
 
 export interface Conversation {
@@ -132,3 +143,101 @@ export const GENERATE_TEMPLATES = [
   { type: "timeline", label: "时间线", desc: "关键事件演进", icon: IconTimeline },
   { type: "briefing", label: "简报文档", desc: "精炼分享给团队", icon: IconMessage },
 ]
+
+// ─── PPT Style Presets ───
+
+export interface PptStylePreset {
+  id: string
+  name: string
+  description: string
+  colors: string
+}
+
+export const PPT_STYLE_PRESETS: PptStylePreset[] = [
+  {
+    id: "editorial",
+    name: "编辑风",
+    description: "clean editorial magazine style with elegant serif headings, generous whitespace, and muted color palette",
+    colors: "charcoal, cream, muted gold accents",
+  },
+  {
+    id: "corporate",
+    name: "商务风",
+    description: "modern corporate presentation with bold sans-serif, structured layout, professional blue tones",
+    colors: "navy blue, white, light gray",
+  },
+  {
+    id: "minimal",
+    name: "极简风",
+    description: "ultra-minimalist design with lots of white space, thin lines, single accent color",
+    colors: "white, black, one accent color",
+  },
+  {
+    id: "tech",
+    name: "科技风",
+    description: "futuristic tech presentation with dark background, glowing neon accents, gradient elements",
+    colors: "dark navy, electric blue, cyan glow",
+  },
+  {
+    id: "clay",
+    name: "粘土风",
+    description: "playful 3D clay-style illustrations with soft pastel colors, rounded shapes, friendly typography",
+    colors: "pastel pink, mint, lavender, cream",
+  },
+  {
+    id: "isometric",
+    name: "等距风",
+    description: "isometric 3D illustration style with clean geometric shapes, flat colors, modern infographic look",
+    colors: "teal, orange, yellow, light gray",
+  },
+  {
+    id: "kawaii",
+    name: "可爱风",
+    description: "cute kawaii style with rounded fonts, pastel colors, small decorative elements, friendly icons",
+    colors: "pink, baby blue, mint, yellow",
+  },
+  {
+    id: "vintage",
+    name: "复古风",
+    description: "retro vintage design with warm tones, classic typography, paper texture feel",
+    colors: "sepia, warm brown, cream, dark red",
+  },
+  {
+    id: "brick",
+    name: "砖块风",
+    description: "Lego/brick style with blocky elements, bold colors, pixelated aesthetic",
+    colors: "red, yellow, blue, black, white",
+  },
+  {
+    id: "popart",
+    name: "波普风",
+    description: "pop art style with bold colors, halftone patterns, comic book aesthetics",
+    colors: "bright red, yellow, blue, black outlines",
+  },
+]
+
+// ─── PPT Slide Types ───
+
+export interface PptSlide {
+  pageNumber: number
+  title: string
+  bulletPoints: string[]
+  speakerNote: string
+  layout: "cover" | "content" | "section" | "closing"
+  imageHint: string
+}
+
+export interface PptOutline {
+  title: string
+  style: string
+  slides: PptSlide[]
+}
+
+export type SlideImageStatus = "pending" | "generating" | "done" | "error"
+
+export interface SlideImage {
+  index: number
+  url: string | null
+  status: SlideImageStatus
+  error?: string
+}

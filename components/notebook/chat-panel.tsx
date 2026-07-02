@@ -25,6 +25,8 @@ import {
   IconSend,
   IconWorld,
   IconBrain,
+  IconPresentation,
+  IconAlertCircle,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -39,8 +41,8 @@ import {
 } from "@/components/ui/collapsible"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { Switch } from "@/components/ui/switch"
-import type { ChatMessage, Conversation, DocFile } from "./types"
-import { GENERATE_TEMPLATES } from "./types"
+import type { ChatMessage, Conversation, DocFile, PptOutline, SlideImage } from "./types"
+import { GENERATE_TEMPLATES, PPT_STYLE_PRESETS } from "./types"
 
 // ─── Props ───
 
@@ -130,12 +132,33 @@ export interface ChatPanelProps {
   onAudioConfirm: (msgId: string) => void
   onAudioPlay: (msgId: string) => void
   onAudioStop: () => void
+
+  // PPT generation
+  pptSession: {
+    active: boolean
+    step: string
+    stylePreset: string
+    slideCount: number
+    customPrompt: string
+    userIntent: string
+    outlineMsgId: string | null
+    imagesMsgId: string | null
+  } | null
+  onPptStyleSelect: (styleId: string) => void
+  onPptSlideCountSelect: (count: number) => void
+  onPptStartOutline: (customPrompt: string) => void
+  onPptConfirmOutline: (outline: PptOutline) => void
+  onPptRetrySlide: (msgId: string, slideIndex: number) => void
+  onPptRegenerateOutline: () => void
+  onPptGuideClick: () => void
+  onPptCancel: () => void
 }
 
 // ─── Component ───
 
 export function ChatPanel({
   projectName,
+  projectId,
   files,
   chatMessages,
   chatInput,
@@ -186,6 +209,15 @@ export function ChatPanel({
   onAudioConfirm,
   onAudioPlay,
   onAudioStop,
+  pptSession,
+  onPptStyleSelect,
+  onPptSlideCountSelect,
+  onPptStartOutline,
+  onPptConfirmOutline,
+  onPptRetrySlide,
+  onPptRegenerateOutline,
+  onPptGuideClick,
+  onPptCancel,
 }: ChatPanelProps) {
   if (!showAI) return null
 
@@ -337,8 +369,22 @@ export function ChatPanel({
                     </div>
                     {audioGenerating && <IconLoader2 className="size-3.5 shrink-0 animate-spin text-primary" />}
                   </button>
+                  {/* AI 生成 PPT 按钮 */}
+                  <button
+                    className="flex w-full items-center gap-2.5 border border-dashed border-primary/30 bg-primary/5 px-3 py-2 text-left text-[12px] transition-colors hover:bg-primary/10 disabled:opacity-50"
+                    onClick={() => onPptGuideClick()}
+                    disabled={generating}
+                  >
+                    <IconPresentation className="size-3.5 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium">AI 生成 PPT</p>
+                      <p className="text-[11px] text-muted-foreground">基于笔记内容生成演示文稿幻灯片</p>
+                    </div>
+                  </button>
                 </div>
               )}
+
+              {/* PPT Generator Dialog - moved to bottom for both views */}
             </div>
           ) : (
             /* Chat messages */
@@ -490,8 +536,23 @@ export function ChatPanel({
                           onStop={onAudioStop}
                         />
                       )}
+                      {/* PPT 生成交互控件 */}
+                      {msg.pptMeta && (
+                        <PptFlowControls
+                          msg={msg}
+                          pptSession={pptSession}
+                          chatLoading={chatLoading}
+                          onStyleSelect={onPptStyleSelect}
+                          onSlideCountSelect={onPptSlideCountSelect}
+                          onStartOutline={onPptStartOutline}
+                          onConfirmOutline={onPptConfirmOutline}
+                          onRetrySlide={onPptRetrySlide}
+                          onRegenerateOutline={onPptRegenerateOutline}
+                          onCancel={onPptCancel}
+                        />
+                      )}
                       {/* AI 回复操作按钮 */}
-                      {msg.content && !msg.content.startsWith("⚠️") && !msg.audioMeta && !(msg.generateMeta && !msg.generateMeta.done) && !(chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id) && (
+                      {msg.content && !msg.content.startsWith("⚠️") && !msg.audioMeta && !msg.pptMeta && !(msg.generateMeta && !msg.generateMeta.done) && !(chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id) && (
                         <div className="mt-2 flex items-center gap-1.5">
                           <Button
                             variant="outline"
@@ -853,4 +914,407 @@ function AudioControls({
       )}
     </div>
   )
+}
+
+// ─── PPT Conversational Flow Controls ───
+
+function PptFlowControls({
+  msg,
+  pptSession,
+  chatLoading,
+  onStyleSelect,
+  onSlideCountSelect,
+  onStartOutline,
+  onConfirmOutline,
+  onRetrySlide,
+  onRegenerateOutline,
+  onCancel,
+}: {
+  msg: ChatMessage
+  pptSession: ChatPanelProps["pptSession"]
+  chatLoading: boolean
+  onStyleSelect: (styleId: string) => void
+  onSlideCountSelect: (count: number) => void
+  onStartOutline: (customPrompt: string) => void
+  onConfirmOutline: (outline: PptOutline) => void
+  onRetrySlide: (msgId: string, slideIndex: number) => void
+  onRegenerateOutline: () => void
+  onCancel: () => void
+}) {
+  const meta = msg.pptMeta!
+  const [customPromptText, setCustomPromptText] = React.useState("")
+  const [editedOutline, setEditedOutline] = React.useState<PptOutline | null>(null)
+  const [showNotesForSlide, setShowNotesForSlide] = React.useState<number | null>(null)
+
+  // Sync edited outline when meta.outline changes — always sync on new outline
+  const outlineJson = meta.outline ? JSON.stringify(meta.outline) : null
+  const editedJson = editedOutline ? JSON.stringify(editedOutline) : null
+  React.useEffect(() => {
+    if (outlineJson && outlineJson !== editedJson) {
+      setEditedOutline(meta.outline!)
+    }
+  }, [outlineJson, editedJson, meta.outline])
+
+  // ─── Step: style-select ───
+  if (meta.step === "style-select") {
+    return (
+      <div className="mt-2 space-y-1.5">
+        <div className="grid grid-cols-2 gap-1">
+          {PPT_STYLE_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              className={`flex items-center gap-1.5 border px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-muted/50 ${
+                pptSession?.stylePreset === p.id ? "border-primary bg-primary/5" : "border-border"
+              }`}
+              onClick={() => onStyleSelect(p.id)}
+            >
+              <span className="truncate font-medium">{p.name}</span>
+              <span className="truncate text-[9px] text-muted-foreground/60">{p.colors}</span>
+            </button>
+          ))}
+        </div>
+        <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground" onClick={onCancel}>
+          取消
+        </Button>
+      </div>
+    )
+  }
+
+  // ─── Step: slide-count ───
+  if (meta.step === "slide-count") {
+    const counts = [5, 6, 7, 8, 10, 12, 15]
+    return (
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {counts.map((c) => (
+          <button
+            key={c}
+            className="border border-border px-3 py-1.5 text-[12px] transition-colors hover:bg-primary/5 hover:border-primary/50"
+            onClick={() => onSlideCountSelect(c)}
+          >
+            {c} 页
+          </button>
+        ))}
+        <button
+          className="border border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50"
+          onClick={() => {
+            const input = prompt("输入页数 (3-15):", "8")
+            const n = parseInt(input || "", 10)
+            if (n >= 3 && n <= 15) onSlideCountSelect(n)
+          }}
+        >
+          自定义
+        </button>
+      </div>
+    )
+  }
+
+  // ─── Step: custom-prompt ───
+  if (meta.step === "custom-prompt") {
+    return (
+      <div className="mt-2 space-y-2">
+        <textarea
+          value={customPromptText}
+          onChange={(e) => setCustomPromptText(e.target.value)}
+          placeholder="输入风格偏好或内容要求（可选）..."
+          rows={2}
+          className="w-full resize-none border border-border bg-background px-2.5 py-1.5 text-[12px] outline-none focus:border-primary/50"
+        />
+        <div className="flex gap-1.5">
+          <Button
+            size="sm"
+            className="h-7 gap-1 text-[11px]"
+            onClick={() => onStartOutline(customPromptText.trim())}
+            disabled={chatLoading}
+          >
+            {chatLoading ? <IconLoader2 className="size-3 animate-spin" /> : <IconSparkles className="size-3" />}
+            {customPromptText.trim() ? "生成大纲" : "开始生成"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={() => onStartOutline("")}
+            disabled={chatLoading}
+          >
+            跳过
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Step: generating-outline ───
+  if (meta.step === "generating-outline") {
+    return (
+      <div className="mt-2">
+        {meta.streamingText ? (
+          <div className="rounded border border-border bg-muted/30 p-2">
+            <pre className="whitespace-pre-wrap break-all text-[10px] leading-relaxed text-muted-foreground max-h-[200px] overflow-y-auto">
+              {meta.streamingText.slice(-500)}
+            </pre>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <IconLoader2 className="size-3 animate-spin" />
+            正在生成大纲...
+          </div>
+        )}
+        <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground" onClick={onCancel}>
+          取消
+        </Button>
+      </div>
+    )
+  }
+
+  // ─── Step: error ───
+  if (meta.step === "error") {
+    return (
+      <div className="mt-2 flex items-center gap-2">
+        <span className="text-[12px] text-destructive">{meta.streamingText || "生成失败"}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 gap-1 text-[11px]"
+          onClick={onRegenerateOutline}
+        >
+          <IconRefresh className="size-3" />
+          重试
+        </Button>
+      </div>
+    )
+  }
+
+  // ─── Step: outline-review ───
+  if (meta.step === "outline-review" && editedOutline) {
+    const updateSlide = (index: number, updates: Partial<typeof editedOutline.slides[0]>) => {
+      const slides = [...editedOutline.slides]
+      slides[index] = { ...slides[index], ...updates }
+      setEditedOutline({ ...editedOutline, slides })
+    }
+    const deleteSlide = (index: number) => {
+      const slides = editedOutline.slides.filter((_, i) => i !== index)
+      slides.forEach((s, i) => (s.pageNumber = i + 1))
+      setEditedOutline({ ...editedOutline, slides })
+    }
+    const moveSlide = (index: number, dir: "up" | "down") => {
+      const slides = [...editedOutline.slides]
+      const t = dir === "up" ? index - 1 : index + 1
+      if (t < 0 || t >= slides.length) return
+      ;[slides[index], slides[t]] = [slides[t], slides[index]]
+      slides.forEach((s, i) => (s.pageNumber = i + 1))
+      setEditedOutline({ ...editedOutline, slides })
+    }
+
+    return (
+      <div className="mt-2 space-y-2">
+        <input
+          value={editedOutline.title}
+          onChange={(e) => setEditedOutline({ ...editedOutline, title: e.target.value })}
+          className="w-full border-b border-border bg-transparent text-[13px] font-medium outline-none focus:border-primary/50"
+        />
+        {editedOutline.slides.map((slide, i) => (
+          <div key={i} className="rounded border border-border p-2">
+            <div className="mb-1 flex items-center gap-1.5">
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">{i + 1}</span>
+              <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">{slide.layout}</span>
+              <input
+                value={slide.title}
+                onChange={(e) => updateSlide(i, { title: e.target.value })}
+                className="flex-1 border-none bg-transparent text-[12px] font-medium outline-none"
+              />
+              <button onClick={() => moveSlide(i, "up")} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
+                <IconChevronRight className="size-3 rotate-[-90deg]" />
+              </button>
+              <button onClick={() => moveSlide(i, "down")} disabled={i === editedOutline.slides.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
+                <IconChevronRight className="size-3 rotate-90" />
+              </button>
+              <button onClick={() => deleteSlide(i)} className="text-destructive/60 hover:text-destructive">
+                <IconTrash className="size-3" />
+              </button>
+            </div>
+            <textarea
+              value={slide.bulletPoints.join("\n")}
+              onChange={(e) => updateSlide(i, { bulletPoints: e.target.value.split("\n").filter(Boolean) })}
+              rows={Math.min(slide.bulletPoints.length, 4)}
+              className="w-full resize-none border border-border bg-background px-1.5 py-1 text-[11px] outline-none focus:border-primary/30"
+            />
+          </div>
+        ))}
+        <div className="flex gap-1.5">
+          <Button
+            size="sm"
+            className="h-7 gap-1 text-[11px]"
+            onClick={() => onConfirmOutline(editedOutline)}
+            disabled={chatLoading}
+          >
+            <IconCheck className="size-3" />
+            确认并生成图片 ({editedOutline.slides.length} 页)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 text-[11px]"
+            onClick={onRegenerateOutline}
+            disabled={chatLoading}
+          >
+            <IconRefresh className="size-3" />
+            重新生成
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Step: generating-images / done ───
+  if ((meta.step === "generating-images" || meta.step === "done") && meta.slideImages) {
+    const doneCount = meta.slideImages.filter((s) => s.status === "done").length
+    const errorCount = meta.slideImages.filter((s) => s.status === "error").length
+    const total = meta.slideImages.length
+
+    return (
+      <div className="mt-2 space-y-2">
+        {/* Progress bar */}
+        <div className="flex items-center gap-2">
+          {meta.step === "done" && errorCount === 0 && <IconCheck className="size-3.5 text-green-500" />}
+          {meta.step === "generating-images" && <IconLoader2 className="size-3.5 animate-spin text-primary" />}
+          <span className="text-[11px] text-muted-foreground">
+            {meta.step === "generating-images" ? `生成中 ${doneCount}/${total}` : `完成 ${doneCount}/${total}${errorCount ? ` · ${errorCount} 失败` : ""}`}
+          </span>
+          <div className="flex-1 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${(doneCount / total) * 100}%` }}
+            />
+          </div>
+          {meta.step === "generating-images" && (
+            <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground" onClick={onCancel}>
+              取消
+            </Button>
+          )}
+        </div>
+
+        {/* Image grid */}
+        <div className="grid grid-cols-2 gap-1.5">
+          {meta.slideImages.map((img, i) => (
+            <div key={i} className="group relative overflow-hidden rounded border border-border bg-muted/30">
+              <span className="absolute left-1 top-1 z-10 rounded bg-black/50 px-1 py-0.5 text-[9px] text-white">{i + 1}</span>
+              {img.status === "done" && img.url ? (
+                <div className="relative aspect-video">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img.url} alt={`Slide ${i + 1}`} className="size-full object-cover" />
+                  <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                    <a
+                      href={img.url}
+                      download={`slide-${i + 1}.png`}
+                      className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-black hover:bg-white"
+                    >
+                      <IconDownload className="size-2.5 inline" /> 下载
+                    </a>
+                    <button
+                      onClick={() => onRetrySlide(msg.id, i)}
+                      className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-black hover:bg-white"
+                    >
+                      <IconRefresh className="size-2.5 inline" /> 重试
+                    </button>
+                    {meta.outline?.slides[i]?.speakerNote && (
+                      <button
+                        onClick={() => setShowNotesForSlide(showNotesForSlide === i ? null : i)}
+                        className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-black hover:bg-white"
+                      >
+                        备注
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : img.status === "generating" ? (
+                <div className="flex aspect-video items-center justify-center">
+                  <IconLoader2 className="size-4 animate-spin text-primary" />
+                </div>
+              ) : img.status === "error" ? (
+                <div className="flex aspect-video flex-col items-center justify-center gap-1 p-2">
+                  <IconAlertCircle className="size-4 text-destructive" />
+                  <span className="text-center text-[9px] text-destructive">{img.error?.slice(0, 30)}</span>
+                  <button
+                    onClick={() => onRetrySlide(msg.id, i)}
+                    className="text-[9px] text-primary hover:underline"
+                  >
+                    重试
+                  </button>
+                </div>
+              ) : (
+                <div className="flex aspect-video items-center justify-center">
+                  <IconPresentation className="size-4 text-muted-foreground/30" />
+                </div>
+              )}
+              {/* Slide title */}
+              {meta.outline && (
+                <div className="border-t px-1 py-0.5">
+                  <p className="truncate text-[9px] text-muted-foreground">
+                    {meta.outline.slides[i]?.title}
+                  </p>
+                  {showNotesForSlide === i && meta.outline.slides[i]?.speakerNote && (
+                    <p className="mt-0.5 text-[9px] leading-relaxed text-muted-foreground/70">
+                      {meta.outline.slides[i].speakerNote}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Download buttons */}
+        {meta.step === "done" && doneCount > 0 && (
+          <div className="flex gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 text-[11px]"
+              onClick={() => {
+                meta.slideImages!.forEach((img, i) => {
+                  if (img.status === "done" && img.url) {
+                    setTimeout(() => {
+                      const a = document.createElement("a")
+                      a.href = img.url!
+                      a.download = `slide-${i + 1}-${meta.outline?.title || "presentation"}.png`
+                      a.click()
+                    }, i * 300)
+                  }
+                })
+              }}
+            >
+              <IconDownload className="size-3" />
+              全部下载 PNG
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 text-[11px]"
+              onClick={async () => {
+                const doneImages = meta.slideImages!.filter((img) => img.status === "done" && img.url)
+                if (doneImages.length === 0) return
+                // Create a simple PDF by opening all images in a new window for print-to-PDF
+                const win = window.open("", "_blank")
+                if (!win) return
+                win.document.write(`<html><head><title>${meta.outline?.title || "Presentation"}</title>
+                  <style>body{margin:0;display:flex;flex-direction:column}img{width:100%;page-break-after:always}</style>
+                  </head><body>`)
+                for (const img of doneImages) {
+                  win.document.write(`<img src="${img.url}" />`)
+                }
+                win.document.write("</body></html>")
+                win.document.close()
+                setTimeout(() => win.print(), 1000)
+              }}
+            >
+              <IconDownload className="size-3" />
+              导出 PDF
+            </Button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return null
 }
