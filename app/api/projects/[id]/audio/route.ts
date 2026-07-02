@@ -26,7 +26,7 @@ interface DialogueLine {
   text: string
 }
 
-const AUDIO_PATH = (projectId: string) => `projects/${projectId}/.audio/overview.wav`
+const AUDIO_PATH = (projectId: string) => `projects/${projectId}/.audio/overview.mp3`
 const SCRIPT_PATH = (projectId: string) => `projects/${projectId}/.audio/script.json`
 
 const DIALOGUE_PROMPT = `你是一个专业的播客脚本撰写人。请基于以下文档内容，生成一段信息密度高、引人入胜的双人对话脚本。
@@ -53,55 +53,8 @@ const DIALOGUE_PROMPT = `你是一个专业的播客脚本撰写人。请基于�
   {"speaker": "expert", "text": "确实是这样..."}
 ]}`
 
-// ─── WAV Audio Helpers ─────────────────────────────────────────────────────
-
-/** Parse WAV header to get audio format info */
-function parseWAVHeader(buf: Buffer): { sampleRate: number; channels: number; bitsPerSample: number } {
-  return {
-    sampleRate: buf.readUInt32LE(24),
-    channels: buf.readUInt16LE(22),
-    bitsPerSample: buf.readUInt16LE(34),
-  }
-}
-
-/** Extract PCM data from a WAV buffer (handles optional extra chunks) */
-function extractPCMFromWAV(buf: Buffer): Buffer {
-  let offset = 12 // Skip RIFF header
-  while (offset + 8 <= buf.length) {
-    const chunkId = buf.toString("ascii", offset, offset + 4)
-    const chunkSize = buf.readUInt32LE(offset + 4)
-    if (chunkId === "data") {
-      return buf.subarray(offset + 8, offset + 8 + chunkSize)
-    }
-    offset += 8 + chunkSize + (chunkSize % 2) // chunks are word-aligned
-  }
-  // Fallback: assume standard 44-byte header
-  return buf.subarray(44)
-}
-
-/** Create a WAV file from PCM data */
-function createWAV(pcm: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
-  const dataLength = pcm.length
-  const buffer = Buffer.alloc(44 + dataLength)
-  // RIFF header
-  buffer.write("RIFF", 0)
-  buffer.writeUInt32LE(36 + dataLength, 4)
-  buffer.write("WAVE", 8)
-  // fmt chunk
-  buffer.write("fmt ", 12)
-  buffer.writeUInt32LE(16, 16)
-  buffer.writeUInt16LE(1, 20) // PCM
-  buffer.writeUInt16LE(channels, 22)
-  buffer.writeUInt32LE(sampleRate, 24)
-  buffer.writeUInt32LE(Math.floor(sampleRate * channels * (bitsPerSample / 8)), 28)
-  buffer.writeUInt16LE(channels * (bitsPerSample / 8), 32)
-  buffer.writeUInt16LE(bitsPerSample, 34)
-  // data chunk
-  buffer.write("data", 36)
-  buffer.writeUInt32LE(dataLength, 40)
-  pcm.copy(buffer, 44)
-  return buffer
-}
+// MP3 文件可以直接拼接（无需特殊处理），比 WAV 小约 10 倍，
+// 解决 Vercel US → OSS Beijing 跨区域上传超时问题。
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
@@ -394,7 +347,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                     },
                   ],
                   audio: {
-                    format: "wav",
+                    format: "mp3",
                     voice: line.speaker === "host" ? hostVoice : expertVoice,
                   },
                 }),
@@ -421,13 +374,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
             }
           }
 
-          // Step 3: 合并 WAV 音频（提取 PCM 后拼接，再重建 WAV 头）
+          // Step 3: 合并 MP3 音频（MP3 帧可直接拼接）
           if (audioChunks.length > 0) {
-            const { sampleRate, channels, bitsPerSample } = parseWAVHeader(audioChunks[0])
-            const pcmChunks = audioChunks.map(extractPCMFromWAV)
-            const mergedPCM = Buffer.concat(pcmChunks)
-            const mergedWav = createWAV(mergedPCM, sampleRate, channels, bitsPerSample)
-            const stored = await writeFile(AUDIO_PATH(projectId), mergedWav, { contentType: "audio/wav" })
+            const mergedMp3 = Buffer.concat(audioChunks)
+            const stored = await writeFile(AUDIO_PATH(projectId), mergedMp3, { contentType: "audio/mpeg" })
 
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: true, audioUrl: stored.url, script: dialogue })}\n\n`))
           } else {
