@@ -97,7 +97,9 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     const aiMsg: ChatMessage = {
       id: aiMsgId,
       role: "assistant",
-      content: "好的！我来帮你基于笔记内容生成 PPT 演示文稿。每页幻灯片将由 AI 生图模型渲染为高清图片。\n\n请先选择一个视觉风格：",
+      content: activeFile
+        ? `好的！我来基于「${activeFile.replace(/\.md$/i, "")}」为你生成 PPT 演示文稿。每页幻灯片将由 AI 生图模型渲染为高清图片。\n\n请先选择一个视觉风格：`
+        : "好的！我来帮你生成 PPT 演示文稿。每页幻灯片将由 AI 生图模型渲染为高清图片。\n\n请先选择一个视觉风格：",
       timestamp: new Date(),
       pptMeta: {
         step: "style-select",

@@ -918,6 +918,15 @@ function AudioControls({
 
 // ─── PPT Conversational Flow Controls ───
 
+// Step ordering for determining if a step is already past
+const PPT_STEP_ORDER = ["style-select", "slide-count", "custom-prompt", "generating-outline", "outline-review", "generating-images", "done"] as const
+function isPastStep(msgStep: string, currentStep: string | undefined): boolean {
+  if (!currentStep) return false
+  const msgIdx = PPT_STEP_ORDER.indexOf(msgStep as typeof PPT_STEP_ORDER[number])
+  const curIdx = PPT_STEP_ORDER.indexOf(currentStep as typeof PPT_STEP_ORDER[number])
+  return msgIdx >= 0 && curIdx >= 0 && curIdx > msgIdx
+}
+
 function PptFlowControls({
   msg,
   pptSession,
@@ -955,21 +964,26 @@ function PptFlowControls({
     }
   }, [outlineJson, editedJson, meta.outline])
 
+  // If the session has moved past this message's step, don't render interactive controls
+  if (isPastStep(meta.step, pptSession?.step)) {
+    return null
+  }
+
   // ─── Step: style-select ───
   if (meta.step === "style-select") {
     return (
       <div className="mt-2 space-y-1.5">
-        <div className="grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-2 gap-1.5">
           {PPT_STYLE_PRESETS.map((p) => (
             <button
               key={p.id}
-              className={`flex items-center gap-1.5 border px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-muted/50 ${
+              className={`flex flex-col items-start border px-2.5 py-2 text-left text-[11px] transition-colors hover:bg-muted/50 ${
                 pptSession?.stylePreset === p.id ? "border-primary bg-primary/5" : "border-border"
               }`}
               onClick={() => onStyleSelect(p.id)}
             >
-              <span className="truncate font-medium">{p.name}</span>
-              <span className="truncate text-[9px] text-muted-foreground/60">{p.colors}</span>
+              <span className="font-medium">{p.name}</span>
+              <span className="text-[9px] text-muted-foreground/60">{p.colors}</span>
             </button>
           ))}
         </div>
