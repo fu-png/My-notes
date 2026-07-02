@@ -1167,7 +1167,7 @@ function PptFlowControls({
         <input
           value={editedOutline.title}
           onChange={(e) => setEditedOutline({ ...editedOutline, title: e.target.value })}
-          className="w-full border-b border-border bg-transparent text-[13px] font-medium outline-none focus:border-primary/50"
+          className="w-full bg-transparent text-[13px] font-medium outline-none"
         />
         {editedOutline.slides.map((slide, i) => (
           <div key={i} className="rounded border border-border p-2 space-y-1.5">
@@ -1191,13 +1191,13 @@ function PptFlowControls({
             <input
               value={slide.title}
               onChange={(e) => updateSlide(i, { title: e.target.value })}
-              className="w-full border-b border-border bg-transparent text-[12px] font-medium outline-none focus:border-primary/50 pb-1"
+              className="w-full bg-transparent text-[12px] font-medium outline-none"
             />
             <textarea
               value={slide.bulletPoints.join("\n")}
               onChange={(e) => updateSlide(i, { bulletPoints: e.target.value.split("\n").filter(Boolean) })}
               rows={Math.min(slide.bulletPoints.length, 4)}
-              className="w-full resize-none border border-border bg-background px-1.5 py-1 text-[11px] outline-none focus:border-primary/30"
+              className="w-full resize-none bg-muted/30 px-1.5 py-1 text-[11px] outline-none rounded"
             />
           </div>
         ))}
