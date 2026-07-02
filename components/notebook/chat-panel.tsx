@@ -27,6 +27,7 @@ import {
   IconBrain,
   IconPresentation,
   IconAlertCircle,
+  IconEye,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -1260,31 +1261,16 @@ function PptFlowControls({
             <div key={i} className="group relative overflow-hidden rounded border border-border bg-muted/30">
               <span className="absolute left-1 top-1 z-10 rounded bg-black/50 px-1 py-0.5 text-[9px] text-white">{i + 1}</span>
               {img.status === "done" && img.url ? (
-                <div className="relative aspect-video">
+                <div
+                  className="relative aspect-video cursor-pointer"
+                  onClick={() => window.open(img.url!, "_blank")}
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={img.url} alt={`Slide ${i + 1}`} className="size-full object-cover" />
-                  <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                    <a
-                      href={img.url}
-                      download={`slide-${i + 1}.png`}
-                      className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-black hover:bg-white"
-                    >
-                      <IconDownload className="size-2.5 inline" /> 下载
-                    </a>
-                    <button
-                      onClick={() => onRetrySlide(msg.id, i)}
-                      className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-black hover:bg-white"
-                    >
-                      <IconRefresh className="size-2.5 inline" /> 重试
-                    </button>
-                    {meta.outline?.slides[i]?.speakerNote && (
-                      <button
-                        onClick={() => setShowNotesForSlide(showNotesForSlide === i ? null : i)}
-                        className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-black hover:bg-white"
-                      >
-                        备注
-                      </button>
-                    )}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="rounded bg-white/90 px-2 py-1 text-[10px] text-black">
+                      <IconEye className="size-2.5 inline mr-0.5" />预览
+                    </span>
                   </div>
                 </div>
               ) : img.status === "generating" ? (
@@ -1324,9 +1310,31 @@ function PptFlowControls({
           ))}
         </div>
 
-        {/* Download buttons */}
+        {/* Action buttons */}
         {meta.step === "done" && doneCount > 0 && (
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 text-[11px]"
+              onClick={() => {
+                const doneImages = meta.slideImages!.filter((img) => img.status === "done" && img.url)
+                if (doneImages.length === 0) return
+                const win = window.open("", "_blank")
+                if (!win) return
+                win.document.write(`<html><head><title>${meta.outline?.title || "Presentation"}</title>
+                  <style>body{margin:0;padding:20px;background:#f5f5f5;display:flex;flex-direction:column;align-items:center;gap:16px}img{max-width:100%;box-shadow:0 2px 8px rgba(0,0,0,0.15);border-radius:4px}</style>
+                  </head><body>`)
+                for (const img of doneImages) {
+                  win.document.write(`<img src="${img.url}" />`)
+                }
+                win.document.write("</body></html>")
+                win.document.close()
+              }}
+            >
+              <IconEye className="size-3" />
+              查看全部
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -1354,7 +1362,6 @@ function PptFlowControls({
               onClick={async () => {
                 const doneImages = meta.slideImages!.filter((img) => img.status === "done" && img.url)
                 if (doneImages.length === 0) return
-                // Create a simple PDF by opening all images in a new window for print-to-PDF
                 const win = window.open("", "_blank")
                 if (!win) return
                 win.document.write(`<html><head><title>${meta.outline?.title || "Presentation"}</title>

@@ -90,7 +90,41 @@ export function loadConversations(projectId: string): Conversation[] {
 
 export function saveConversations(projectId: string, conversations: Conversation[]) {
   if (typeof window === "undefined") return
-  localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(conversations))
+  try {
+    // Strip large data URLs from slideImages to avoid exceeding localStorage quota
+    const cleaned = conversations.map((conv) => ({
+      ...conv,
+      messages: conv.messages.map((msg) => {
+        if (!msg.pptMeta?.slideImages) return msg
+        return {
+          ...msg,
+          pptMeta: {
+            ...msg.pptMeta,
+            slideImages: msg.pptMeta.slideImages.map((img) => ({
+              ...img,
+              // Only keep remote URLs, drop base64 data URLs (too large for localStorage)
+              url: img.url && !img.url.startsWith("data:") ? img.url : null,
+            })),
+          },
+        }
+      }),
+    }))
+    localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(cleaned))
+  } catch (e) {
+    // localStorage quota exceeded — try saving without slide images
+    try {
+      const minimal = conversations.map((conv) => ({
+        ...conv,
+        messages: conv.messages.map((msg) => {
+          if (!msg.pptMeta?.slideImages) return msg
+          return { ...msg, pptMeta: { ...msg.pptMeta, slideImages: undefined } }
+        }),
+      }))
+      localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(minimal))
+    } catch {
+      console.error("Failed to save conversations:", e)
+    }
+  }
 }
 
 // ─── Helpers ───
