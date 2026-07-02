@@ -8,7 +8,7 @@
 import type { SearchResult, AssembledContext, ContextSource } from "./types"
 import { estimateTokens } from "./chunker"
 
-const DEFAULT_MAX_TOKENS = 4000
+const DEFAULT_MAX_TOKENS = 6000
 
 /**
  * 将检索结果组装为上下文文本
@@ -36,12 +36,15 @@ export function buildContext(
   // 2. 按得分排序（已经排好了，但去重后可能乱序）
   deduped.sort((a, b) => b.score - a.score)
 
+  // 2.5 近重复去重：去除内容高度相似的 chunk（Jaccard 相似度 > 0.6）
+  const dedupedSimilar = removeNearDuplicates(deduped, 0.6)
+
   // 3. 按 token 预算截断
   const selected: SearchResult[] = []
   let currentTokens = 0
   const headerOverhead = 50 // 每个块的标注文本估算 50 tokens
 
-  for (const result of deduped) {
+  for (const result of dedupedSimilar) {
     const chunkTokens = result.chunk.tokenCount + headerOverhead
     if (currentTokens + chunkTokens > maxTokens) {
       // 如果至少有一个块了，停止
@@ -132,4 +135,64 @@ function groupByFile(results: SearchResult[]): Map<string, SearchResult[]> {
   }
 
   return ordered
+}
+
+/**
+ * 近重复检测：基于词集 Jaccard 相似度
+ * 对已按分数排序的结果，保留高分块，去除与之相似度超过阈值的低分块
+ */
+function removeNearDuplicates(
+  results: SearchResult[],
+  threshold: number
+): SearchResult[] {
+  if (results.length <= 1) return results
+
+  // 将文本转为词集（支持中英文混合分词）
+  const tokenize = (text: string): Set<string> => {
+    const tokens = new Set<string>()
+    // 英文词
+    const enMatches = text.match(/[a-zA-Z0-9_]+/g)
+    if (enMatches) enMatches.forEach((t) => tokens.add(t.toLowerCase()))
+    // 中文 bigram
+    const cjkMatches = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]+/g)
+    if (cjkMatches) {
+      for (const seg of cjkMatches) {
+        for (let i = 0; i < seg.length - 1; i++) {
+          tokens.add(seg[i] + seg[i + 1])
+        }
+      }
+    }
+    return tokens
+  }
+
+  const jaccard = (a: Set<string>, b: Set<string>): number => {
+    if (a.size === 0 && b.size === 0) return 1
+    let intersection = 0
+    for (const t of a) {
+      if (b.has(t)) intersection++
+    }
+    return intersection / (a.size + b.size - intersection)
+  }
+
+  const kept: SearchResult[] = []
+  const keptTokenSets: Set<string>[] = []
+
+  for (const result of results) {
+    const tokens = tokenize(result.chunk.content)
+    let isDuplicate = false
+
+    for (const existing of keptTokenSets) {
+      if (jaccard(tokens, existing) > threshold) {
+        isDuplicate = true
+        break
+      }
+    }
+
+    if (!isDuplicate) {
+      kept.push(result)
+      keptTokenSets.push(tokens)
+    }
+  }
+
+  return kept
 }

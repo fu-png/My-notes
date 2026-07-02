@@ -12,6 +12,7 @@ import { addChunks, searchByVector, deleteIndex, saveChunksData, loadChunksData 
 import { createBm25Index, searchByBm25 } from "./bm25-store"
 import { decomposeQuery } from "./query-decomposer"
 import { buildContext } from "./context-builder"
+import { rerankResults } from "./reranker"
 import { buildRAGSystemPrompt, buildPlainSystemPrompt } from "./prompts"
 import type { RAGConfig, AssembledContext, IndexStatus, SearchResult } from "./types"
 import { readFile, listFiles, writeFile as storageWrite } from "../storage"
@@ -110,7 +111,8 @@ export async function ingestProject(
 export async function queryProject(
   projectId: string,
   question: string,
-  config: RAGConfig
+  config: RAGConfig,
+  activeFile?: string
 ): Promise<AssembledContext> {
   // 检查是否已索引
   const status = await getIndexStatus(projectId)
@@ -140,8 +142,23 @@ export async function queryProject(
     ? perQueryResults[0]
     : simpleRRFFuse(perQueryResults, 10)
 
-  // 3. 组装上下文
-  const context = buildContext(results, config.maxContextTokens || 4000)
+  // 3. Score 阈值过滤：去除得分低于最高分 15% 的结果
+  const filtered = filterByScoreThreshold(results, 0.15)
+
+  // 4. 当前打开文件加权提升（×1.3）
+  const boosted = activeFile
+    ? filtered.map((r) =>
+        r.chunk.filename === activeFile
+          ? { ...r, score: r.score * 1.3 }
+          : r
+      ).sort((a, b) => b.score - a.score)
+    : filtered
+
+  // 5. LLM 重排序：对 Top-N 候选进行二次精排
+  const reranked = await rerankResults(question, boosted, config)
+
+  // 6. 组装上下文
+  const context = buildContext(reranked, config.maxContextTokens || 6000)
   console.log(`[pipeline] 组装上下文: ${context.sources.length} 个来源, ${context.totalTokens} tokens`)
 
   return context
@@ -187,7 +204,7 @@ async function saveIndexStatus(projectId: string, status: IndexStatus): Promise<
 
 /** 简单的 RRF 融合（内联在 pipeline 中，避免循环依赖） */
 function simpleRRFFuse(resultSets: SearchResult[][], topK: number): SearchResult[] {
-  const RRF_K = 60
+  const RRF_K = 30 // 降低 k 值增大头部结果的区分度
   const scoreMap = new Map<string, { score: number; result: SearchResult }>()
 
   for (const results of resultSets) {
@@ -213,4 +230,20 @@ function simpleRRFFuse(resultSets: SearchResult[][], topK: number): SearchResult
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
     .map(({ score, result }) => ({ ...result, score }))
+}
+
+/**
+ * Score 阈值过滤：保留得分 ≥ maxScore × threshold 的结果
+ * 至少保留前 3 条，避免过滤太激进
+ */
+function filterByScoreThreshold(
+  results: SearchResult[],
+  threshold: number
+): SearchResult[] {
+  if (results.length <= 3) return results
+  const maxScore = results[0].score
+  const cutoff = maxScore * threshold
+  const filtered = results.filter((r) => r.score >= cutoff)
+  // 至少保留前 3 条
+  return filtered.length >= 3 ? filtered : results.slice(0, 3)
 }

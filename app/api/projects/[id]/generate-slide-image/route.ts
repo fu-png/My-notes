@@ -50,38 +50,47 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const apiBase = (imageApiBase || "https://www.hfsyapi.cn").replace(/\/+$/, "")
   const model = imageModel || "gpt-image-2pro"
-  const imageSize = size || "1536x1024"
+  const imageSize = size || "1792x1024"
 
   // 构建 image prompt
   const layoutDesc: Record<string, string> = {
-    cover: "title/cover slide with large centered title text, subtitle area, and decorative visual",
-    content: "content slide with title at top, bullet points list in body area, and supporting visual on the side",
-    section: "section divider slide with large section title, minimal text, and bold visual element",
-    closing: "closing/thank-you slide with summary text and call-to-action or contact info",
+    cover: "Hero cover slide: title text is the dominant visual centerpiece, occupying 60% of the composition. A subtle decorative illustration or abstract shape sits behind or beside the title. Include a thin subtitle line below.",
+    content: "Content slide: clear visual hierarchy with a bold heading at top-left, 3-5 concise bullet points arranged with comfortable spacing in the main area, and a small complementary icon or illustration in the right margin.",
+    section: "Section divider slide: a single bold section title centered both vertically and horizontally. Large-scale decorative background element (geometric shape, gradient mesh, or pattern) fills the canvas behind the text.",
+    closing: "Closing slide: centered 'Thank You' or summary message with balanced whitespace. Optional subtle decorative border or bottom accent bar. Clean and memorable.",
   }
 
   const layoutText = layoutDesc[slideData.layout] || layoutDesc.content
 
   const bulletText = slideData.bulletPoints
-    .map((bp, i) => `${i + 1}. ${bp}`)
+    .map((bp, i) => `• ${bp}`)
     .join("\n")
 
-  let prompt = `A professional presentation slide, ${styleDescription || "modern corporate presentation style"}.
-Layout: ${layoutText}
-Slide dimensions: 16:9 widescreen ratio.
+  let prompt = `Create a stunning, print-quality presentation slide.
 
-Title text (render this Chinese text prominently at the top): "${slideData.title}"
-${slideData.bulletPoints.length > 0 ? `Bullet points (render this Chinese text as a clean readable list in the body):\n${bulletText}` : ""}
+VISUAL DESIGN: ${styleDescription || "Premium modern corporate keynote style with clean geometric layout and subtle gradient accents."}
+COLOR PALETTE: ${styleColors || "#1B3A5C navy, #FFFFFF white, #F0F4F8 soft gray, #3B82F6 blue accent"}
+COMPOSITION: ${layoutText}
+DIMENSIONS: Strictly 16:9 widescreen landscape ratio. Horizontal layout only.
 
-Visual style hint: ${slideData.imageHint || "abstract professional background"}
-Color palette: ${styleColors || "navy blue, white, light gray"}
-Typography: clean, modern, highly readable. Use appropriate font sizes for readability.
-The slide should look like a real PowerPoint slide with proper text layout, not just an illustration.
-IMPORTANT: Render all Chinese text EXACTLY as provided above. Do not paraphrase, transliterate, or omit any text. Every character must appear clearly and legibly in the final image. Use a clean sans-serif font that supports Chinese characters. Font size should be large enough for easy reading.
-Slide ${slideIndex + 1} of ${totalSlides}.`
+CONTENT TO RENDER:
+Headline: "${slideData.title}"${slideData.bulletPoints.length > 0 ? `\nBody text:\n${bulletText}` : ""}
+
+VISUAL ENHANCEMENT: ${slideData.imageHint || "Abstract geometric decorative elements complementing the content"}
+
+QUALITY REQUIREMENTS:
+- This must look like a slide from a $500/deck professional design agency
+- Perfect typographic hierarchy: headline 2-3x larger than body text
+- All text must be razor-sharp and perfectly legible
+- Balanced negative space — never feel crowded
+- Decorative elements support the content, never compete with it
+- Render ALL Chinese characters exactly as provided, using a premium sans-serif font (e.g., PingFang, Source Han Sans style)
+- No watermarks, no artifacts, no placeholder text
+
+Page ${slideIndex + 1} of ${totalSlides}.`
 
   if (customPrompt) {
-    prompt += `\nAdditional requirements: ${customPrompt}`
+    prompt += `\n\nADDITIONAL CREATIVE DIRECTION: ${customPrompt}`
   }
 
   try {

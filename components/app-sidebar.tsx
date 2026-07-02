@@ -5,12 +5,13 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { SettingsDialog } from "@/components/settings-dialog"
+import { SettingsPage } from "@/components/settings-page"
 import {
   IconSearch,
   IconFileText,
   IconLoader2,
   IconX,
+  IconSettings,
 } from "@tabler/icons-react"
 import {
   TooltipProvider,
@@ -171,11 +172,28 @@ export function TopNav() {
             <IconSearch className="size-4" />
           </button>
           <TooltipProvider delayDuration={200}>
-            <SettingsDialog />
+            <SettingsButton />
           </TooltipProvider>
           <ThemeToggle />
         </div>
       </div>
     </header>
+  )
+}
+
+function SettingsButton() {
+  const [showSettings, setShowSettings] = React.useState(false)
+
+  return (
+    <>
+      <button
+        onClick={() => setShowSettings(true)}
+        className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+        title="设置"
+      >
+        <IconSettings className="size-4" />
+      </button>
+      {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
+    </>
   )
 }

@@ -21,6 +21,7 @@ import {
   IconMicrophone,
   IconRefresh,
   IconChevronRight,
+  IconChevronDown,
   IconFileText,
   IconSend,
   IconWorld,
@@ -42,6 +43,7 @@ import {
 } from "@/components/ui/collapsible"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { Switch } from "@/components/ui/switch"
+import type { ProviderInfo } from "@/components/settings-dialog"
 import type { ChatMessage, Conversation, DocFile, PptOutline, SlideImage } from "./types"
 import { GENERATE_TEMPLATES, PPT_STYLE_PRESETS } from "./types"
 
@@ -59,6 +61,8 @@ export interface ChatPanelProps {
   chatInput: string
   chatLoading: boolean
   chatModel: string
+  providerList: ProviderInfo[]
+  onSwitchProvider: (providerId: string) => void
   deepThinkMode: boolean
 
   // Conversation history
@@ -165,6 +169,8 @@ export function ChatPanel({
   chatInput,
   chatLoading,
   chatModel,
+  providerList,
+  onSwitchProvider,
   deepThinkMode,
   conversations,
   activeConversationId,
@@ -243,12 +249,6 @@ export function ChatPanel({
             <>
               <IconSparkles className="size-4 text-primary" />
               <span className="text-sm font-medium">AI 助手</span>
-              {deepThinkMode && (
-                <span className="flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                  <IconBrain className="size-2.5" />
-                  深度思考
-                </span>
-              )}
               <span className={`size-1.5 rounded-full ${aiConfigured ? "bg-green-500" : "bg-muted-foreground/40"}`} title={aiConfigured ? "已配置" : "未配置 API Key"} />
             </>
           )}
@@ -392,43 +392,31 @@ export function ChatPanel({
             <div className="space-y-3">
               {chatMessages.slice(1).map((msg) => (
                 <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {msg.role === "user" ? (
-                    <div className="max-w-[85%] px-3 py-2 text-[13px] leading-relaxed bg-primary text-primary-foreground whitespace-pre-wrap">
-                      {msg.content}
-                    </div>
+{msg.role === "user" ? (
+<div className="max-w-[85%] rounded-lg bg-primary text-primary-foreground">
+  {msg.quotedText && (
+    <div className="rounded-t-lg border-b border-primary-foreground/20 bg-primary-foreground/15 px-3 py-2">
+      <div className="mb-1 flex items-center gap-1">
+        <IconQuote className="size-3 text-primary-foreground/60" />
+        <span className="text-[10px] font-semibold tracking-wide text-primary-foreground/60">引用划词</span>
+      </div>
+      <p className="line-clamp-4 border-l-2 border-primary-foreground/30 pl-2 text-[11px] italic leading-relaxed text-primary-foreground/90">{msg.quotedText}</p>
+    </div>
+  )}
+  <div className="px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
+    {msg.content}
+  </div>
+</div>
                   ) : (
                     <div className="w-full overflow-hidden text-[13px] leading-relaxed [&_article]:max-w-none [&_article]:text-[13px] [&_article]:leading-relaxed [&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[13px] [&_h1]:mt-3 [&_h1]:mb-1.5 [&_h2]:mt-2.5 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-3 [&_p]:leading-relaxed [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_pre]:text-xs [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:text-xs [&_blockquote]:my-2 [&_blockquote]:text-[13px] [&_hr]:my-3 [&_table]:text-xs [&_img]:max-w-full">
                       {/* 深度思考推理过程 */}
-                      {msg.reasoning && (() => {
-                        const isLastMsg = msg.id === chatMessages[chatMessages.length - 1]?.id
-                        const isThinking = chatLoading && isLastMsg
-                        const hasContent = !!msg.content
-                        return (
-                          <details
-                            className="mb-2 border border-primary/20 bg-primary/5 text-xs"
-                            {...(isThinking || !hasContent ? { open: true } : {})}
-                          >
-                            <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-primary/80 hover:text-primary">
-                              <IconBrain className={`size-3 ${isThinking ? "animate-pulse" : ""}`} />
-                              {isThinking ? (
-                                <span className="flex items-center gap-1">
-                                  正在思考
-                                  <span className="inline-flex gap-0.5">
-                                    <span className="size-1 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.3s]" />
-                                    <span className="size-1 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.15s]" />
-                                    <span className="size-1 rounded-full bg-primary/60 animate-bounce" />
-                                  </span>
-                                </span>
-                              ) : (
-                                "思考过程"
-                              )}
-                            </summary>
-                            <div className="border-t border-primary/10 px-2.5 py-2 text-muted-foreground [&_p]:my-1 [&_p]:leading-relaxed">
-                              <MarkdownRenderer content={msg.reasoning} />
-                            </div>
-                          </details>
-                        )
-                      })()}
+                      {msg.reasoning && (
+                        <ReasoningBlock
+                          reasoning={msg.reasoning}
+                          isThinking={chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id}
+                          defaultOpen={chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id || !msg.content}
+                        />
+                      )}
                       {!msg.content && !msg.reasoning && chatLoading && !msg.audioMeta ? (
                         <div className="px-1 py-2">
                           <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
@@ -564,6 +552,7 @@ export function ChatPanel({
                             <IconCopy className="size-3" />
                             复制
                           </Button>
+                          {msg.generateMeta && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -573,6 +562,7 @@ export function ChatPanel({
                             <IconDownload className="size-3" />
                             保存为笔记
                           </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -640,7 +630,7 @@ export function ChatPanel({
                 onSendMessage()
               }
             }}
-            placeholder={deepThinkMode ? "深度思考已开启，输入问题让 AI 深入推理..." : "输入问题，按 Enter 发送..."}
+            placeholder="输入问题，按 Enter 发送..."
             disabled={chatLoading}
             rows={2}
             className="w-full resize-none bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
@@ -650,23 +640,28 @@ export function ChatPanel({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-1">
+                    <IconBrain className={`size-3 ${deepThinkMode ? "text-primary" : "text-muted-foreground/70"}`} />
                     <Switch
                       size="sm"
                       checked={deepThinkMode}
                       onCheckedChange={onToggleDeepThink}
                     />
-                    <span className={`flex items-center gap-0.5 text-[11px] ${deepThinkMode ? "text-primary" : "text-muted-foreground/70"}`}>
-                      <IconBrain className="size-3" />
-                      深度思考
-                    </span>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top">
                   {deepThinkMode ? "深度思考已开启，点击关闭" : "开启深度思考模式"}
                 </TooltipContent>
               </Tooltip>
-              <span className="text-[11px] text-muted-foreground/70">
-                {chatModel}{ragEnabled && indexStatus?.indexed ? " · RAG" : ""}
+              <span className="ml-2 text-[11px] text-muted-foreground/70">
+                {providerList.length > 1 ? (
+                  <ModelSwitcher
+                    model={chatModel}
+                    providers={providerList}
+                    onSwitch={onSwitchProvider}
+                  />
+                ) : (
+                  <>{chatModel}{ragEnabled && indexStatus?.indexed ? " · RAG" : ""}</>
+                )}
               </span>
             </div>
             <Button
@@ -687,6 +682,104 @@ export function ChatPanel({
 }
 
 // ─── Sub-components ───
+
+function ReasoningBlock({
+  reasoning,
+  isThinking,
+  defaultOpen,
+}: {
+  reasoning: string
+  isThinking: boolean
+  defaultOpen: boolean
+}) {
+  const [open, setOpen] = React.useState(defaultOpen)
+
+  React.useEffect(() => {
+    if (defaultOpen) setOpen(true)
+  }, [defaultOpen])
+
+  return (
+    <div className="mb-2 rounded-md border border-primary/20 bg-primary/5 text-xs">
+      <button
+        className="flex w-full cursor-pointer items-center justify-between px-2.5 py-1.5 text-primary/80 hover:text-primary"
+        onClick={() => !isThinking && setOpen((v) => !v)}
+      >
+        <span className="flex items-center gap-1.5">
+          <IconBrain className={`size-3 ${isThinking ? "animate-pulse" : ""}`} />
+          {isThinking ? (
+            <span className="flex items-center gap-1">
+              正在思考
+              <span className="inline-flex gap-0.5">
+                <span className="size-1 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.3s]" />
+                <span className="size-1 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.15s]" />
+                <span className="size-1 rounded-full bg-primary/60 animate-bounce" />
+              </span>
+            </span>
+          ) : (
+            "思考过程"
+          )}
+        </span>
+        {!isThinking && (
+          <IconChevronDown className={`size-3.5 text-primary/50 transition-transform ${open ? "rotate-180" : ""}`} />
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-primary/10 px-2.5 py-2 text-muted-foreground [&_p]:my-1 [&_p]:leading-relaxed">
+          <MarkdownRenderer content={reasoning} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ModelSwitcher({
+  model,
+  providers,
+  onSwitch,
+}: {
+  model: string
+  providers: { id: string; model: string; isActive: boolean }[]
+  onSwitch: (id: string) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors"
+      >
+        {model}
+        <IconChevronDown className={`size-3 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 z-50 mb-1 min-w-[160px] rounded-md border bg-background py-1 shadow-lg">
+          {providers.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => { onSwitch(p.id); setOpen(false) }}
+              className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-[11px] transition-colors hover:bg-muted ${
+                p.isActive ? "text-primary font-medium" : "text-foreground"
+              }`}
+            >
+              <span className="truncate">{p.model}</span>
+              {p.isActive && <IconCheck className="size-3 shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function SourcesPanel({
   sourcesLoading,
@@ -957,6 +1050,8 @@ function PptFlowControls({
   const [showNotesForSlide, setShowNotesForSlide] = React.useState<number | null>(null)
   const [showCustomCount, setShowCustomCount] = React.useState(false)
   const customCountRef = React.useRef<HTMLInputElement>(null)
+  const [previewMode, setPreviewMode] = React.useState<"none" | "single" | "all">("none")
+  const [previewIndex, setPreviewIndex] = React.useState(0)
 
   // Sync edited outline when meta.outline changes — always sync on new outline
   const outlineJson = meta.outline ? JSON.stringify(meta.outline) : null
@@ -1248,13 +1343,13 @@ function PptFlowControls({
               {img.status === "done" && img.url ? (
                 <div
                   className="relative aspect-video cursor-pointer"
-                  onClick={() => window.open(img.url!, "_blank")}
+                  onClick={() => { setPreviewIndex(i); setPreviewMode("single") }}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={img.url} alt={`Slide ${i + 1}`} className="size-full object-cover" />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                    <span className="rounded bg-white/90 px-2 py-1 text-[10px] text-black">
-                      <IconEye className="size-2.5 inline mr-0.5" />预览
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="flex items-center gap-0.5 rounded-md bg-white/95 px-2.5 py-1 text-[10px] font-medium text-black shadow-sm">
+                      <IconEye className="size-3" />预览
                     </span>
                   </div>
                 </div>
@@ -1302,20 +1397,7 @@ function PptFlowControls({
               variant="outline"
               size="sm"
               className="h-7 gap-1 text-[11px]"
-              onClick={() => {
-                const doneImages = meta.slideImages!.filter((img) => img.status === "done" && img.url)
-                if (doneImages.length === 0) return
-                const win = window.open("", "_blank")
-                if (!win) return
-                win.document.write(`<html><head><title>${meta.outline?.title || "Presentation"}</title>
-                  <style>body{margin:0;padding:20px;background:#f5f5f5;display:flex;flex-direction:column;align-items:center;gap:16px}img{max-width:100%;box-shadow:0 2px 8px rgba(0,0,0,0.15);border-radius:4px}</style>
-                  </head><body>`)
-                for (const img of doneImages) {
-                  win.document.write(`<img src="${img.url}" />`)
-                }
-                win.document.write("</body></html>")
-                win.document.close()
-              }}
+              onClick={() => setPreviewMode("all")}
             >
               <IconEye className="size-3" />
               查看全部
@@ -1365,6 +1447,72 @@ function PptFlowControls({
             </Button>
           </div>
         )}
+
+        {/* Full-page modal preview */}
+        {previewMode !== "none" && meta.slideImages && (() => {
+          const doneImages = meta.slideImages!.filter((img) => img.status === "done" && img.url)
+          if (doneImages.length === 0) return null
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewMode("none")}>
+              <div className="relative flex h-[90vh] w-[90vw] max-w-5xl flex-col rounded-xl bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
+                  <span className="text-sm font-medium">
+                    {previewMode === "single" ? `幻灯片预览 ${previewIndex + 1} / ${meta.slideImages!.length}` : `全部幻灯片（${doneImages.length} 页）`}
+                  </span>
+                  <Button variant="ghost" size="icon" className="size-8" onClick={() => setPreviewMode("none")}>
+                    <IconX className="size-4" />
+                  </Button>
+                </div>
+                {/* Content */}
+                {previewMode === "single" ? (
+                  <div className="flex flex-1 items-center justify-center overflow-hidden p-6">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={meta.slideImages![previewIndex]?.url || doneImages[0].url!}
+                      alt={`Slide ${previewIndex + 1}`}
+                      className="max-h-full max-w-full rounded-lg border border-border object-contain shadow-lg"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto p-6">
+                    <div className="mx-auto grid max-w-4xl gap-4">
+                      {doneImages.map((img, i) => (
+                        <div key={i} className="relative">
+                          <span className="absolute left-3 top-3 z-10 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white">{i + 1}</span>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img.url!} alt={`Slide ${i + 1}`} className="w-full rounded-lg border border-border shadow-md" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Footer navigation for single mode */}
+                {previewMode === "single" && meta.slideImages!.length > 1 && (
+                  <div className="flex shrink-0 items-center justify-center gap-4 border-t px-5 py-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={previewIndex <= 0}
+                      onClick={() => setPreviewIndex((v) => Math.max(0, v - 1))}
+                    >
+                      上一页
+                    </Button>
+                    <span className="text-sm text-muted-foreground">{previewIndex + 1} / {meta.slideImages!.length}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={previewIndex >= meta.slideImages!.length - 1}
+                      onClick={() => setPreviewIndex((v) => Math.min(meta.slideImages!.length - 1, v + 1))}
+                    >
+                      下一页
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
       </div>
     )
   }

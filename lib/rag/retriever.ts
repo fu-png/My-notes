@@ -10,8 +10,8 @@ import { searchByBm25 } from "./bm25-store"
 import { embed } from "./embedding"
 import type { RAGConfig, SearchResult, Chunk } from "./types"
 
-// RRF 参数，k=60 是标准值
-const RRF_K = 60
+// RRF 参数，k=30 增大头部结果区分度
+const RRF_K = 30
 // 每路检索的候选数量（多取一些，融合后再截断）
 const PER_SOURCE_TOP_K = 15
 

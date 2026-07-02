@@ -90,6 +90,54 @@ const TTS_VOICE_OPTIONS = [
   { value: "shimmer", label: "Shimmer（温柔）" },
 ]
 
+// ─── Multi-provider Utility Functions ───
+
+const STORAGE_KEY_PROVIDERS = "ai-assistant-providers"
+const STORAGE_KEY_ACTIVE_PROVIDER = "ai-assistant-active-provider"
+
+export interface ProviderInfo {
+  id: string
+  model: string
+  apiBase: string
+  isActive: boolean
+}
+
+/** Get all configured providers for model switching */
+export function getProviderList(): ProviderInfo[] {
+  if (typeof window === "undefined") return []
+  const raw = localStorage.getItem(STORAGE_KEY_PROVIDERS)
+  if (!raw) return []
+  try {
+    const providers = JSON.parse(raw) as { id: string; model: string; apiBase: string; apiKey: string }[]
+    const activeId = localStorage.getItem(STORAGE_KEY_ACTIVE_PROVIDER) || ""
+    return providers
+      .filter((p) => p.apiKey && p.model)
+      .map((p) => ({ id: p.id, model: p.model, apiBase: p.apiBase, isActive: p.id === activeId }))
+  } catch {
+    return []
+  }
+}
+
+/** Switch active provider and sync to legacy keys */
+export function switchActiveProvider(providerId: string): string | null {
+  if (typeof window === "undefined") return null
+  const raw = localStorage.getItem(STORAGE_KEY_PROVIDERS)
+  if (!raw) return null
+  try {
+    const providers = JSON.parse(raw) as { id: string; model: string; apiBase: string; apiKey: string }[]
+    const target = providers.find((p) => p.id === providerId)
+    if (!target) return null
+    localStorage.setItem(STORAGE_KEY_ACTIVE_PROVIDER, providerId)
+    localStorage.setItem(STORAGE_KEY_API_KEY, target.apiKey)
+    localStorage.setItem(STORAGE_KEY_API_BASE, target.apiBase || DEFAULT_API_BASE)
+    localStorage.setItem(STORAGE_KEY_MODEL, target.model || DEFAULT_MODEL)
+    window.dispatchEvent(new CustomEvent("ai-config-changed"))
+    return target.model
+  } catch {
+    return null
+  }
+}
+
 // ─── Utility Functions ───
 
 export function getAIConfig() {

@@ -110,8 +110,13 @@ export async function decomposeQuery(
 function isSimpleQuery(question: string): boolean {
   const trimmed = question.trim()
 
-  // 过短的问题
-  if (trimmed.length < 15) return true
+  // 过短的问题（中文 8 字以上才需要判断，英文 15 字以上）
+  const cjkCount = (trimmed.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length
+  if (cjkCount > 0) {
+    if (trimmed.length < 8) return true
+  } else {
+    if (trimmed.length < 15) return true
+  }
 
   // 不包含对比、多概念标志词
   const complexIndicators = [
@@ -129,6 +134,27 @@ function isSimpleQuery(question: string): boolean {
     "各自",
     "以及",
     "和.*的关系",
+    "如何",
+    "怎么",
+    "为什么",
+    "原因",
+    "影响",
+    "关系",
+    "联系",
+    "关联",
+    "流程",
+    "步骤",
+    "方案",
+    "方法",
+    "实现",
+    "原理",
+    "机制",
+    "之间",
+    "还是",
+    "还是说",
+    "同时",
+    "另外",
+    "此外",
     "vs",
     "compare",
     "difference",
@@ -138,6 +164,9 @@ function isSimpleQuery(question: string): boolean {
     "list",
     "summarize",
     "overview",
+    "between",
+    "relation",
+    "impact",
   ]
 
   const isComplex = complexIndicators.some((indicator) =>

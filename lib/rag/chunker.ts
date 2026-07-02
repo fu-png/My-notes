@@ -12,9 +12,9 @@ import type { Chunk } from "./types"
 
 // ─── 配置 ───
 
-const DEFAULT_CHUNK_SIZE = 400 // tokens
+const DEFAULT_CHUNK_SIZE = 800 // tokens（增大块大小保留更多语义上下文）
 const DEFAULT_CHUNK_OVERLAP = 0.15 // 15% overlap
-const MIN_CHUNK_SIZE = 20 // 低于此值的碎片块丢弃
+const MIN_CHUNK_SIZE = 30 // 低于此值的碎片块丢弃
 
 // 粗略估算 token 数：英文约 4 字符/token，中文约 1.5 字符/token
 function estimateTokens(text: string): number {

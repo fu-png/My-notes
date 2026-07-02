@@ -38,6 +38,8 @@ export interface ChatMessage {
     url?: string
     snippet: string
   }[]
+  /** 用户划词引用的文本 */
+  quotedText?: string
   /** 深度思考的推理过程内容 */
   reasoning?: string
   /** 笔记本指南生成的元信息 */
@@ -114,10 +116,16 @@ const _saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 export function saveConversations(projectId: string, conversations: Conversation[]) {
   // Immediate localStorage cache update (sync, fast)
+  const cleaned = cleanConversations(conversations)
   try {
-    const cleaned = cleanConversations(conversations)
     localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(cleaned))
-  } catch { /* ignore quota errors */ }
+  } catch {
+    // localStorage quota exceeded — try trimming older conversations
+    try {
+      const trimmed = cleaned.slice(0, 20) // keep only recent 20 conversations
+      localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(trimmed))
+    } catch { /* give up on localStorage */ }
+  }
 
   // Debounced OSS save (async, 1.5s delay)
   const existing = _saveTimers.get(projectId)
@@ -137,22 +145,53 @@ export function saveConversations(projectId: string, conversations: Conversation
   }, 1500))
 }
 
-/** Strip base64 data URLs from slideImages to reduce storage size */
+/** Force flush any pending save immediately (call before page unload) */
+export function flushPendingSave(projectId: string, conversations: Conversation[]) {
+  const existing = _saveTimers.get(projectId)
+  if (existing) {
+    clearTimeout(existing)
+    _saveTimers.delete(projectId)
+  }
+  // Use sendBeacon for reliable delivery on page unload
+  if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+    navigator.sendBeacon(
+      `/api/projects/${encodeURIComponent(projectId)}/chat-history`,
+      new Blob([JSON.stringify({ conversations })], { type: "application/json" })
+    )
+  }
+}
+
+/** Clean conversations for storage: strip base64 data URLs and trim large fields */
 function cleanConversations(conversations: Conversation[]): Conversation[] {
   return conversations.map((conv) => ({
     ...conv,
     messages: conv.messages.map((msg) => {
-      if (!msg.pptMeta?.slideImages) return msg
-      return {
-        ...msg,
-        pptMeta: {
-          ...msg.pptMeta,
-          slideImages: msg.pptMeta.slideImages.map((img) => ({
-            ...img,
-            url: img.url && !img.url.startsWith("data:") ? img.url : null,
-          })),
-        },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned: any = { ...msg }
+      // Trim reasoning to reduce storage (keep first 500 chars)
+      if (cleaned.reasoning && cleaned.reasoning.length > 500) {
+        cleaned.reasoning = cleaned.reasoning.slice(0, 500) + "…"
       }
+      // Strip RAG source snippets (keep metadata only)
+      if (cleaned.ragSources) {
+        cleaned.ragSources = cleaned.ragSources.map((src: Record<string, unknown>) => ({
+          ...src,
+          snippet: typeof src.snippet === "string" && (src.snippet as string).length > 100
+            ? (src.snippet as string).slice(0, 100) + "…"
+            : src.snippet,
+        }))
+      }
+      // Strip PPT slide base64 URLs
+      if (cleaned.pptMeta?.slideImages) {
+        cleaned.pptMeta = {
+          ...cleaned.pptMeta,
+          slideImages: cleaned.pptMeta.slideImages.map((img: Record<string, unknown>) => ({
+            ...img,
+            url: typeof img.url === "string" && !(img.url as string).startsWith("data:") ? img.url : null,
+          })),
+        }
+      }
+      return cleaned
     }),
   }))
 }
@@ -240,62 +279,62 @@ export const PPT_STYLE_PRESETS: PptStylePreset[] = [
   {
     id: "editorial",
     name: "编辑风",
-    description: "clean editorial magazine style with elegant serif headings, generous whitespace, and muted color palette",
-    colors: "charcoal, cream, muted gold accents",
+    description: "High-end editorial magazine layout. Elegant serif headlines, asymmetric grid composition, generous negative space. Subtle paper texture background with refined drop shadows. Accent elements use thin gold hairlines and small decorative ligatures.",
+    colors: "#2C2C2C charcoal, #FAF8F5 warm white, #C8A96B muted gold",
   },
   {
     id: "corporate",
     name: "商务风",
-    description: "modern corporate presentation with bold sans-serif, structured layout, professional blue tones",
-    colors: "navy blue, white, light gray",
+    description: "Premium corporate keynote style inspired by Apple and McKinsey decks. Clean geometric layout with bold weight sans-serif headings, soft rounded card containers for content blocks. Subtle gradient overlay on hero areas. Professional yet modern.",
+    colors: "#1B3A5C deep navy, #FFFFFF white, #F0F4F8 soft gray, #3B82F6 accent blue",
   },
   {
     id: "minimal",
     name: "极简风",
-    description: "ultra-minimalist design with lots of white space, thin lines, single accent color",
-    colors: "white, black, one accent color",
+    description: "Swiss-style minimalism with strict typographic hierarchy. Maximum whitespace, razor-thin divider lines, single accent color for emphasis. Content centered with mathematical precision. No decorative elements — pure content focus.",
+    colors: "#FFFFFF white, #111111 near-black, #FF4D4D single red accent",
   },
   {
     id: "tech",
     name: "科技风",
-    description: "futuristic tech presentation with dark background, glowing neon accents, gradient elements",
-    colors: "dark navy, electric blue, cyan glow",
+    description: "Dark-mode futuristic interface aesthetic. Deep space background with subtle dot-grid pattern. Glowing edges on card elements, frosted glass (glassmorphism) content panels. Monospace typography for data, geometric sans for headlines. Circuit-trace decorative lines.",
+    colors: "#0A0E1A dark space, #00D4FF electric cyan, #6366F1 purple glow, #1E293B panel dark",
   },
   {
     id: "clay",
     name: "粘土风",
-    description: "playful 3D clay-style illustrations with soft pastel colors, rounded shapes, friendly typography",
-    colors: "pastel pink, mint, lavender, cream",
+    description: "3D claymorphism with soft rounded objects floating above a clean background. Thick matte surfaces with subtle top-light shading. Chunky friendly rounded sans-serif typography. Each content block has a pillowy raised appearance with soft ambient shadows.",
+    colors: "#FFE4EC blush pink, #E0FFF0 mint cream, #E8E0FF lavender, #FFF9E6 warm cream",
   },
   {
     id: "isometric",
     name: "等距风",
-    description: "isometric 3D illustration style with clean geometric shapes, flat colors, modern infographic look",
-    colors: "teal, orange, yellow, light gray",
+    description: "Isometric 3D infographic style with precise 30-degree angles. Clean vector-like geometric shapes stacked in layered compositions. Flat bold fills with subtle edge highlights. Data visualization integrated naturally into the isometric scene.",
+    colors: "#0D9488 teal, #F97316 vibrant orange, #FBBF24 golden yellow, #F1F5F9 light gray",
   },
   {
     id: "kawaii",
     name: "可爱风",
-    description: "cute kawaii style with rounded fonts, pastel colors, small decorative elements, friendly icons",
-    colors: "pink, baby blue, mint, yellow",
+    description: "Japanese kawaii aesthetic with soft pastel palette, rounded bubble typography, tiny star and heart decorations scattered lightly. Content in cloud-shaped or rounded rectangle containers with 2px soft borders. Small illustrated mascot elements in corners.",
+    colors: "#FFB5D8 sakura pink, #B8E6FF sky blue, #B8F5D8 mint, #FFF3B8 soft yellow",
   },
   {
     id: "vintage",
     name: "复古风",
-    description: "retro vintage design with warm tones, classic typography, paper texture feel",
-    colors: "sepia, warm brown, cream, dark red",
+    description: "Art-deco meets mid-century modern. Warm aged paper texture background, ornamental frame borders with geometric Art Deco patterns. Elegant display serif headings, subtle grain overlay. Rich warm tones with sophisticated gold foil accent details.",
+    colors: "#F5E6D0 parchment, #8B4513 warm brown, #FFF8F0 cream, #A52A2A burgundy, #C8A96B gold foil",
   },
   {
     id: "brick",
     name: "砖块风",
-    description: "Lego/brick style with blocky elements, bold colors, pixelated aesthetic",
-    colors: "red, yellow, blue, black, white",
+    description: "Lego-inspired blocky construction aesthetic. Chunky pixel-rounded elements snapped to a visible grid. Bold primary color blocks with raised plastic-like highlights and subtle ABS plastic sheen. Playful stacking composition with brick-stud texture accents.",
+    colors: "#DC2626 Lego red, #FACC15 brick yellow, #2563EB classic blue, #1F2937 dark, #FFFFFF white",
   },
   {
     id: "popart",
     name: "波普风",
-    description: "pop art style with bold colors, halftone patterns, comic book aesthetics",
-    colors: "bright red, yellow, blue, black outlines",
+    description: "Warhol/Lichtenstein pop art explosion. Ben-Day halftone dot patterns in backgrounds, thick black comic outlines on all elements, speech-bubble shaped containers for text. High contrast primary colors with dynamic diagonal compositions and starburst accents.",
+    colors: "#EF4444 pop red, #FACC15 comic yellow, #3B82F6 bold blue, #111111 thick black outlines",
   },
 ]
 

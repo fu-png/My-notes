@@ -233,7 +233,7 @@ const markdownComponents = {
 // ── Memoized MarkdownRenderer ─────────────────────────────────────
 export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }: MarkdownRendererProps) {
   return (
-    <article className="prose prose-neutral dark:prose-invert max-w-none prose-headings:scroll-mt-20 prose-a:text-primary prose-a:underline-offset-4 prose-pre:bg-muted/50 prose-pre:border prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:font-mono prose-code:text-sm prose-code:before:content-none prose-code:after:content-none prose-img:rounded-lg prose-img:border prose-table:text-sm prose-th:text-left prose-blockquote:border-primary/30 prose-blockquote:text-muted-foreground">
+    <article className="prose prose-neutral dark:prose-invert max-w-none prose-headings:scroll-mt-20 prose-a:text-primary prose-a:underline-offset-4 prose-pre:bg-muted prose-pre:border prose-pre:text-foreground prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:font-mono prose-code:text-sm prose-code:text-foreground prose-code:before:content-none prose-code:after:content-none prose-img:rounded-lg prose-img:border prose-table:text-sm prose-th:text-left prose-blockquote:border-primary/30 prose-blockquote:text-muted-foreground">
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}

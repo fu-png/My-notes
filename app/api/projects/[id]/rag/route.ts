@@ -22,7 +22,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id: projectId } = await context.params
     const body = await request.json()
-    const { action, apiKey, apiBase, model, embeddingModel, question, maxContextTokens, stream } = body
+    const { action, apiKey, apiBase, model, embeddingModel, question, maxContextTokens, stream, activeFile } = body
 
     if (!projectId) {
       return NextResponse.json({ error: "缺少项目 ID" }, { status: 400 })
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
           embeddingModel: embeddingModel || "text-embedding-3-small",
-          maxContextTokens: maxContextTokens || 4000,
+          maxContextTokens: maxContextTokens || 6000,
         }
 
         // 流式模式：通过 SSE 实时推送进度
@@ -121,10 +121,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
           embeddingModel: embeddingModel || "text-embedding-3-small",
-          maxContextTokens: maxContextTokens || 4000,
+          maxContextTokens: maxContextTokens || 6000,
         }
 
-        const context = await queryProject(projectId, question, config)
+        const context = await queryProject(projectId, question, config, activeFile)
         return NextResponse.json({ context })
       }
 

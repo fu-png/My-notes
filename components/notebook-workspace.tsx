@@ -43,7 +43,8 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { getAIConfig, isAIConfigured, getConfiguredModel } from "@/components/settings-dialog"
+import { getAIConfig, isAIConfigured, getConfiguredModel, getProviderList, switchActiveProvider } from "@/components/settings-dialog"
+import type { ProviderInfo } from "@/components/settings-dialog"
 import dynamic from "next/dynamic"
 
 // ─── Lazy-loaded heavy sub-components ───
@@ -64,6 +65,7 @@ import {
   loadConversations,
   loadConversationsSync,
   saveConversations,
+  flushPendingSave,
   migrateLocalToOSS,
   countWords,
   WELCOME_MESSAGE,
@@ -161,7 +163,7 @@ const searchParams = useSearchParams()
   const [generating, setGenerating] = React.useState(false)
 
   // AI panel resize
-  const [aiPanelWidth, setAiPanelWidth] = React.useState(320)
+  const [aiPanelWidth, setAiPanelWidth] = React.useState(360)
   const aiPanelRef = React.useRef<HTMLDivElement>(null)
 
   // Reading mode panel resize
@@ -274,6 +276,7 @@ const searchParams = useSearchParams()
   const [chatInput, setChatInput] = React.useState("")
   const [chatLoading, setChatLoading] = React.useState(false)
   const [chatModel, setChatModel] = React.useState("gpt-4o-mini")
+  const [providerList, setProviderList] = React.useState<ProviderInfo[]>([])
   const [deepThinkMode, setDeepThinkMode] = React.useState(() => {
     if (typeof window === "undefined") return false
     return localStorage.getItem("ai-deep-think-mode") === "true"
@@ -285,9 +288,21 @@ const searchParams = useSearchParams()
 
   React.useEffect(() => {
     setChatModel(getConfiguredModel())
-    const handler = () => setChatModel(getConfiguredModel())
+    setProviderList(getProviderList())
+    const handler = () => {
+      setChatModel(getConfiguredModel())
+      setProviderList(getProviderList())
+    }
     window.addEventListener("ai-config-changed", handler)
     return () => window.removeEventListener("ai-config-changed", handler)
+  }, [])
+
+  const handleSwitchProvider = React.useCallback((providerId: string) => {
+    const newModel = switchActiveProvider(providerId)
+    if (newModel) {
+      setChatModel(newModel)
+      setProviderList(getProviderList())
+    }
   }, [])
 
   // Conversation history
@@ -311,27 +326,34 @@ const searchParams = useSearchParams()
 
   // Save current conversation
   const savePendingRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeConvIdRef = React.useRef(activeConversationId)
+  activeConvIdRef.current = activeConversationId
+  const chatMessagesRef = React.useRef(chatMessages)
+  chatMessagesRef.current = chatMessages
+
   React.useEffect(() => {
     if (chatMessages.length <= 1) return
 
     if (savePendingRef.current) clearTimeout(savePendingRef.current)
     savePendingRef.current = setTimeout(() => {
+      const currentMessages = chatMessagesRef.current
+      const currentConvId = activeConvIdRef.current
       const now = new Date().toISOString()
-      const firstUserMsg = chatMessages.find((m) => m.role === "user")
+      const firstUserMsg = currentMessages.find((m) => m.role === "user")
       const title = firstUserMsg?.content.slice(0, 30) || "新对话"
 
       setConversations((prev) => {
         let updated: Conversation[]
-        if (activeConversationId) {
+        if (currentConvId) {
           updated = prev.map((c) =>
-            c.id === activeConversationId
-              ? { ...c, messages: chatMessages, title, updatedAt: now }
+            c.id === currentConvId
+              ? { ...c, messages: currentMessages, title, updatedAt: now }
               : c
           )
         } else {
           const newId = `conv-${Date.now()}`
           setActiveConversationId(newId)
-          updated = [{ id: newId, title, messages: chatMessages, createdAt: now, updatedAt: now }, ...prev]
+          updated = [{ id: newId, title, messages: currentMessages, createdAt: now, updatedAt: now }, ...prev]
         }
         saveConversations(projectId, updated)
         return updated
@@ -343,6 +365,19 @@ const searchParams = useSearchParams()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatMessages])
+
+  // Flush pending saves on page unload to prevent data loss
+  const conversationsRef = React.useRef(conversations)
+  conversationsRef.current = conversations
+  React.useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (conversationsRef.current.length > 0) {
+        flushPendingSave(projectId, conversationsRef.current)
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+  }, [projectId])
 
   // AI panel visibility
   const [showAI, setShowAI] = React.useState(() => {
@@ -1065,6 +1100,7 @@ selectFile(target)
             apiKey: config.apiKey,
             apiBase: config.apiBase,
             model: chatModel,
+            activeFile: activeFile || undefined,
           }),
         })
         const ragData = await ragRes.json()
@@ -1259,11 +1295,13 @@ selectFile(target)
       return
     }
 
+    const textSnapshot = selectedText
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
       content: text,
       timestamp: new Date(),
+      ...(textSnapshot ? { quotedText: textSnapshot } : {}),
     }
     const aiMsgId = `ai-${Date.now()}`
     const aiMsg: ChatMessage = {
@@ -1278,7 +1316,6 @@ selectFile(target)
     setChatLoading(true)
     isStreamingRef.current = true
 
-    const textSnapshot = selectedText
     setSelectedText("")
 
     await streamAI(newMessages, aiMsgId, deepThinkMode, textSnapshot || undefined)
@@ -1787,7 +1824,7 @@ selectFile(target)
                   <RichTextEditor content={editContent} onChange={setEditContent} />
                 </div>
               ) : (
-                <div className="mx-auto max-w-3xl p-6">
+                <div className="mx-auto max-w-5xl p-6">
                   <MarkdownRenderer content={fileContent} />
                 </div>
               )}
@@ -1826,6 +1863,8 @@ selectFile(target)
           chatInput={chatInput}
           chatLoading={chatLoading}
           chatModel={chatModel}
+          providerList={providerList}
+          onSwitchProvider={handleSwitchProvider}
           deepThinkMode={deepThinkMode}
           conversations={conversations}
           activeConversationId={activeConversationId}
