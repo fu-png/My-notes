@@ -377,7 +377,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
               // 立即上传这一小段 MP3（几十 KB，秒传）
               const stored = await writeFile(AUDIO_CHUNK_PATH(projectId, i), audioBuffer, { contentType: "audio/mpeg" })
-              chunkUrls.push(stored.url)
+              // OSS SDK 返回 http:// URL，但 Vercel HTTPS 页面会因 Mixed Content 阻止加载，需强制 HTTPS
+              chunkUrls.push(stored.url.replace(/^http:\/\//, "https://"))
             } catch {
               // 单段失败不中断
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `第 ${i + 1} 段合成失败，跳过` })}\n\n`))

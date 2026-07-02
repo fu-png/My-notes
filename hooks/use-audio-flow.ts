@@ -307,8 +307,10 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
     const msg = chatMessages.find((m) => m.id === msgId)
     if (!msg?.audioMeta) return
 
-    const chunks = msg.audioMeta.manifest?.chunks || (msg.audioMeta.audioUrl ? [msg.audioMeta.audioUrl] : [])
-    if (chunks.length === 0) return
+    const rawChunks = msg.audioMeta.manifest?.chunks || (msg.audioMeta.audioUrl ? [msg.audioMeta.audioUrl] : [])
+    if (rawChunks.length === 0) return
+    // 确保所有 URL 使用 HTTPS，避免 Mixed Content 被浏览器拦截
+    const chunks = rawChunks.map(url => url.replace(/^http:\/\//, "https://"))
 
     if (audioPlaying) {
       if (audioRef.current) audioRef.current.pause()
