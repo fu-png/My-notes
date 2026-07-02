@@ -49,9 +49,9 @@ const STORAGE_KEY_IMAGE_MODEL = "ai-image-model"
 
 const DEFAULT_API_BASE = "https://api.openai.com/v1"
 const DEFAULT_MODEL = "gpt-4o-mini"
-const DEFAULT_TTS_MODEL = "tts-1"
-const DEFAULT_TTS_VOICE_HOST = "alloy"
-const DEFAULT_TTS_VOICE_EXPERT = "nova"
+const DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
+const DEFAULT_TTS_VOICE_HOST = "冰糖"
+const DEFAULT_TTS_VOICE_EXPERT = "苏打"
 const DEFAULT_IMAGE_API_BASE = "https://www.hfsyapi.cn"
 const DEFAULT_IMAGE_MODEL = "gpt-image-2"
 
@@ -64,18 +64,21 @@ const PROVIDER_PRESETS = [
   { name: "Moonshot", apiBase: "https://api.moonshot.cn/v1", models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
   { name: "通义千问", apiBase: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen-plus", "qwen-turbo", "qwen-max"] },
   { name: "智谱 GLM", apiBase: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-flash", "glm-4-air", "glm-4"] },
+  { name: "MiMo", apiBase: "https://api.xiaomimimo.com/v1", models: ["mimo-v2.5-pro", "mimo-v2.5-tts"] },
   { name: "自定义", apiBase: "", models: [] },
 ]
 
 // ─── TTS Voice Options ───
 
 const TTS_VOICE_OPTIONS = [
-  { value: "alloy", label: "Alloy（中性）" },
-  { value: "echo", label: "Echo（男声）" },
-  { value: "fable", label: "Fable（英伦）" },
-  { value: "onyx", label: "Onyx（低沉）" },
-  { value: "nova", label: "Nova（女声）" },
-  { value: "shimmer", label: "Shimmer（温柔）" },
+  { value: "冰糖", label: "冰糖（中文女声）" },
+  { value: "茉莉", label: "茉莉（中文女声）" },
+  { value: "苏打", label: "苏打（中文男声）" },
+  { value: "白桦", label: "白桦（中文男声）" },
+  { value: "Mia", label: "Mia（英文女声）" },
+  { value: "Chloe", label: "Chloe（英文女声）" },
+  { value: "Milo", label: "Milo（英文男声）" },
+  { value: "Dean", label: "Dean（英文男声）" },
 ]
 
 // ─── Provider Config Type ───
@@ -228,6 +231,10 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     }
     setProviders((prev) => [...prev, newProvider])
     setEditingProviderId(newProvider.id)
+    // 如果是第一个服务商或当前没有激活的服务商，自动设为激活
+    if (providers.length === 0 || !activeProviderId) {
+      setActiveProviderId(newProvider.id)
+    }
   }
 
   const removeProvider = (id: string) => {
@@ -631,7 +638,7 @@ function SectionTTS({
 }) {
   return (
     <div className="space-y-5">
-      <p className="text-[13px] text-muted-foreground">用于音频概述的双人对话语音合成。若不配置，将使用浏览器内置朗读。</p>
+      <p className="text-[13px] text-muted-foreground">用于音频概述的双人对话语音合成。配置 MiMo TTS 模型以生成高质量语音。</p>
 
       <div className="flex items-center justify-between rounded-lg border px-3.5 py-2.5">
         <div>
@@ -675,9 +682,9 @@ function SectionTTS({
         </div>
       )}
 
-      <FieldGroup label="TTS 模型" desc="支持 tts-1（快速）和 tts-1-hd（高清）">
+      <FieldGroup label="TTS 模型" desc="MiMo 使用 mimo-v2.5-tts，也支持 OpenAI tts-1/tts-1-hd">
         <Input
-          placeholder="tts-1"
+          placeholder="mimo-v2.5-tts"
           value={ttsModel}
           onChange={(e) => setTtsModel(e.target.value)}
           className="h-8 text-sm"
