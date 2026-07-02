@@ -1032,17 +1032,29 @@ function PptFlowControls({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   const n = parseInt((e.target as HTMLInputElement).value, 10)
-                  if (n >= 3 && n <= 15) onSlideCountSelect(n)
+                  if (isNaN(n) || n < 3 || n > 15) {
+                    (e.target as HTMLInputElement).value = "8"
+                    return
+                  }
+                  onSlideCountSelect(n)
                 }
               }}
               autoFocus
             />
-            <span className="text-[11px] text-muted-foreground">页 (3-15)</span>
+            <span className="text-[11px] text-muted-foreground">页</span>
             <button
               className="text-[11px] text-primary hover:underline"
               onClick={() => {
-                const n = parseInt(customCountRef.current?.value || "", 10)
-                if (n >= 3 && n <= 15) onSlideCountSelect(n)
+                const val = customCountRef.current?.value || ""
+                const n = parseInt(val, 10)
+                if (isNaN(n) || n < 3 || n > 15) {
+                  if (customCountRef.current) {
+                    customCountRef.current.value = "8"
+                    customCountRef.current.focus()
+                  }
+                  return
+                }
+                onSlideCountSelect(n)
               }}
             >
               确定
