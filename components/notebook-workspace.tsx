@@ -332,62 +332,6 @@ const searchParams = useSearchParams()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatMessages])
 
-  const startNewConversation = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-    }
-    if (pptAbortRef.current) {
-      pptAbortRef.current.abort()
-      pptAbortRef.current = null
-    }
-    isStreamingRef.current = false
-    setChatLoading(false)
-    setGenerating(false)
-    setPptSession(null)
-    setActiveConversationId(null)
-    setChatMessages([WELCOME_MESSAGE])
-    setShowHistory(false)
-  }
-
-  const loadConversation = (conv: Conversation) => {
-    if (pptAbortRef.current) {
-      pptAbortRef.current.abort()
-      pptAbortRef.current = null
-    }
-    setActiveConversationId(conv.id)
-    setChatMessages(conv.messages)
-    setShowHistory(false)
-    // Restore PPT session from last PPT message
-    const lastPptMsg = [...conv.messages].reverse().find((m) => m.pptMeta)
-    if (lastPptMsg?.pptMeta && lastPptMsg.pptMeta.step !== "done" && lastPptMsg.pptMeta.step !== "error") {
-      const pm = lastPptMsg.pptMeta
-      setPptSession({
-        active: false,
-        step: pm.step as "style-select" | "slide-count" | "custom-prompt" | "generating-outline" | "outline-review" | "generating-images" | "done",
-        stylePreset: pm.stylePreset || "corporate",
-        slideCount: pm.slideCount || 8,
-        customPrompt: pm.customPrompt || "",
-        userIntent: pm.userIntent || "",
-        outlineMsgId: null,
-        imagesMsgId: null,
-      })
-    } else {
-      setPptSession(null)
-    }
-  }
-
-  const deleteConversation = (convId: string) => {
-    setConversations((prev) => {
-      const updated = prev.filter((c) => c.id !== convId)
-      saveConversations(projectId, updated)
-      return updated
-    })
-    if (activeConversationId === convId) {
-      startNewConversation()
-    }
-  }
-
   // AI panel visibility
   const [showAI, setShowAI] = React.useState(() => {
     if (typeof window === "undefined") return true
@@ -607,6 +551,64 @@ const searchParams = useSearchParams()
     showToast,
   })
   const { audioGenerating, audioPlaying } = audioFlow
+
+  // ─── Conversation Management (must be after hook destructuring) ───
+
+  const startNewConversation = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    if (pptAbortRef.current) {
+      pptAbortRef.current.abort()
+      pptAbortRef.current = null
+    }
+    isStreamingRef.current = false
+    setChatLoading(false)
+    setGenerating(false)
+    setPptSession(null)
+    setActiveConversationId(null)
+    setChatMessages([WELCOME_MESSAGE])
+    setShowHistory(false)
+  }
+
+  const loadConversation = (conv: Conversation) => {
+    if (pptAbortRef.current) {
+      pptAbortRef.current.abort()
+      pptAbortRef.current = null
+    }
+    setActiveConversationId(conv.id)
+    setChatMessages(conv.messages)
+    setShowHistory(false)
+    // Restore PPT session from last PPT message
+    const lastPptMsg = [...conv.messages].reverse().find((m) => m.pptMeta)
+    if (lastPptMsg?.pptMeta && lastPptMsg.pptMeta.step !== "done" && lastPptMsg.pptMeta.step !== "error") {
+      const pm = lastPptMsg.pptMeta
+      setPptSession({
+        active: false,
+        step: pm.step as "style-select" | "slide-count" | "custom-prompt" | "generating-outline" | "outline-review" | "generating-images" | "done",
+        stylePreset: pm.stylePreset || "corporate",
+        slideCount: pm.slideCount || 8,
+        customPrompt: pm.customPrompt || "",
+        userIntent: pm.userIntent || "",
+        outlineMsgId: null,
+        imagesMsgId: null,
+      })
+    } else {
+      setPptSession(null)
+    }
+  }
+
+  const deleteConversation = (convId: string) => {
+    setConversations((prev) => {
+      const updated = prev.filter((c) => c.id !== convId)
+      saveConversations(projectId, updated)
+      return updated
+    })
+    if (activeConversationId === convId) {
+      startNewConversation()
+    }
+  }
 
   // ─── Data Fetching ───
 
