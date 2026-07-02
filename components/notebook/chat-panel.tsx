@@ -1150,16 +1150,9 @@ function PptFlowControls({
       setEditedOutline({ ...editedOutline, slides })
     }
     const deleteSlide = (index: number) => {
-      const slides = editedOutline.slides.filter((_, i) => i !== index)
-      slides.forEach((s, i) => (s.pageNumber = i + 1))
-      setEditedOutline({ ...editedOutline, slides })
-    }
-    const moveSlide = (index: number, dir: "up" | "down") => {
-      const slides = [...editedOutline.slides]
-      const t = dir === "up" ? index - 1 : index + 1
-      if (t < 0 || t >= slides.length) return
-      ;[slides[index], slides[t]] = [slides[t], slides[index]]
-      slides.forEach((s, i) => (s.pageNumber = i + 1))
+      const slides = editedOutline.slides
+        .filter((_, i) => i !== index)
+        .map((s, i) => ({ ...s, pageNumber: i + 1 }))
       setEditedOutline({ ...editedOutline, slides })
     }
 
@@ -1177,17 +1170,9 @@ function PptFlowControls({
                 <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">{i + 1}</span>
                 <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">{slide.layout}</span>
               </div>
-              <div className="flex items-center gap-0.5">
-                <button onClick={() => moveSlide(i, "up")} disabled={i === 0} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30">
-                  <IconChevronRight className="size-3 rotate-[-90deg]" />
-                </button>
-                <button onClick={() => moveSlide(i, "down")} disabled={i === editedOutline.slides.length - 1} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30">
-                  <IconChevronRight className="size-3 rotate-90" />
-                </button>
-                <button onClick={() => deleteSlide(i)} className="p-0.5 text-destructive/60 hover:text-destructive">
-                  <IconTrash className="size-3" />
-                </button>
-              </div>
+              <button onClick={() => deleteSlide(i)} className="p-0.5 text-destructive/60 hover:text-destructive">
+                <IconTrash className="size-3" />
+              </button>
             </div>
             <input
               value={slide.title}
