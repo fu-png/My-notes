@@ -71,8 +71,9 @@ export async function POST(
         zip.file(`${safeTitle}-slide-${i + 1}.${img.ext}`, img.buffer)
       })
       const zipBuffer = await zip.generateAsync({ type: "nodebuffer" })
+      const zipBytes = new Uint8Array(zipBuffer)
 
-      return new NextResponse(zipBuffer, {
+      return new NextResponse(zipBytes, {
         headers: {
           "Content-Type": "application/zip",
           "Content-Disposition": `attachment; filename="${encodeURIComponent(safeTitle)}.zip"`,
@@ -97,8 +98,9 @@ export async function POST(
       })
 
       const pdfBuffer = Buffer.from(pdf.output("arraybuffer"))
+      const pdfBytes = new Uint8Array(pdfBuffer)
 
-      return new NextResponse(pdfBuffer, {
+      return new NextResponse(pdfBytes, {
         headers: {
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="${encodeURIComponent(safeTitle)}.pdf"`,
