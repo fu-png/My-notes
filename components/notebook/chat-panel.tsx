@@ -23,6 +23,7 @@ import {
   IconChevronRight,
   IconChevronDown,
   IconFileText,
+  IconSearch,
   IconSend,
   IconWorld,
   IconBrain,
@@ -31,6 +32,16 @@ import {
   IconEye,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Tooltip,
   TooltipContent,
@@ -162,7 +173,7 @@ export interface ChatPanelProps {
 
 // ─── Component ───
 
-export function ChatPanel({
+export const ChatPanel = React.memo(function ChatPanel({
   projectName,
   projectId,
   files,
@@ -634,6 +645,7 @@ export function ChatPanel({
               }
             }}
             placeholder="输入问题，按 Enter 发送..."
+            aria-label="输入消息"
             rows={2}
             className="w-full resize-none bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
           />
@@ -671,6 +683,7 @@ export function ChatPanel({
                 className="flex size-6 items-center justify-center rounded-md bg-muted transition-colors hover:bg-muted-foreground/20"
                 onClick={onStopGeneration}
                 title="停止生成"
+                aria-label="停止生成"
               >
                 <span className="block size-2.5 rounded-[2px] bg-foreground" />
               </button>
@@ -680,6 +693,7 @@ export function ChatPanel({
                 className="size-6"
                 onClick={onSendMessage}
                 disabled={!chatInput.trim()}
+                aria-label="发送消息"
               >
                 <IconSend className="size-3" />
               </Button>
@@ -691,7 +705,7 @@ export function ChatPanel({
       )}
     </div>
   )
-}
+})
 
 // ─── Sub-components ───
 
@@ -802,7 +816,7 @@ function ModelSwitcher({
   )
 }
 
-function SourcesPanel({
+const SourcesPanel = React.memo(function SourcesPanel({
   sourcesLoading,
   sourcesData,
   indexStatus,
@@ -880,9 +894,43 @@ function SourcesPanel({
       </div>
     </div>
   )
+})
+
+function getTimeGroup(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffHours = diffMs / (1000 * 60 * 60)
+  const diffDays = diffHours / 24
+
+  if (diffHours < 24) return "今天"
+  if (diffHours < 48) return "昨天"
+  if (diffDays < 7) return "本周"
+  if (diffDays < 30) return "本月"
+  return "更早"
 }
 
-function HistoryPanel({
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>
+  const parts = text.split(new RegExp(`(${escapeRegExp(query)})`, "gi"))
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <span key={i} className="bg-yellow-200/60 dark:bg-yellow-900/40">{part}</span>
+        ) : (
+          part
+        )
+      )}
+    </>
+  )
+}
+
+const HistoryPanel = React.memo(function HistoryPanel({
   conversations,
   activeConversationId,
   onLoad,
@@ -893,49 +941,152 @@ function HistoryPanel({
   onLoad: (conv: Conversation) => void
   onDelete: (convId: string) => void
 }) {
+  const [searchQuery, setSearchQuery] = React.useState("")
+  const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set())
+  const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null)
+
+  const toggleGroup = (group: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(group)) next.delete(group)
+      else next.add(group)
+      return next
+    })
+  }
+
+  const filteredConversations = React.useMemo(() => {
+    if (!searchQuery.trim()) return conversations
+    const q = searchQuery.toLowerCase()
+    return conversations.filter((conv) => {
+      if (conv.title.toLowerCase().includes(q)) return true
+      return conv.messages.some((m) => m.content.toLowerCase().includes(q))
+    })
+  }, [conversations, searchQuery])
+
+  const grouped = React.useMemo(() => {
+    const groups: Record<string, Conversation[]> = {}
+    for (const conv of filteredConversations) {
+      const group = getTimeGroup(conv.updatedAt)
+      if (!groups[group]) groups[group] = []
+      groups[group].push(conv)
+    }
+    return groups
+  }, [filteredConversations])
+
+  const groupOrder = ["今天", "昨天", "本周", "本月", "更早"]
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* Search box */}
+      <div className="border-b px-3 pb-2 pt-3">
+        <div className="relative">
+          <IconSearch className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="搜索历史对话..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      </div>
       <div className="p-3">
         {conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <IconMessage className="mb-2 size-8 opacity-30" />
             <p className="text-sm">暂无历史对话</p>
           </div>
+        ) : filteredConversations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <IconSearch className="mb-2 size-8 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">没有找到匹配的历史对话</p>
+          </div>
         ) : (
-          <div className="space-y-1.5">
-            {conversations.map((conv) => (
-              <div
-                key={conv.id}
-                className={`group flex items-center gap-2 border px-3 py-2 text-sm transition-colors hover:bg-muted/50 ${conv.id === activeConversationId ? "border-primary/30 bg-primary/5" : "border-border"}`}
-              >
-                <button
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  onClick={() => onLoad(conv)}
-                >
-                  <IconMessage className="size-3.5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{conv.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(conv.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                    </p>
-                  </div>
-                </button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                  onClick={(e) => { e.stopPropagation(); onDelete(conv.id) }}
-                >
-                  <IconTrash className="size-3.5 text-muted-foreground" />
-                </Button>
-              </div>
-            ))}
+          <div className="space-y-3">
+            {groupOrder.map((groupName) => {
+              const groupConvs = grouped[groupName]
+              if (!groupConvs || groupConvs.length === 0) return null
+              const isCollapsed = collapsedGroups.has(groupName)
+              return (
+                <div key={groupName}>
+                  <button
+                    className="mb-1.5 flex w-full items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+                    onClick={() => toggleGroup(groupName)}
+                  >
+                    <IconChevronDown className={`size-3 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                    <span>{groupName}</span>
+                    <span className="text-muted-foreground/60">({groupConvs.length})</span>
+                  </button>
+                  {!isCollapsed && (
+                    <div className="space-y-1.5">
+                      {groupConvs.map((conv) => (
+                        <div
+                          key={conv.id}
+                          className={`group flex items-center gap-2 border px-3 py-2 text-sm transition-colors hover:bg-muted/50 ${conv.id === activeConversationId ? "border-primary/30 bg-primary/5" : "border-border"}`}
+                        >
+                          <button
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                            onClick={() => onLoad(conv)}
+                          >
+                            <IconMessage className="size-3.5 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">
+                                <HighlightText text={conv.title} query={searchQuery} />
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(conv.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                            </div>
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(conv.id) }}
+                            aria-label={`删除对话「${conv.title}」`}
+                          >
+                            <IconTrash className="size-3.5 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
+
+      {/* ─── Delete Confirmation Dialog ─── */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除对话</AlertDialogTitle>
+            <AlertDialogDescription>
+              删除后无法恢复，确定要删除这条对话记录吗？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteTarget) onDelete(deleteTarget)
+                setDeleteTarget(null)
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
-}
+})
 
 function AudioControls({
   msg,

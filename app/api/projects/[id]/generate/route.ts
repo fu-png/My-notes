@@ -95,7 +95,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   // 1. 读取项目所有文档
-  const allFiles = await listFiles(`projects/${projectId}/`)
+  const allFiles = await listFiles(`projects/${projectId}/`, true)
   const mdFiles = allFiles.filter(
     (f) =>
       !f.pathname.endsWith("/meta.json") &&
@@ -109,10 +109,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   // 2. 读取所有文件内容
   const documents: string[] = []
+  const projectPrefix = `projects/${projectId}/`
   for (const file of mdFiles) {
     const content = await readFile(file.pathname)
     if (content && content.trim().length > 0) {
-      const filename = file.pathname.split("/").pop() || file.pathname
+      const filename = file.pathname.slice(projectPrefix.length)
       documents.push(`--- 文档: ${filename} ---\n${content}`)
     }
   }

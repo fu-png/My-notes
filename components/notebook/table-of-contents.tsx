@@ -65,6 +65,7 @@ function TocList({
                 href={`#${heading.id}`}
                 onClick={(e) => {
                   e.preventDefault()
+                  if (!heading.id) return
                   const scrollContainer = document.getElementById("doc-content-scroll")
                   const target = scrollContainer?.querySelector(`#${CSS.escape(heading.id)}`)
                   if (target) {
@@ -108,6 +109,7 @@ export function TableOfContents({ content }: { content: string }) {
 
     const handleScroll = () => {
       const headingElements = headings
+        .filter((h) => h.id) // 过滤掉没有 id 的 heading，避免 querySelector('#') 报错
         .map((h) => ({ id: h.id, el: scrollContainer.querySelector(`#${CSS.escape(h.id)}`) }))
         .filter((h) => h.el !== null)
 

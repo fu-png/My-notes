@@ -34,6 +34,10 @@ export interface ContextInputs {
 
   // Selected text
   selectedText?: string
+
+  // User preferences / Persona
+  personaPrompt?: string
+  userName?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -44,21 +48,25 @@ export interface ContextInputs {
  * Build the "互联网检索结果" block that is spliced into several branches.
  * Returns an empty string when there is no web context.
  */
-function buildWebContextBlock(inputs: ContextInputs): string {
+function buildWebContextBlock(inputs: ContextInputs, startIndex: number = 1): string {
   const { webContextText, webSources } = inputs
 
   if (!webContextText) {
     return ""
   }
 
-  const queryPart = webSources?.[0]?.query
-    ? `搜索词: 「${webSources[0].query}」`
-    : ""
-  const urlPart = webSources?.[0]?.url
-    ? `来源: ${webSources[0].url}`
+  // 构建编号化的 Web 来源列表（与 RAG 来源编号体系统一）
+  const webSourceList = webSources && webSources.length > 0
+    ? webSources
+        .map((s, i) => {
+          const idx = startIndex + i
+          const parts = [s.query ? `搜索词「${s.query}」` : "", s.url || ""].filter(Boolean)
+          return `  来源 ${idx} [互联网]: ${parts.join(" — ")}`
+        })
+        .join("\n")
     : ""
 
-  return `\n\n## 互联网检索结果\n以下是实时从互联网获取的内容（${queryPart}${urlPart}）：\n\n${webContextText}\n\n## 使用说明\n- 请基于以上互联网内容回答用户问题，优先引用搜索结果中的事实和数据\n- 可以结合自己的知识进行补充和分析，但要区分搜索结果和自身推断\n- 如果搜索结果与问题不完全匹配，提取相关部分并说明\n- 回答中引用具体来源时标注 URL 链接`
+  return `\n\n## 互联网检索结果\n以下是实时从互联网获取的内容：\n\n${webContextText}\n${webSourceList ? `\n## 互联网来源清单\n${webSourceList}\n` : ""}\n## 使用说明\n- 请基于以上互联网内容回答用户问题，优先引用搜索结果中的事实和数据\n- 引用互联网来源时，使用 [来源 N] 标注出处（编号接续笔记本来源）\n- 可以结合自己的知识进行补充和分析，但要区分搜索结果和自身推断\n- 如果搜索结果与问题不完全匹配，提取相关部分并说明`
 }
 
 /**
@@ -112,9 +120,12 @@ export function buildSystemPrompt(inputs: ContextInputs): string {
     const sourceList = ragSources
       .map(
         (s, i) =>
-          `  来源 ${i + 1}: ${s.fileTitle}${s.headingPath.length > 0 ? ` > ${s.headingPath.join(" > ")}` : ""}`
+          `  来源 ${i + 1} [笔记本]: ${s.fileTitle}${s.headingPath.length > 0 ? ` > ${s.headingPath.join(" > ")}` : ""}`
       )
       .join("\n")
+
+    // Web 来源编号从 RAG 来源之后开始，确保编号体系统一
+    const webBlock = buildWebContextBlock(inputs, ragSources.length + 1)
 
     systemPrompt = `你是一个基于文档知识库的 AI 助手。你的回答必须严格遵循以下规则：
 
@@ -126,10 +137,10 @@ ${ragContextText}
 ## 来源清单
 ${sourceList}
 
-${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}」，文档内容：\n${fileContent}` : ""}${webContextBlock}
+${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}」，文档内容：\n${fileContent}` : ""}${webBlock}
 
 ## 回答规范
-1. **优先使用检索到的参考资料**回答问题。引用具体内容时，使用 [来源 N] 标注出处。
+1. **优先使用检索到的参考资料**回答问题。引用具体内容时，使用 [来源 N] 标注出处（笔记本和互联网来源使用统一编号）。
 2. 如果参考资料中没有足够信息回答问题，你可以基于自己的知识补充，但必须明确说明："以下内容不来自笔记本中的文档，建议独立验证。"
 3. 如果问题完全无法从参考资料和你的知识中回答，坦诚说明你不确定，而不是编造答案。
 4. 回复使用中文。
@@ -138,7 +149,8 @@ ${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}
 
   // ----- Branch 2: Web search context only -----
   else if (webContextText) {
-    systemPrompt = `你是一个笔记 AI 助手，具备互联网搜索能力。${activeFile ? `用户当前正在查看文档「${activeFileName}」。` : ""}${webContextBlock}\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
+    const webBlock = buildWebContextBlock(inputs, 1)
+    systemPrompt = `你是一个笔记 AI 助手，具备互联网搜索能力。${activeFile ? `用户当前正在查看文档「${activeFileName}」。` : ""}${webBlock}\n\n回复请使用中文。引用互联网来源时，使用 [来源 N] 标注出处。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
   }
 
   // ----- Branch 3: Web search triggered but empty result -----
@@ -157,8 +169,77 @@ ${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}
       "你是一个笔记 AI 助手，具备互联网搜索能力。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。用户也可以发送链接或以「搜索」开头来搜索互联网内容。回复请使用中文。"
   }
 
+  // ----- Persona injection (applied to any branch) -----
+  if (inputs.userName || inputs.personaPrompt) {
+    let personaBlock = "\n\n## 用户偏好"
+    if (inputs.userName) {
+      personaBlock += `\n用户的名字是「${inputs.userName}」，在适当时候可以称呼用户。`
+    }
+    if (inputs.personaPrompt) {
+      personaBlock += `\n以下是用户对 AI 行为风格的自定义要求，请遵循：\n${inputs.personaPrompt}`
+    }
+    systemPrompt += personaBlock
+  }
+
   // ----- Selected text injection (appended to any branch) -----
   systemPrompt = appendSelectedText(systemPrompt, selectedText)
 
   return systemPrompt
+}
+
+// ---------------------------------------------------------------------------
+// Conversation Context Windowing
+// ---------------------------------------------------------------------------
+
+/**
+ * 估算字符串的 token 数量。
+ *
+ * 启发式：CJK 字符约 1.5 字符/token，ASCII 字符约 4 字符/token。
+ * 不依赖 tiktoken 等外部库，适合客户端快速裁剪。
+ */
+export function estimateTokens(text: string): number {
+  const cjkCount = (text.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) || []).length
+  const otherCount = text.length - cjkCount
+  return Math.ceil(cjkCount / 1.5 + otherCount / 4)
+}
+
+/**
+ * 对 API 消息数组施加 token 预算裁剪。
+ *
+ * - 始终保留 system 消息（第一条）
+ * - 从最新消息向前保留，直到预算耗尽
+ * - 至少保留最后一条用户消息，即使超出预算
+ * - 避免长对话导致 API 延迟增大或 token 上限截断
+ */
+export function trimConversationHistory(
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number = 12000
+): Array<{ role: string; content: string }> {
+  if (messages.length <= 2) return messages
+
+  const systemMsg = messages[0]
+  const systemTokens = estimateTokens(systemMsg.content)
+  const remainingBudget = maxTokens - systemTokens
+
+  if (remainingBudget <= 0) {
+    return [systemMsg, messages[messages.length - 1]]
+  }
+
+  const conversation = messages.slice(1)
+  const kept: Array<{ role: string; content: string }> = []
+  let usedTokens = 0
+
+  for (let i = conversation.length - 1; i >= 0; i--) {
+    const msgTokens = estimateTokens(conversation[i].content)
+    if (usedTokens + msgTokens > remainingBudget) break
+    kept.unshift(conversation[i])
+    usedTokens += msgTokens
+  }
+
+  // 至少保留最后一条消息
+  if (kept.length === 0 && conversation.length > 0) {
+    kept.push(conversation[conversation.length - 1])
+  }
+
+  return [systemMsg, ...kept]
 }

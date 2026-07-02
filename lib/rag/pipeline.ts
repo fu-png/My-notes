@@ -14,6 +14,7 @@ import { decomposeQuery } from "./query-decomposer"
 import { buildContext } from "./context-builder"
 import { rerankResults } from "./reranker"
 import { buildRAGSystemPrompt, buildPlainSystemPrompt } from "./prompts"
+import { buildKnowledgeGraph, saveKnowledgeGraph, loadKnowledgeGraph, expandWithGraph } from "./graph-store"
 import type { RAGConfig, AssembledContext, IndexStatus, SearchResult } from "./types"
 import { readFile, listFiles, writeFile as storageWrite } from "../storage"
 
@@ -32,7 +33,8 @@ export async function ingestProject(
   log("正在读取项目文件...")
 
   // 1. 列出项目中所有 Markdown 文件
-  const allFiles = await listFiles(`projects/${projectId}/`)
+  const projectPrefix = `projects/${projectId}/`
+  const allFiles = await listFiles(projectPrefix, true)
   const mdFiles = allFiles.filter(
     (f) =>
       !f.pathname.endsWith("/meta.json") &&
@@ -47,19 +49,25 @@ export async function ingestProject(
 
   log(`找到 ${mdFiles.length} 个文件`)
 
-  // 2. 读取所有文件内容
-  const documents: { filename: string; title: string; content: string }[] = []
-  for (const file of mdFiles) {
-    const content = await readFile(file.pathname)
-    if (content && content.trim().length > 0) {
-      const filename = file.pathname.split("/").pop() || file.pathname
-      documents.push({
-        filename,
-        title: filename.replace(/\.[^.]+$/, ""),
-        content,
-      })
-    }
-  }
+  // 2. 并行读取所有文件内容（提速：从串行 N 次 I/O 改为并行）
+  const fileReadResults = await Promise.all(
+    mdFiles.map(async (file) => {
+      const content = await readFile(file.pathname)
+      if (content && content.trim().length > 0) {
+        // 使用相对路径作为 filename（包含子目录路径）
+        const filename = file.pathname.slice(projectPrefix.length)
+        return {
+          filename,
+          title: filename.replace(/\.[^.]+$/, ""),
+          content,
+        }
+      }
+      return null
+    })
+  )
+  const documents = fileReadResults.filter(
+    (d): d is { filename: string; title: string; content: string } => d !== null
+  )
 
   log(`读取了 ${documents.length} 个文件的内容`)
 
@@ -99,6 +107,17 @@ export async function ingestProject(
     totalFiles: documents.length,
   })
 
+  // 8. 构建知识图谱
+  log("正在构建知识图谱...")
+  try {
+    const graph = buildKnowledgeGraph(chunks)
+    await saveKnowledgeGraph(projectId, graph)
+    log(`知识图谱构建完成：${graph.entities.size} 个实体，${graph.relations.length} 条关系`)
+  } catch (err) {
+    console.error("[pipeline] 知识图谱构建失败:", err)
+    log("知识图谱构建失败（不影响基本检索）")
+  }
+
   log(`索引完成：${documents.length} 个文件，${chunks.length} 个文本块`)
   return { totalChunks: chunks.length, totalFiles: documents.length }
 }
@@ -120,13 +139,22 @@ export async function queryProject(
     return { text: "", sources: [], totalTokens: 0 }
   }
 
-  // 1. 查询分解
-  const decomposed = await decomposeQuery(question, config)
+  // 1. 查询分解 + Embedding 并行执行（节省一次串行等待）
+  const [decomposed, directEmbedding] = await Promise.all([
+    decomposeQuery(question, config),
+    embedBatch([question], config), // 先为原始问题生成 embedding，分解完成后按需补充
+  ])
   console.log(`[pipeline] 查询分解为 ${decomposed.subQueries.length} 个子查询:`, decomposed.subQueries)
 
   // 2. 检索 — 批量 Embedding + 并行检索
   const subQueries = decomposed.subQueries
-  const queryEmbeddings = await embedBatch(subQueries, config)
+  // 复用已生成的原始问题 embedding，避免重复调用
+  let queryEmbeddings: number[][]
+  if (subQueries.length === 1 && subQueries[0] === question) {
+    queryEmbeddings = directEmbedding
+  } else {
+    queryEmbeddings = await embedBatch(subQueries, config)
+  }
 
   const perQueryResults = await Promise.all(
     subQueries.map(async (subQuery, i) => {
@@ -154,11 +182,30 @@ export async function queryProject(
       ).sort((a, b) => b.score - a.score)
     : filtered
 
-  // 5. LLM 重排序：对 Top-N 候选进行二次精排
-  const reranked = await rerankResults(question, boosted, config)
+  // 5. LLM 重排序：候选 ≤ 5 条时跳过（简单查询快速路径），否则精排
+  const reranked = boosted.length <= 5
+    ? boosted
+    : await rerankResults(question, boosted, config)
+
+  // 5.5 Graph RAG 扩展：从检索结果中提取实体，在图谱中查找相邻实体，
+  //     拉取相关文档块作为补充上下文（解决跨文档多跳推理）
+  let withGraphExpansion = reranked
+  try {
+    const graph = await loadKnowledgeGraph(projectId)
+    if (graph && graph.entities.size > 0) {
+      const allChunks = await loadChunksData(projectId)
+      const expansion = expandWithGraph(reranked, graph, allChunks, 5)
+      if (expansion.results.length > 0) {
+        console.log(`[pipeline] Graph RAG 扩展：${expansion.results.length} 个补充块，${expansion.entities.length} 个相关实体`)
+        withGraphExpansion = [...reranked, ...expansion.results]
+      }
+    }
+  } catch (err) {
+    console.error("[pipeline] Graph RAG 扩展失败:", err)
+  }
 
   // 6. 组装上下文
-  const context = buildContext(reranked, config.maxContextTokens || 6000)
+  const context = buildContext(withGraphExpansion, config.maxContextTokens || 6000)
   console.log(`[pipeline] 组装上下文: ${context.sources.length} 个来源, ${context.totalTokens} tokens`)
 
   return context

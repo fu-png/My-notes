@@ -14,10 +14,12 @@ type Params = Promise<{ id: string }>
 
 // ─── GET: 读取聊天记录 ───
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Params }
 ) {
   const { id: projectId } = await params
+  const url = new URL(request.url)
+  const mode = url.searchParams.get("mode") // "summary" | undefined
 
   try {
     const filePath = `projects/${projectId}/chat-history.json`
@@ -30,6 +32,24 @@ export async function GET(
     const content = await readFile(filePath)
     if (!content) return NextResponse.json({ conversations: [] })
     const conversations = JSON.parse(content)
+
+    // Summary mode: return conversation metadata without full message content
+    // This significantly reduces payload size for projects with many conversations
+    if (mode === "summary") {
+      const summaries = conversations.map((conv: Record<string, unknown>) => ({
+        id: conv.id,
+        title: conv.title,
+        createdAt: conv.createdAt,
+        updatedAt: conv.updatedAt,
+        messageCount: Array.isArray(conv.messages) ? conv.messages.length : 0,
+        // Include first user message preview for search (truncated)
+        preview: Array.isArray(conv.messages) && conv.messages.length > 0
+          ? String(conv.messages[0].content || "").slice(0, 200)
+          : "",
+      }))
+      return NextResponse.json({ conversations: summaries })
+    }
+
     return NextResponse.json({ conversations })
   } catch (error) {
     console.error("[chat-history] GET error:", error)

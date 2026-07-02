@@ -234,3 +234,133 @@ function extractError(event: SSEEvent): string | null {
   }
   return null
 }
+
+// ─── Server-side SSE Relay ──────────────────────────────────────────────────
+
+/**
+ * Create a ReadableStream that relays an upstream LLM SSE response to the client.
+ *
+ * Handles:
+ * - Buffered line splitting (incomplete chunks across reads)
+ * - JSON parsing of `data: ` lines
+ * - Extraction of content, reasoning, finish_reason from OpenAI-format events
+ * - Re-encoding as simplified SSE events (`{ content }`, `{ reasoning }`, `{ finish_reason }`)
+ * - Proper [DONE] forwarding and stream cleanup
+ *
+ * Usage in API routes:
+ * ```ts
+ * const stream = createSSERelay(upstreamResponse)
+ * return new Response(stream, {
+ *   headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" }
+ * })
+ * ```
+ */
+export function createSSERelay(
+  upstreamResponse: Response,
+  options?: {
+    /** Additional fields to extract and forward from delta (e.g., ['tool_calls']) */
+    extraFields?: string[]
+    /** Transform each extracted event before forwarding. Return null to skip. */
+    transform?: (event: Record<string, unknown>) => Record<string, unknown> | null
+  }
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  const decoder = new TextDecoder()
+
+  return new ReadableStream({
+    async start(controller) {
+      const reader = upstreamResponse.body?.getReader()
+      if (!reader) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: "无法读取上游响应流。" })}\n\n`))
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+        controller.close()
+        return
+      }
+
+      let buffer = ""
+
+      const processLine = (line: string) => {
+        const trimmed = line.trim()
+        if (!trimmed || !trimmed.startsWith("data: ")) return
+
+        const data = trimmed.slice(6)
+        if (data === "[DONE]") {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+          return
+        }
+
+        try {
+          const parsed = JSON.parse(data)
+          const delta = parsed.choices?.[0]?.delta
+          const finishReason = parsed.choices?.[0]?.finish_reason
+
+          const event: Record<string, unknown> = {}
+
+          if (delta?.content) event.content = delta.content
+          if (delta?.reasoning_content || delta?.reasoning) {
+            event.reasoning = delta.reasoning_content || delta.reasoning
+          }
+          if (finishReason) {
+            event.finish_reason = finishReason
+          }
+
+          // Extract additional fields if specified
+          if (options?.extraFields && delta) {
+            for (const field of options.extraFields) {
+              if (delta[field] !== undefined) {
+                event[field] = delta[field]
+              }
+            }
+          }
+
+          // Apply transform if provided, otherwise forward directly
+          if (options?.transform) {
+            const transformed = options.transform(event)
+            if (transformed && Object.keys(transformed).length > 0) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`))
+            }
+          } else if (Object.keys(event).length > 0) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+          }
+        } catch {
+          // Skip malformed JSON
+        }
+      }
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split("\n")
+          buffer = lines.pop() || ""
+
+          for (const line of lines) {
+            processLine(line)
+          }
+        }
+
+        // Process remaining buffer
+        if (buffer.trim()) {
+          processLine(buffer)
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "流式读取失败"
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`))
+      } finally {
+        controller.close()
+        reader.releaseLock()
+      }
+    },
+  })
+}
+
+/** Standard SSE response headers */
+export const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
+} as const

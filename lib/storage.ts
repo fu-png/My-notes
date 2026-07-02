@@ -299,10 +299,10 @@ export async function deletePrefix(prefix: string): Promise<boolean> {
 }
 
 /** 列出指定前缀下的文件 */
-export async function listFiles(prefix: string): Promise<{ pathname: string; url: string; size: number }[]> {
+export async function listFiles(prefix: string, recursive: boolean = false): Promise<{ pathname: string; url: string; size: number; lastModified: number }[]> {
   if (USE_OSS) {
     const client = getOSSClient()
-    const results: { pathname: string; url: string; size: number }[] = []
+    const results: { pathname: string; url: string; size: number; lastModified: number }[] = []
     let marker: string | undefined
     do {
       const result = await client.listV2({
@@ -319,6 +319,7 @@ export async function listFiles(prefix: string): Promise<{ pathname: string; url
             pathname: obj.name,
             url,
             size: obj.size,
+            lastModified: obj.lastModified ? new Date(obj.lastModified).getTime() : Date.now(),
           })
         }
       }
@@ -331,18 +332,31 @@ export async function listFiles(prefix: string): Promise<{ pathname: string; url
   const dirPath = path.join(LOCAL_CONTENT_DIR, prefix)
   if (!fs.existsSync(dirPath)) return []
 
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true })
-  return entries
-    .filter((e) => e.isFile())
-    .map((e) => {
-      const fullPath = path.join(dirPath, e.name)
-      const stat = fs.statSync(fullPath)
-      return {
-        pathname: `${prefix}${e.name}`,
-        url: `/api/blob/${prefix}${e.name}`,
-        size: stat.size,
+  const results: { pathname: string; url: string; size: number; lastModified: number }[] = []
+
+  function scanDir(currentDir: string, currentPrefix: string) {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true })
+    for (const e of entries) {
+      const fullPath = path.join(currentDir, e.name)
+      const itemPathname = `${currentPrefix}${e.name}`
+      if (e.isDirectory()) {
+        if (recursive) {
+          scanDir(fullPath, `${itemPathname}/`)
+        }
+      } else {
+        const stat = fs.statSync(fullPath)
+        results.push({
+          pathname: itemPathname,
+          url: `/api/blob/${itemPathname}`,
+          size: stat.size,
+          lastModified: stat.mtime.getTime(),
+        })
       }
-    })
+    }
+  }
+
+  scanDir(dirPath, prefix)
+  return results
 }
 
 /** 列出指定前缀下的子目录 */
@@ -453,7 +467,7 @@ function extractTitleFromContent(content: string | null, filename: string): stri
 }
 
 /** 获取单个项目详情 */
-export async function getProject(id: string): Promise<{ meta: ProjectMeta; files: { filename: string; title: string }[] } | null> {
+export async function getProject(id: string): Promise<{ meta: ProjectMeta; files: { filename: string; title: string; lastModified: number }[] } | null> {
   const metaContent = await readFile(`projects/${id}/meta.json`)
   if (!metaContent) return null
 
@@ -461,18 +475,17 @@ export async function getProject(id: string): Promise<{ meta: ProjectMeta; files
     const meta = JSON.parse(metaContent) as ProjectMeta
 
     const projectPrefix = `projects/${id}/`
-    const allFiles = await listFiles(projectPrefix)
+    const allFiles = await listFiles(projectPrefix, true)
     const fileList = allFiles
       .filter((f) => !f.pathname.endsWith("/meta.json"))
       .filter((f) => !f.pathname.endsWith("/chat-history.json"))
-      .filter((f) => {
-        const relativePath = f.pathname.slice(projectPrefix.length)
-        return !relativePath.includes("/")
-      })
+      // .audio/ 目录存放 TTS 生成的播客音频等内部资源，不是笔记文档，
+      // 不应出现在文件浏览器中（音频通过聊天消息内的播放器访问）
+      .filter((f) => !f.pathname.slice(projectPrefix.length).startsWith(".audio/"))
 
     const files = await Promise.all(
       fileList.map(async (f) => {
-        const filename = f.pathname.split("/").pop() ?? ""
+        const filename = f.pathname.slice(projectPrefix.length)
         const isText = /\.(md|txt|json|ya?ml|csv|tsv|xml|html?|js|ts|jsx|tsx|css|py|go|java|rs|sh|toml|ini|env|log)$/i.test(filename)
         let content: string | null = null
         if (isText) {
@@ -480,7 +493,8 @@ export async function getProject(id: string): Promise<{ meta: ProjectMeta; files
         }
         return {
           filename,
-          title: extractTitleFromContent(content, filename),
+          title: extractTitleFromContent(content, filename.split("/").pop() || filename),
+          lastModified: f.lastModified || Date.now(),
         }
       })
     )
@@ -514,7 +528,7 @@ export async function uploadFileToProject(
   projectId: string,
   file: File
 ): Promise<{ success: boolean; filename: string; title: string; error?: string }> {
-  const safeFilename = file.name.replace(/[^a-zA-Z0-9\u4e00-\u9fff._-]/g, "_")
+  const safeFilename = file.name.replace(/[^a-zA-Z0-9\u4e00-\u9fff._\-/]/g, "_")
   let finalFilename = safeFilename
 
   const exists = await fileExists(`projects/${projectId}/${safeFilename}`)
@@ -559,4 +573,34 @@ function getOSSUrl(pathname: string): string {
   const bucket = process.env.OSS_BUCKET || "my-notes-fzc"
   const region = process.env.OSS_REGION || "oss-cn-beijing"
   return `https://${bucket}.${region}.aliyuncs.com/${encodeURIComponent(pathname).replace(/%2F/g, "/")}`
+}
+
+/**
+ * Get file metadata (last modified time, size) without reading content.
+ */
+export async function getFileMeta(pathname: string): Promise<{ lastModified: number; size: number } | null> {
+  if (USE_OSS) {
+    try {
+      const client = getOSSClient()
+      const result = await client.head(pathname)
+      const headers = result.res?.headers as Record<string, string | undefined> | undefined
+      const lastModified = headers?.["last-modified"]
+        ? new Date(headers["last-modified"]).getTime()
+        : Date.now()
+      return {
+        lastModified,
+        size: headers?.["content-length"] ? parseInt(headers["content-length"], 10) : 0,
+      }
+    } catch {
+      return null
+    }
+  } else {
+    const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
+    try {
+      const stat = fs.statSync(filePath)
+      return { lastModified: stat.mtime.getTime(), size: stat.size }
+    } catch {
+      return null
+    }
+  }
 }

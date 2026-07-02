@@ -109,7 +109,10 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
     setDeleting(filename)
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}`,
+        `/api/projects/${encodeURIComponent(projectId)}/files/${filename
+          .split("/")
+          .map((s) => encodeURIComponent(s))
+          .join("/")}`,
         { method: "DELETE" }
       )
       if (res.ok) {
@@ -213,7 +216,10 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
               <p>{uploadResult.message}</p>
               {uploadResult.success && uploadResult.filename && (
                 <Link
-                  href={`/docs/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(uploadResult.filename)}`}
+                  href={`/docs/projects/${encodeURIComponent(projectId)}/${uploadResult.filename!
+                    .split("/")
+                    .map((s) => encodeURIComponent(s))
+                    .join("/")}`}
                   className="mt-1 inline-flex items-center gap-1 text-xs underline underline-offset-2 hover:no-underline"
                 >
                   <IconFile className="size-3" />
@@ -251,7 +257,10 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
                 className="group flex items-center justify-between rounded-md px-3 py-2.5 transition-colors hover:bg-muted"
               >
                 <Link
-                  href={`/docs/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(file.filename)}`}
+                  href={`/docs/projects/${encodeURIComponent(projectId)}/${file.filename
+                    .split("/")
+                    .map((s) => encodeURIComponent(s))
+                    .join("/")}`}
                   className="flex min-w-0 flex-1 items-center gap-2 text-sm"
                 >
                   <IconFile className="size-4 shrink-0 text-muted-foreground" />

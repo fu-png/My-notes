@@ -14,10 +14,12 @@ import {
   IconCheck,
   IconPlus,
   IconTrash,
+  IconSparkles,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import {
   Select,
@@ -44,6 +46,10 @@ const STORAGE_KEY_TTS_VOICE_EXPERT = "ai-tts-voice-expert"
 const STORAGE_KEY_IMAGE_API_KEY = "ai-image-api-key"
 const STORAGE_KEY_IMAGE_API_BASE = "ai-image-api-base"
 const STORAGE_KEY_IMAGE_MODEL = "ai-image-model"
+
+// 用户偏好 / AI Persona
+const STORAGE_KEY_PERSONA = "ai-persona-prompt"
+const STORAGE_KEY_USER_NAME = "ai-user-name"
 
 // ─── Defaults ───
 
@@ -120,6 +126,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "偏好设置",
     items: [
+      { id: "persona", label: "AI 个性", icon: IconSparkles },
       { id: "appearance", label: "外观", icon: IconPalette },
     ],
   },
@@ -155,6 +162,10 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
   const [imageApiBase, setImageApiBase] = React.useState(DEFAULT_IMAGE_API_BASE)
   const [imageModel, setImageModel] = React.useState(DEFAULT_IMAGE_MODEL)
   const [useSameImageKey, setUseSameImageKey] = React.useState(true)
+
+  // AI 个性 / Persona
+  const [personaPrompt, setPersonaPrompt] = React.useState("")
+  const [userName, setUserName] = React.useState("")
 
   // Load config
   React.useEffect(() => {
@@ -209,6 +220,10 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     setImageApiBase(localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || DEFAULT_IMAGE_API_BASE)
     setImageModel(localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL)
     setUseSameImageKey(!savedImageKey)
+
+    // Persona
+    setPersonaPrompt(localStorage.getItem(STORAGE_KEY_PERSONA) || "")
+    setUserName(localStorage.getItem(STORAGE_KEY_USER_NAME) || "")
   }, [])
 
   // ESC 关闭
@@ -289,6 +304,18 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       localStorage.setItem(STORAGE_KEY_IMAGE_API_BASE, imageApiBase.trim() || DEFAULT_IMAGE_API_BASE)
     }
     localStorage.setItem(STORAGE_KEY_IMAGE_MODEL, imageModel.trim() || DEFAULT_IMAGE_MODEL)
+
+    // Persona
+    if (personaPrompt.trim()) {
+      localStorage.setItem(STORAGE_KEY_PERSONA, personaPrompt.trim())
+    } else {
+      localStorage.removeItem(STORAGE_KEY_PERSONA)
+    }
+    if (userName.trim()) {
+      localStorage.setItem(STORAGE_KEY_USER_NAME, userName.trim())
+    } else {
+      localStorage.removeItem(STORAGE_KEY_USER_NAME)
+    }
 
     setSaved(true)
     window.dispatchEvent(new CustomEvent("ai-config-changed"))
@@ -382,6 +409,12 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                 imageApiBase={imageApiBase} setImageApiBase={setImageApiBase}
                 imageModel={imageModel} setImageModel={setImageModel}
                 showImageKey={showImageKey} setShowImageKey={setShowImageKey}
+              />
+            )}
+            {activeSection === "persona" && (
+              <SectionPersona
+                userName={userName} setUserName={setUserName}
+                personaPrompt={personaPrompt} setPersonaPrompt={setPersonaPrompt}
               />
             )}
             {activeSection === "appearance" && <SectionAppearance />}
@@ -792,6 +825,41 @@ function SectionImage({
           value={imageModel}
           onChange={(e) => setImageModel(e.target.value)}
           className="h-8 text-sm"
+        />
+      </FieldGroup>
+    </div>
+  )
+}
+
+// ─── Section: AI 个性 ───
+
+function SectionPersona({
+  userName, setUserName,
+  personaPrompt, setPersonaPrompt,
+}: {
+  userName: string; setUserName: (v: string) => void
+  personaPrompt: string; setPersonaPrompt: (v: string) => void
+}) {
+  return (
+    <div className="space-y-5">
+      <p className="text-[13px] text-muted-foreground">自定义 AI 助手的行为风格和称呼方式，对所有对话生效。</p>
+
+      <FieldGroup label="你的昵称" desc="AI 会在适当时候称呼你">
+        <Input
+          placeholder="你的名字"
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          className="h-8 text-sm"
+        />
+      </FieldGroup>
+
+      <FieldGroup label="AI 行为提示词" desc="指定 AI 的回答风格、语言偏好、专业领域等。留空则使用默认行为。">
+        <Textarea
+          placeholder="例如：请用简洁专业的风格回答，避免使用过多表情。偏好用英文回答技术问题。"
+          value={personaPrompt}
+          onChange={(e) => setPersonaPrompt(e.target.value)}
+          rows={4}
+          className="resize-none text-sm"
         />
       </FieldGroup>
     </div>

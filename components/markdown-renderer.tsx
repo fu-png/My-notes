@@ -4,6 +4,7 @@ import * as React from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeRaw from "rehype-raw"
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize"
 import rehypeSlug from "rehype-slug"
 import { IconCopy, IconCheck } from "@tabler/icons-react"
 
@@ -38,7 +39,7 @@ function MermaidBlock({ code }: { code: string }) {
         mermaid.initialize({
           startOnLoad: false,
           theme: isDark ? "dark" : "base",
-          securityLevel: "loose",
+          securityLevel: "strict",
           fontFamily: "inherit",
           themeVariables: isDark
             ? {
@@ -155,6 +156,7 @@ function CopyButton({ text }: { text: string }) {
       onClick={handleCopy}
       className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:text-foreground group-hover:opacity-100"
       title="复制代码"
+      aria-label={copied ? "已复制" : "复制代码"}
     >
       {copied ? (
         <>
@@ -186,7 +188,26 @@ function HeadingWithId({
 
 // ── Static plugin arrays (stable references, never recreated) ──────
 const remarkPlugins = [remarkGfm]
-const rehypePlugins = [rehypeRaw, rehypeSlug]
+// Custom sanitize schema: allow safe HTML subset but block scripts/event handlers
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames || []),
+    "sup", "sub", "mark", "abbr", "details", "summary",
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    "*": [...(defaultSchema.attributes?.["*"] || []), "className", "id", "style"],
+    img: [...(defaultSchema.attributes?.["img"] || []), "loading", "decoding"],
+  },
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rehypePlugins: any[] = [
+  rehypeRaw,
+  [rehypeSanitize, sanitizeSchema],
+  rehypeSlug,
+]
 
 // ── Static components map (stable reference) ──────────────────────
 const markdownComponents = {

@@ -12,6 +12,7 @@ import {
 export interface DocFile {
   filename: string
   title: string
+  lastModified?: number
 }
 
 export interface ChatMessage {
@@ -77,6 +78,16 @@ export interface Conversation {
   updatedAt: string
 }
 
+/** Lightweight conversation metadata for list rendering (no full messages) */
+export interface ConversationSummary {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  messageCount: number
+  preview: string
+}
+
 // ─── Chat History Storage (OSS + localStorage cache) ───
 
 const CHAT_HISTORY_KEY = "ai-chat-history"
@@ -112,6 +123,24 @@ export async function loadConversations(projectId: string): Promise<Conversation
   }
 }
 
+/** Load only conversation summaries (no full message content) for fast list rendering */
+export async function loadConversationSummaries(projectId: string): Promise<ConversationSummary[]> {
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/chat-history?mode=summary`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    return data.conversations || []
+  } catch {
+    return []
+  }
+}
+
+/** Load full conversation data from localStorage cache (instant, no network) */
+export function loadConversationFromCache(projectId: string, conversationId: string): Conversation | null {
+  const conversations = loadConversationsSync(projectId)
+  return conversations.find((c) => c.id === conversationId) || null
+}
+
 /** Debounced save state to prevent rapid API calls */
 const _saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -121,11 +150,17 @@ export function saveConversations(projectId: string, conversations: Conversation
   try {
     localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(cleaned))
   } catch {
-    // localStorage quota exceeded — try trimming older conversations
-    try {
-      const trimmed = cleaned.slice(0, 20) // keep only recent 20 conversations
-      localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(trimmed))
-    } catch { /* give up on localStorage */ }
+    // localStorage quota exceeded — progressively trim oldest conversations
+    let trimmed = cleaned
+    while (trimmed.length > 1) {
+      trimmed = trimmed.slice(0, -1)
+      try {
+        localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(trimmed))
+        break
+      } catch {
+        // Keep trimming
+      }
+    }
   }
 
   // Debounced OSS save (async, 1.5s delay)
@@ -167,18 +202,17 @@ function cleanConversations(conversations: Conversation[]): Conversation[] {
   return conversations.map((conv) => ({
     ...conv,
     messages: conv.messages.map((msg) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cleaned: any = { ...msg }
+      const cleaned = { ...msg }
       // Trim reasoning to reduce storage (keep first 500 chars)
       if (cleaned.reasoning && cleaned.reasoning.length > 500) {
         cleaned.reasoning = cleaned.reasoning.slice(0, 500) + "…"
       }
       // Strip RAG source snippets (keep metadata only)
       if (cleaned.ragSources) {
-        cleaned.ragSources = cleaned.ragSources.map((src: Record<string, unknown>) => ({
+        cleaned.ragSources = cleaned.ragSources.map((src) => ({
           ...src,
-          snippet: typeof src.snippet === "string" && (src.snippet as string).length > 100
-            ? (src.snippet as string).slice(0, 100) + "…"
+          snippet: src.snippet.length > 100
+            ? src.snippet.slice(0, 100) + "…"
             : src.snippet,
         }))
       }
@@ -186,9 +220,9 @@ function cleanConversations(conversations: Conversation[]): Conversation[] {
       if (cleaned.pptMeta?.slideImages) {
         cleaned.pptMeta = {
           ...cleaned.pptMeta,
-          slideImages: cleaned.pptMeta.slideImages.map((img: Record<string, unknown>) => ({
+          slideImages: cleaned.pptMeta.slideImages.map((img) => ({
             ...img,
-            url: typeof img.url === "string" && !(img.url as string).startsWith("data:") ? img.url : null,
+            url: typeof img.url === "string" && !img.url.startsWith("data:") ? img.url : null,
           })),
         }
       }
@@ -214,6 +248,36 @@ export async function migrateLocalToOSS(projectId: string): Promise<void> {
   } catch (e) {
     console.error("[chat-history] Migration failed:", e)
   }
+}
+
+/**
+ * Generate a smart conversation title from user message.
+ * Breaks at sentence boundaries (punctuation/whitespace) rather than mid-character.
+ */
+export function generateConversationTitle(content: string, maxLen: number = 30): string {
+  const trimmed = content.trim()
+  if (trimmed.length <= maxLen) return trimmed
+
+  const candidate = trimmed.slice(0, maxLen)
+  const breakPoints = [
+    candidate.lastIndexOf('。'),
+    candidate.lastIndexOf('，'),
+    candidate.lastIndexOf('？'),
+    candidate.lastIndexOf('！'),
+    candidate.lastIndexOf('、'),
+    candidate.lastIndexOf('.'),
+    candidate.lastIndexOf(','),
+    candidate.lastIndexOf('?'),
+    candidate.lastIndexOf('!'),
+    candidate.lastIndexOf(' '),
+  ]
+
+  const breakAt = Math.max(...breakPoints)
+  if (breakAt > maxLen * 0.4) {
+    return trimmed.slice(0, breakAt + 1).trim() + '…'
+  }
+
+  return candidate + '…'
 }
 
 // ─── Helpers ───

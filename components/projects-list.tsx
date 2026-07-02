@@ -55,6 +55,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useToast } from "@/hooks/use-toast"
+import { ToastContainer } from "@/components/toast-container"
+import { IconSearch } from "@tabler/icons-react"
 
 interface Project {
   id: string
@@ -75,6 +78,7 @@ const SORT_OPTIONS: { field: SortField; label: string; icon: React.ReactNode }[]
 
 export function ProjectsList() {
   const router = useRouter()
+  const { toasts, showToast, removeToast } = useToast()
   const [projects, setProjects] = React.useState<Project[]>([])
   const [loading, setLoading] = React.useState(true)
   const [deleting, setDeleting] = React.useState<string | null>(null)
@@ -94,12 +98,14 @@ export function ProjectsList() {
       const res = await fetch("/api/projects")
       const data = await res.json()
       setProjects(data.projects || [])
-    } catch {
+    } catch (err) {
+      console.error("[fetchProjects] Failed:", err)
       setProjects([])
+      showToast("error", "加载笔记列表失败，请刷新重试")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [showToast])
 
   React.useEffect(() => {
     fetchProjects()
@@ -118,8 +124,9 @@ export function ProjectsList() {
         setProjects((prev) => prev.filter((p) => p.id !== id))
         router.refresh()
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error("[handleDelete] Failed:", err)
+      showToast("error", "删除失败，请重试")
     } finally {
       setDeleting(null)
     }
@@ -151,10 +158,11 @@ export function ProjectsList() {
         router.refresh()
       } else {
         const data = await res.json().catch(() => ({}))
-        alert(data.error || "重命名失败，请重试")
+        showToast("error", data.error || "重命名失败，请重试")
       }
-    } catch {
-      alert("网络错误，重命名失败")
+    } catch (err) {
+      console.error("[handleRename] Failed:", err)
+      showToast("error", "网络错误，重命名失败")
     } finally {
       setSaving(false)
       setEditingId(null)
@@ -222,6 +230,17 @@ export function ProjectsList() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Search input */}
+          <div className="relative">
+            <IconSearch className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索笔记..."
+              className="h-9 w-40 pl-8 text-sm sm:w-52"
+              aria-label="搜索笔记"
+            />
+          </div>
           {/* Sort dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -364,7 +383,7 @@ export function ProjectsList() {
                     {getRelativeTime(project.createdAt)}
                   </span>
                 </div>
-                <div className="relative z-20 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="relative z-20 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -374,7 +393,8 @@ export function ProjectsList() {
                             e.stopPropagation()
                             startEditing(project)
                           }}
-                          className="p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          className="p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:outline-none"
+                          aria-label={`重命名「${project.name}」`}
                         >
                           <IconEdit className="size-3.5" />
                         </button>
@@ -392,7 +412,8 @@ export function ProjectsList() {
                             setDeleteTarget({ id: project.id, name: project.name })
                           }}
                           disabled={deleting === project.id}
-                          className="p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          className="p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive focus-visible:outline-none"
+                          aria-label={`删除「${project.name}」`}
                         >
                           {deleting === project.id ? (
                             <IconLoader2 className="size-3.5 animate-spin" />
@@ -466,15 +487,15 @@ export function ProjectsList() {
                 <IconClock className="size-3" />
                 {getRelativeTime(project.createdAt)}
               </span>
-              <div className="relative z-20 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="relative z-20 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                 <button
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
                     startEditing(project)
                   }}
-                  className="p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  title="重命名"
+                  className="p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:outline-none"
+                  aria-label={`重命名「${project.name}」`}
                 >
                   <IconEdit className="size-3.5" />
                 </button>
@@ -485,8 +506,8 @@ export function ProjectsList() {
                     setDeleteTarget({ id: project.id, name: project.name })
                   }}
                   disabled={deleting === project.id}
-                  className="p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  title="删除"
+                  className="p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive focus-visible:outline-none"
+                  aria-label={`删除「${project.name}」`}
                 >
                   {deleting === project.id ? (
                     <IconLoader2 className="size-3.5 animate-spin" />
@@ -531,6 +552,9 @@ export function ProjectsList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Toast notifications */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   )
 }

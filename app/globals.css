@@ -185,6 +185,9 @@
 
 .tiptap:focus {
   outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.3);
+  border-radius: 4px;
+  transition: box-shadow 0.15s ease;
 }
 
 .tiptap ul[data-type="taskList"] {
@@ -277,4 +280,16 @@
 
 .reading-mode-active article img {
   margin: 1.5em auto;
+}
+
+/* ─── Accessibility: Reduced Motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

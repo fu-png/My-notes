@@ -43,8 +43,10 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { getAIConfig, isAIConfigured, getConfiguredModel, getProviderList, switchActiveProvider } from "@/components/settings-dialog"
-import type { ProviderInfo } from "@/components/settings-dialog"
+import { getAIConfig, isAIConfigured, getConfiguredModel } from "@/lib/ai-config"
+import { useToast } from "@/hooks/use-toast"
+import { ToastContainer } from "@/components/toast-container"
+import { ErrorBoundary } from "@/components/error-boundary"
 import dynamic from "next/dynamic"
 
 // ─── Lazy-loaded heavy sub-components ───
@@ -60,20 +62,23 @@ const MarkdownRenderer = dynamic(
 
 // ─── Sub-modules (code-split) ───
 
-import type { DocFile, ChatMessage, Conversation } from "./notebook/types"
+import type { DocFile, Conversation } from "./notebook/types"
 import {
   loadConversations,
   loadConversationsSync,
+  loadConversationSummaries,
+  loadConversationFromCache,
   saveConversations,
   flushPendingSave,
   migrateLocalToOSS,
   countWords,
+  generateConversationTitle,
   WELCOME_MESSAGE,
 } from "./notebook/types"
+import { useFileCache } from "@/hooks/use-file-cache"
 import { usePptFlow } from "@/hooks/use-ppt-flow"
 import { useAudioFlow } from "@/hooks/use-audio-flow"
-import { detectIntent } from "@/lib/agents/supervisor"
-import { buildSystemPrompt } from "@/lib/agents/context-manager"
+import { useChatFlow } from "@/hooks/use-chat-flow"
 import { TableOfContents } from "./notebook/table-of-contents"
 import { FileExplorer, MobileFileList } from "./notebook/file-explorer"
 import { ReadingModePanel, ReadingModeButton } from "./notebook/reading-mode"
@@ -112,8 +117,9 @@ const searchParams = useSearchParams()
   const [files, setFiles] = React.useState<DocFile[]>([])
   const [loadingFiles, setLoadingFiles] = React.useState(true)
   const [activeFile, setActiveFile] = React.useState<string | null>(null)
-  const [fileContent, setFileContent] = React.useState("")
-  const [loadingContent, setLoadingContent] = React.useState(false)
+  const [recentFiles, setRecentFiles] = React.useState<string[]>([])
+  const fileCache = useFileCache({ projectId })
+  const { fileContent, editContent, setEditContent, loadingContent } = fileCache
   const [uploading, setUploading] = React.useState(false)
   const [isDragging, setIsDragging] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null)
@@ -122,7 +128,6 @@ const searchParams = useSearchParams()
 
 // Editor state
   const [editMode, setEditMode] = React.useState(false)
-  const [editContent, setEditContent] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
   // New file inline creation
@@ -158,9 +163,6 @@ const searchParams = useSearchParams()
     totalTokens: number
   } | null>(null)
   const [sourcesLoading, setSourcesLoading] = React.useState(false)
-
-  // AI note generation
-  const [generating, setGenerating] = React.useState(false)
 
   // AI panel resize
   const [aiPanelWidth, setAiPanelWidth] = React.useState(360)
@@ -271,108 +273,58 @@ const searchParams = useSearchParams()
     document.body.style.userSelect = "none"
   }, [])
 
-  // Chat state
-  const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([WELCOME_MESSAGE])
-  const [chatInput, setChatInput] = React.useState("")
-  const [chatLoading, setChatLoading] = React.useState(false)
-  const [chatModel, setChatModel] = React.useState("gpt-4o-mini")
-  const [providerList, setProviderList] = React.useState<ProviderInfo[]>([])
-  const [deepThinkMode, setDeepThinkMode] = React.useState(() => {
-    if (typeof window === "undefined") return false
-    return localStorage.getItem("ai-deep-think-mode") === "true"
-  })
-
-  React.useEffect(() => {
-    localStorage.setItem("ai-deep-think-mode", String(deepThinkMode))
-  }, [deepThinkMode])
-
-  React.useEffect(() => {
-    setChatModel(getConfiguredModel())
-    setProviderList(getProviderList())
-    const handler = () => {
-      setChatModel(getConfiguredModel())
-      setProviderList(getProviderList())
-    }
-    window.addEventListener("ai-config-changed", handler)
-    return () => window.removeEventListener("ai-config-changed", handler)
-  }, [])
-
-  const handleSwitchProvider = React.useCallback((providerId: string) => {
-    const newModel = switchActiveProvider(providerId)
-    if (newModel) {
-      setChatModel(newModel)
-      setProviderList(getProviderList())
-    }
-  }, [])
 
   // Conversation history
   const [conversations, setConversations] = React.useState<Conversation[]>([])
   const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null)
   const [showHistory, setShowHistory] = React.useState(false)
 
-  React.useEffect(() => {
-    // Instant load from localStorage cache
-    setConversations(loadConversationsSync(projectId))
-    // Then fetch from OSS and update (with auto-migration)
-    loadConversations(projectId).then((ossConvs) => {
-      if (ossConvs.length > 0) {
-        setConversations(ossConvs)
-      } else {
-        // OSS is empty but localStorage has data → migrate
-        migrateLocalToOSS(projectId)
-      }
-    })
-  }, [projectId])
+React.useEffect(() => {
+// Instant load from localStorage cache (full data, for immediate use)
+const cached = loadConversationsSync(projectId)
+setConversations(cached)
+// Then fetch summaries from OSS (lightweight — no message content)
+loadConversationSummaries(projectId).then(async (summaries) => {
+  if (summaries.length > 0) {
+    // Check if we need to fetch full data for any conversation
+    // If cache is stale (different IDs or count), fetch full data
+    const cachedIds = new Set(cached.map((c) => c.id))
+    const summaryIds = new Set(summaries.map((s) => s.id))
+    const needsFullFetch =
+      cached.length !== summaries.length ||
+      summaries.some((s) => !cachedIds.has(s.id)) ||
+      cached.some((c) => !summaryIds.has(c.id))
 
-  // Save current conversation
-  const savePendingRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-  const activeConvIdRef = React.useRef(activeConversationId)
-  activeConvIdRef.current = activeConversationId
-  const chatMessagesRef = React.useRef(chatMessages)
-  chatMessagesRef.current = chatMessages
-
-  React.useEffect(() => {
-    if (chatMessages.length <= 1) return
-
-    if (savePendingRef.current) clearTimeout(savePendingRef.current)
-    savePendingRef.current = setTimeout(() => {
-      const currentMessages = chatMessagesRef.current
-      const currentConvId = activeConvIdRef.current
-      const now = new Date().toISOString()
-      const firstUserMsg = currentMessages.find((m) => m.role === "user")
-      const title = firstUserMsg?.content.slice(0, 30) || "新对话"
-
-      setConversations((prev) => {
-        let updated: Conversation[]
-        if (currentConvId) {
-          updated = prev.map((c) =>
-            c.id === currentConvId
-              ? { ...c, messages: currentMessages, title, updatedAt: now }
-              : c
-          )
-        } else {
-          const newId = `conv-${Date.now()}`
-          setActiveConversationId(newId)
-          updated = [{ id: newId, title, messages: currentMessages, createdAt: now, updatedAt: now }, ...prev]
-        }
-        saveConversations(projectId, updated)
-        return updated
-      })
-    }, 800)
-
-    return () => {
-      if (savePendingRef.current) clearTimeout(savePendingRef.current)
+    if (needsFullFetch) {
+      // Fetch full conversations (one-time, to populate cache)
+      const fullConvs = await loadConversations(projectId)
+      setConversations(fullConvs)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatMessages])
+    // If cache is up-to-date, we already have full data from localStorage
+  } else if (cached.length > 0) {
+    // OSS is empty but localStorage has data → migrate
+    migrateLocalToOSS(projectId)
+  }
+})
+}, [projectId])
 
-  // Flush pending saves on page unload to prevent data loss
+  // Flush pending saves and warn about unsaved edits on page unload
   const conversationsRef = React.useRef(conversations)
   conversationsRef.current = conversations
+  const editModeRef = React.useRef(false)
+  const editContentRef = React.useRef("")
+  const fileContentRef = React.useRef("")
+  editModeRef.current = editMode
+  editContentRef.current = editContent
+  fileContentRef.current = fileContent
   React.useEffect(() => {
-    const handleBeforeUnload = () => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (conversationsRef.current.length > 0) {
         flushPendingSave(projectId, conversationsRef.current)
+      }
+      // Warn user if there are unsaved edits
+      if (editModeRef.current && editContentRef.current !== fileContentRef.current) {
+        e.preventDefault()
       }
     }
     window.addEventListener("beforeunload", handleBeforeUnload)
@@ -426,8 +378,9 @@ const searchParams = useSearchParams()
         setIndexStatus(data.status)
         if (data.status.indexed) setRagEnabled(true)
       }
-    } catch {
-      // 静默失败
+    } catch (err) {
+      console.warn("[fetchIndexStatus]", err)
+      // 索引状态查询为后台操作，仅记录日志不打扰用户
     }
   }
 
@@ -443,8 +396,9 @@ const searchParams = useSearchParams()
       if (data.files) {
         setSourcesData({ files: data.files, totalChunks: data.totalChunks, totalTokens: data.totalTokens })
       }
-    } catch {
-      // 静默失败
+    } catch (err) {
+      console.warn("[fetchSourcesData]", err)
+      showToast("error", "知识源数据加载失败")
     } finally {
       setSourcesLoading(false)
     }
@@ -483,37 +437,22 @@ const searchParams = useSearchParams()
         return
       }
 
-      const decoder = new TextDecoder()
-      let buffer = ""
+      // 使用统一的 SSE 流解析工具（消除手写缓冲逻辑）
+      const { parseSSEStream } = await import("@/lib/infra/stream-utils")
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith("data: ")) continue
-          try {
-            const parsed = JSON.parse(trimmed.slice(6))
-            if (parsed.progress) {
-              setIndexProgress(parsed.progress)
-            }
-            if (parsed.done) {
-              if (parsed.success) {
-                showToast("success", `索引完成：${parsed.totalFiles} 个文件，${parsed.totalChunks} 个文本块`)
-                setRagEnabled(true)
-                await fetchIndexStatus()
-                if (showSources) fetchSourcesData()
-              } else {
-                showToast("error", parsed.error || "索引失败")
-              }
-            }
-          } catch {
-            // skip malformed
+      for await (const event of parseSSEStream(reader)) {
+        if (typeof event.progress === "string") {
+          setIndexProgress(event.progress)
+        }
+        if (event.done === true) {
+          if (event.success === true) {
+            showToast("success", `索引完成：${event.totalFiles} 个文件，${event.totalChunks} 个文本块`)
+            setRagEnabled(true)
+            await fetchIndexStatus()
+            if (showSources) fetchSourcesData()
+          } else {
+            const errMsg = typeof event.error === "string" ? event.error : "索引失败"
+            showToast("error", errMsg)
           }
         }
       }
@@ -544,7 +483,7 @@ const searchParams = useSearchParams()
           action: "index",
           apiKey: config.apiKey,
           apiBase: config.apiBase,
-          model: chatModel,
+          model: getConfiguredModel(),
         }),
       })
         .then((res) => res.json())
@@ -555,9 +494,11 @@ const searchParams = useSearchParams()
             if (showSources) fetchSourcesData()
           }
         })
-        .catch(() => {})
+        .catch((err: unknown) => {
+          console.warn("[autoIndex]", err)
+        })
     }, 2000)
-  }, [projectId, chatModel])
+  }, [projectId])
 
   React.useEffect(() => {
     return () => {
@@ -567,13 +508,63 @@ const searchParams = useSearchParams()
     }
   }, [])
 
-  // Toast
-  const [toast, setToast] = React.useState<{ type: "success" | "error"; msg: string } | null>(null)
+  // Toast (professional queue system with animations)
+  const { toasts, showToast, removeToast } = useToast()
 
-  const showToast = React.useCallback((type: "success" | "error", msg: string) => {
-    setToast({ type, msg })
-    setTimeout(() => setToast(null), 2500)
-  }, [])
+  // ─── Data Fetching (moved before useChatFlow which depends on fetchFiles) ───
+
+  const fetchFiles = React.useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
+      const data = await res.json()
+      setFiles(data.files || [])
+      // 用 API 返回的最新名称覆盖，防止 Router Cache 缓存了旧名称
+      if (data.project?.name) {
+        setCurrentProjectName(data.project.name)
+      }
+    } catch (err) {
+      console.error("[fetchFiles] Failed:", err)
+      setFiles([])
+      showToast("error", "文件列表加载失败，请刷新重试")
+    } finally {
+      setLoadingFiles(false)
+    }
+  }, [projectId, showToast])
+
+  React.useEffect(() => {
+    fetchFiles()
+  }, [fetchFiles])
+
+  // ─── Refs to break circular dependency between useChatFlow ↔ usePptFlow ───
+  const pptSessionRef = React.useRef<{ active: boolean } | null>(null)
+  const pptAbortRef = React.useRef<AbortController | null>(null)
+  const startPptFlowRef = React.useRef<((text: string) => void) | null>(null)
+
+  // ─── AI Chat Flow (via hook) ───
+  const chatFlow = useChatFlow({
+    projectId,
+    activeFile,
+    files,
+    fileContent,
+    ragEnabled,
+    indexStatus,
+    selectedText,
+    setSelectedText,
+    pptSessionRef,
+    pptAbortRef,
+    startPptFlowRef,
+    showToast,
+    fetchFiles,
+    triggerAutoIndex,
+  })
+  const {
+    chatMessages, setChatMessages, chatInput, setChatInput,
+    chatLoading, setChatLoading, chatModel, providerList, deepThinkMode, generating,
+    isStreamingRef,
+    handleSendMessage, handleStopGeneration, handleSwitchProvider,
+    handleToggleDeepThink, handleGenerate, handleSaveGenerated,
+    handleCopyGenerated, handleRegenerateGuide, handleRegenerateChat,
+  } = chatFlow
 
   // ─── PPT Generation (via hook) ───
   const pptFlow = usePptFlow({
@@ -585,7 +576,12 @@ const searchParams = useSearchParams()
     chatEndRef,
     showToast,
   })
-  const { pptSession, setPptSession, pptAbortRef } = pptFlow
+  const { pptSession, setPptSession } = pptFlow
+
+  // Sync refs after pptFlow initializes
+  pptSessionRef.current = pptSession
+  pptAbortRef.current = pptFlow.pptAbortRef.current
+  startPptFlowRef.current = pptFlow.startPptFlow
 
   // ─── Audio Overview (via hook) ───
   const audioFlow = useAudioFlow({
@@ -598,36 +594,74 @@ const searchParams = useSearchParams()
   })
   const { audioGenerating, audioPlaying } = audioFlow
 
+  // Save current conversation (must be after useChatFlow which provides chatMessages)
+  const savePendingRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeConvIdRef = React.useRef(activeConversationId)
+  activeConvIdRef.current = activeConversationId
+  const chatMessagesRef = React.useRef(chatMessages)
+  chatMessagesRef.current = chatMessages
+
+  React.useEffect(() => {
+    if (chatMessages.length <= 1) return
+
+    if (savePendingRef.current) clearTimeout(savePendingRef.current)
+    savePendingRef.current = setTimeout(() => {
+      const currentMessages = chatMessagesRef.current
+      const currentConvId = activeConvIdRef.current
+      const now = new Date().toISOString()
+      const firstUserMsg = currentMessages.find((m) => m.role === "user")
+      const title = firstUserMsg ? generateConversationTitle(firstUserMsg.content) : "新对话"
+
+      setConversations((prev) => {
+        let updated: Conversation[]
+        if (currentConvId) {
+          updated = prev.map((c) =>
+            c.id === currentConvId
+              ? { ...c, messages: currentMessages, title, updatedAt: now }
+              : c
+          )
+        } else {
+          const newId = `conv-${Date.now()}`
+          setActiveConversationId(newId)
+          updated = [{ id: newId, title, messages: currentMessages, createdAt: now, updatedAt: now }, ...prev]
+        }
+        saveConversations(projectId, updated)
+        return updated
+      })
+    }, 800)
+
+    return () => {
+      if (savePendingRef.current) clearTimeout(savePendingRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatMessages])
+
   // ─── Conversation Management (must be after hook destructuring) ───
 
   const startNewConversation = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-    }
-    if (pptAbortRef.current) {
-      pptAbortRef.current.abort()
-      pptAbortRef.current = null
-    }
-    isStreamingRef.current = false
-    setChatLoading(false)
-    setGenerating(false)
+    handleStopGeneration()
     setPptSession(null)
     setActiveConversationId(null)
     setChatMessages([WELCOME_MESSAGE])
     setShowHistory(false)
   }
 
-  const loadConversation = (conv: Conversation) => {
-    if (pptAbortRef.current) {
-      pptAbortRef.current.abort()
-      pptAbortRef.current = null
-    }
-    setActiveConversationId(conv.id)
-    setChatMessages(conv.messages)
-    setShowHistory(false)
-    // Restore PPT session from last PPT message
-    const lastPptMsg = [...conv.messages].reverse().find((m) => m.pptMeta)
+const loadConversation = (conv: Conversation) => {
+if (pptAbortRef.current) {
+pptAbortRef.current.abort()
+pptAbortRef.current = null
+}
+// If the conversation has no messages (summary-only), try to load full data
+let fullConv = conv
+if ((!conv.messages || conv.messages.length === 0) && conv.id) {
+  const cached = loadConversationFromCache(projectId, conv.id)
+  if (cached) fullConv = cached
+}
+setActiveConversationId(fullConv.id)
+setChatMessages(fullConv.messages?.length > 0 ? fullConv.messages : [WELCOME_MESSAGE])
+setShowHistory(false)
+// Restore PPT session from last PPT message
+const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMeta)
     if (lastPptMsg?.pptMeta && lastPptMsg.pptMeta.step !== "done" && lastPptMsg.pptMeta.step !== "error") {
       const pm = lastPptMsg.pptMeta
       setPptSession({
@@ -656,28 +690,6 @@ const searchParams = useSearchParams()
     }
   }
 
-  // ─── Data Fetching ───
-
-  const fetchFiles = React.useCallback(async () => {
-    try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
-      const data = await res.json()
-      setFiles(data.files || [])
-      // 用 API 返回的最新名称覆盖，防止 Router Cache 缓存了旧名称
-      if (data.project?.name) {
-        setCurrentProjectName(data.project.name)
-      }
-    } catch {
-      setFiles([])
-    } finally {
-      setLoadingFiles(false)
-    }
-  }, [projectId])
-
-  React.useEffect(() => {
-    fetchFiles()
-  }, [fetchFiles])
-
 React.useEffect(() => {
 if (!loadingFiles && files.length > 0 && !activeFile) {
 const fileParam = searchParams.get("file")
@@ -686,28 +698,26 @@ selectFile(target)
 }
 }, [loadingFiles, files]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadFileContent = React.useCallback(async (filename: string) => {
-    setLoadingContent(true)
-    setEditMode(false)
-    try {
-      const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}`
-      )
-      const data = await res.json()
-      setFileContent(data.content || "")
-      setEditContent(data.content || "")
-    } catch {
-      setFileContent("")
-      setEditContent("")
-    } finally {
-      setLoadingContent(false)
-    }
-  }, [projectId])
+  // Track whether editor has unsaved changes
+  const hasUnsavedEdits = editMode && editContent !== fileContent
+
+  const [pendingFileSwitch, setPendingFileSwitch] = React.useState<string | null>(null)
 
   const selectFile = React.useCallback((filename: string) => {
+    // If switching files while editing with unsaved changes, ask for confirmation
+    if (editMode && editContent !== fileContent) {
+      setPendingFileSwitch(filename)
+      return
+    }
     setActiveFile(filename)
-    loadFileContent(filename)
-  }, [loadFileContent])
+    setEditMode(false)
+    fileCache.loadFileContent(filename)
+    // 添加到最近打开列表
+    setRecentFiles((prev) => {
+      const filtered = prev.filter((f) => f !== filename)
+      return [filename, ...filtered].slice(0, 10) // 最多保留10个
+    })
+  }, [fileCache.loadFileContent, editMode, editContent, fileContent])
 
   // ─── File Operations ───
 
@@ -823,25 +833,28 @@ selectFile(target)
     setDeleting(filename)
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}`,
+        `/api/projects/${encodeURIComponent(projectId)}/files/${filename
+          .split("/")
+          .map((s) => encodeURIComponent(s))
+          .join("/")}`,
         { method: "DELETE" }
       )
       if (res.ok) {
         setFiles((prev) => prev.filter((f) => f.filename !== filename))
         if (activeFile === filename) {
           setActiveFile(null)
-          setFileContent("")
-          setEditContent("")
           setEditMode(false)
         }
+        setRecentFiles((prev) => prev.filter((f) => f !== filename))
+        fileCache.invalidate(filename)
         router.refresh()
         triggerAutoIndex()
       } else {
         const data = await res.json().catch(() => ({}))
-        setToast({ type: "error", msg: data.error || "删除失败，请重试" })
+        showToast("error", data.error || "删除失败，请重试")
       }
     } catch {
-      setToast({ type: "error", msg: "网络错误，删除失败" })
+      showToast("error", "网络错误，删除失败")
     } finally {
       setDeleting(null)
     }
@@ -852,7 +865,10 @@ selectFile(target)
     setSaving(true)
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(activeFile)}`,
+        `/api/projects/${encodeURIComponent(projectId)}/files/${activeFile
+          .split("/")
+          .map((s) => encodeURIComponent(s))
+          .join("/")}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -860,7 +876,7 @@ selectFile(target)
         }
       )
       if (res.ok) {
-        setFileContent(editContent)
+        fileCache.setFileContent(activeFile, editContent)
         setEditMode(false)
         showToast("success", "已保存")
         await fetchFiles()
@@ -902,8 +918,7 @@ selectFile(target)
       )
       const data = await res.json()
       if (res.ok && data.content) {
-        setFileContent(data.content)
-        setEditContent(data.content)
+        fileCache.setFileContent(activeFile, data.content)
         showToast("success", "翻译完成")
       } else {
         showToast("error", data.error || "翻译失败")
@@ -932,415 +947,6 @@ selectFile(target)
     if (droppedFiles.length > 0) handleUpload(droppedFiles)
   }, [handleUpload])
 
-  // ─── Web Search (Agent Reach) ───
-  // Intent detection now handled by @/lib/agents/supervisor
-
-  /** 调用 Agent Reach 获取互联网内容 */
-  const fetchWebContent = async (
-    intent: { action: string; query?: string; url?: string },
-    aiMsgId: string
-  ): Promise<{ content: string; sources: ChatMessage["webSources"] } | null> => {
-    // 更新 AI 消息显示搜索状态
-    const statusText = intent.action === "search"
-      ? `🔍 正在搜索「${intent.query}」...`
-      : intent.action === "web"
-      ? `🌐 正在读取网页内容...`
-      : intent.action === "youtube"
-      ? `▶️ 正在获取视频信息...`
-      : intent.action === "github"
-      ? `🐙 正在查询 GitHub...`
-      : intent.action === "bilibili"
-      ? `📺 正在搜索B站...`
-      : `🌐 正在获取互联网内容...`
-
-    setChatMessages((prev) =>
-      prev.map((m) =>
-        m.id === aiMsgId ? { ...m, content: statusText } : m
-      )
-    )
-
-    try {
-      const res = await fetch("/api/agent-reach", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(intent),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        console.warn("[Agent Reach] 调用失败:", data.error)
-        // 降级：不阻断对话，返回错误提示让 AI 基于自身知识回答
-        return { content: "", sources: [] }
-      }
-
-      const data = await res.json()
-      if (!data.success || !data.content) {
-        return { content: "", sources: [] }
-      }
-
-      // 从搜索结果中提取多条来源
-      const sources: ChatMessage["webSources"] = []
-      if (intent.action === "search" && data.content) {
-        // 尝试从格式化文本提取每条结果的标题和 URL
-        const urlMatches = data.content.matchAll(/URL:\s*(https?:\/\/[^\s\n]+)/g)
-        const titleMatches = data.content.matchAll(/^\d+\.\s+(.+)$/gm)
-        const titles = [...titleMatches].map(m => m[1])
-        const urls = [...urlMatches].map(m => m[1])
-
-        for (let i = 0; i < Math.min(urls.length, 5); i++) {
-          sources.push({
-            action: "search",
-            query: intent.query,
-            url: urls[i],
-            snippet: titles[i] || urls[i],
-          })
-        }
-
-        // 如果没解析出单独来源，用整体摘要
-        if (sources.length === 0) {
-          sources.push({
-            action: intent.action,
-            query: intent.query,
-            url: intent.url,
-            snippet: data.content.slice(0, 200) + (data.content.length > 200 ? "..." : ""),
-          })
-        }
-      } else {
-        sources.push({
-          action: intent.action,
-          query: intent.query,
-          url: intent.url,
-          snippet: data.content.slice(0, 200) + (data.content.length > 200 ? "..." : ""),
-        })
-      }
-
-      return { content: data.content, sources }
-    } catch (err) {
-      console.warn("[Agent Reach] 网络错误:", err)
-      // 网络失败时降级而非完全中断
-      return { content: "", sources: [] }
-    }
-  }
-
-  // ─── Chat ───
-
-  /** 从 content 中解析「## 思考过程」段落，提取为 reasoning（兼容不支持 reasoning_content 的模型） */
-  const parseReasoningFromContent = (content: string, existingReasoning: string): { content: string; reasoning: string } => {
-    // 如果已有 reasoning_content 流式数据，不需要从 content 中解析
-    if (existingReasoning) return { content, reasoning: existingReasoning }
-
-    // 匹配「## 思考过程」标题及其后续内容（直到下一个 ## 标题或末尾）
-    const match = content.match(/^##\s*思考过程\s*\n([\s\S]*?)(?=\n##\s|$)/)
-    if (match) {
-      const reasoning = match[1].trim()
-      const cleanedContent = content.replace(/^##\s*思考过程\s*\n[\s\S]*?(?=\n##\s|$)/, '').trim()
-      return { content: cleanedContent, reasoning }
-    }
-    return { content, reasoning: existingReasoning }
-  }
-
-  const streamAI = async (userMessages: ChatMessage[], aiMsgId: string, deepThink: boolean = false, selectedText?: string) => {
-    const config = getAIConfig()
-    if (!config) {
-      setChatMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, content: "请先点击右上角的设置按钮（⚙️），配置 AI 助手的 API Key 后即可开始对话。" }
-            : m
-        )
-      )
-      return
-    }
-
-    let ragSources: ChatMessage["ragSources"] | undefined
-    let ragContextText = ""
-    let webSources: ChatMessage["webSources"] | undefined
-    let webContextText = ""
-    const lastUserMsg = userMessages[userMessages.length - 1]
-
-    // ── Agent Reach: 互联网内容预取 ──
-    let webSearchTriggered = false
-    if (lastUserMsg) {
-      const intent = detectIntent(lastUserMsg.content, { hasPptSession: !!pptSession?.active })
-      const webIntent = intent.type === "web_search" ? { action: intent.action, query: intent.query, url: intent.url } : null
-      if (webIntent) {
-        // 划词搜索：当有划词内容且搜索 query 是指代性描述时，用划词文本替换
-        if (webIntent.action === "search" && selectedText) {
-          const vague = /^(一下)?(这[段个些]|这[段个些]?(话|内容|文[本字]|句子)|它|this).*/
-          if (!webIntent.query || vague.test(webIntent.query)) {
-            webIntent.query = selectedText.length > 200 ? selectedText.slice(0, 200) : selectedText
-          }
-        }
-        webSearchTriggered = true
-        const webResult = await fetchWebContent(webIntent, aiMsgId)
-        if (webResult) {
-          webSources = webResult.sources && webResult.sources.length > 0 ? webResult.sources : undefined
-          webContextText = webResult.content
-        }
-      }
-    }
-
-    if (ragEnabled && indexStatus?.indexed && lastUserMsg) {
-      try {
-        const recentUserMsgs = userMessages
-          .filter((m) => m.role === "user" && m.id !== "welcome")
-          .slice(-3)
-          .map((m) => m.content)
-        const contextQuery = recentUserMsgs.length > 1
-          ? `${recentUserMsgs[recentUserMsgs.length - 1]}\n\n对话上下文：${recentUserMsgs.slice(0, -1).join("；")}`
-          : lastUserMsg.content
-
-        const ragRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "query",
-            question: contextQuery,
-            apiKey: config.apiKey,
-            apiBase: config.apiBase,
-            model: chatModel,
-            activeFile: activeFile || undefined,
-          }),
-        })
-        const ragData = await ragRes.json()
-        if (ragData.context?.sources?.length > 0) {
-          ragSources = ragData.context.sources
-          ragContextText = ragData.context.text
-        }
-      } catch (err) {
-        console.warn("[RAG] Query failed, falling back to plain mode:", err)
-      }
-    }
-
-    const activeFileName = activeFile ? (files.find((f) => f.filename === activeFile)?.title || activeFile) : undefined
-
-    // 使用 Context Manager 统一构建 system prompt
-    const systemPrompt = buildSystemPrompt({
-      ragContextText: ragContextText || undefined,
-      ragSources,
-      webContextText: webContextText || undefined,
-      webSources,
-      webSearchTriggered,
-      activeFile,
-      activeFileName,
-      fileContent,
-      selectedText,
-    })
-
-    const apiMessages = [
-      { role: "system", content: systemPrompt },
-      ...userMessages.filter((m) => m.id !== "welcome").map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    ]
-
-    try {
-      const controller = new AbortController()
-      abortControllerRef.current = controller
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: apiMessages,
-          apiKey: config.apiKey,
-          apiBase: config.apiBase,
-          model: chatModel,
-          deepThink,
-        }),
-        signal: controller.signal,
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setChatMessages((prev) =>
-          prev.map((m) =>
-            m.id === aiMsgId
-              ? { ...m, content: `⚠️ ${data.error || "请求失败，请检查 API 配置。"}` }
-              : m
-          )
-        )
-        return
-      }
-
-      const reader = res.body?.getReader()
-      if (!reader) {
-        setChatMessages((prev) =>
-          prev.map((m) => (m.id === aiMsgId ? { ...m, content: "⚠️ 无法读取响应流。" } : m))
-        )
-        return
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ""
-      let fullContent = ""
-      let fullReasoning = ""
-      let finishReason = ""
-      let rafScheduled = false
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith("data: ")) continue
-          const data = trimmed.slice(6)
-          if (data === "[DONE]") continue
-
-          try {
-            const parsed = JSON.parse(data)
-            if (parsed.error) {
-              fullContent += `\n⚠️ ${parsed.error}`
-            } else if (parsed.content) {
-              fullContent += parsed.content
-            }
-            if (parsed.reasoning) {
-              fullReasoning += parsed.reasoning
-            }
-            if (parsed.finish_reason) {
-              finishReason = parsed.finish_reason
-            }
-          } catch {
-            // Skip malformed
-          }
-        }
-
-        if (!rafScheduled) {
-          rafScheduled = true
-          const snapshot = fullContent
-          const reasoningSnapshot = fullReasoning
-          const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
-          requestAnimationFrame(() => {
-            setChatMessages((prev) =>
-              prev.map((m) => (m.id === aiMsgId ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined } : m))
-            )
-            rafScheduled = false
-          })
-        }
-      }
-
-      if (buffer.trim()) {
-        const trimmed = buffer.trim()
-        if (trimmed.startsWith("data: ") && trimmed.slice(6) !== "[DONE]") {
-          try {
-            const parsed = JSON.parse(trimmed.slice(6))
-            if (parsed.error) {
-              fullContent += `\n⚠️ ${parsed.error}`
-            } else if (parsed.content) {
-              fullContent += parsed.content
-            }
-            if (parsed.reasoning) {
-              fullReasoning += parsed.reasoning
-            }
-          } catch {
-            // Skip malformed
-          }
-        }
-      }
-
-      if (!fullContent) fullContent = "抱歉，未能获取到回复。"
-
-      // 检测是否因 token 上限导致截断
-      if (finishReason === "length") {
-        fullContent += "\n\n---\n⚠️ **回答被截断**：已达到模型最大输出长度限制。你可以发送「继续」来获取剩余内容。"
-      }
-
-      // 从 content 中解析「## 思考过程」（兼容不支持 reasoning_content 的模型）
-      const parsedFinal = parseReasoningFromContent(fullContent, fullReasoning)
-      fullContent = parsedFinal.content
-      fullReasoning = parsedFinal.reasoning
-
-      const docUpdateMatch = fullContent.match(/<doc-update>([\s\S]*?)<\/doc-update>/)
-      let docUpdate: ChatMessage["docUpdate"] | undefined
-      if (docUpdateMatch && activeFile) {
-        docUpdate = { content: docUpdateMatch[1].trim(), status: "pending" }
-        fullContent = fullContent.replace(/<doc-update>[\s\S]*?<\/doc-update>/, "").trim()
-      }
-
-      setChatMessages((prev) =>
-        prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate, ragSources, webSources, reasoning: fullReasoning || undefined } : m))
-      )
-    } catch (err: unknown) {
-      // 用户中断（新建对话等）时不显示错误
-      if (err instanceof DOMException && err.name === "AbortError") return
-      const msg = err instanceof Error ? err.message : "网络错误"
-      setChatMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, content: `⚠️ 请求异常: ${msg}，请检查网络连接和 API 配置。` }
-            : m
-        )
-      )
-    } finally {
-      abortControllerRef.current = null
-    }
-  }
-
-  const handleSendMessage = async () => {
-    const text = chatInput.trim()
-    if (!text || chatLoading) return
-
-    // ─── PPT Intent Detection (via Supervisor) ───
-    const intent = detectIntent(text, { hasPptSession: !!pptSession?.active })
-    if (intent.type === "ppt") {
-      setChatInput("")
-      pptFlow.startPptFlow(text)
-      return
-    }
-
-    const textSnapshot = selectedText
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: text,
-      timestamp: new Date(),
-      ...(textSnapshot ? { quotedText: textSnapshot } : {}),
-    }
-    const aiMsgId = `ai-${Date.now()}`
-    const aiMsg: ChatMessage = {
-      id: aiMsgId,
-      role: "assistant",
-      content: "",
-      timestamp: new Date(),
-    }
-    const newMessages = [...chatMessages, userMsg]
-    setChatMessages([...newMessages, aiMsg])
-    setChatInput("")
-    setChatLoading(true)
-    isStreamingRef.current = true
-
-    setSelectedText("")
-
-    await streamAI(newMessages, aiMsgId, deepThinkMode, textSnapshot || undefined)
-    isStreamingRef.current = false
-    setChatLoading(false)
-  }
-
-  const isStreamingRef = React.useRef(false)
-  const abortControllerRef = React.useRef<AbortController | null>(null)
-
-  const handleStopGeneration = React.useCallback(() => {
-    // 停止 AI 流式回复
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-    }
-    // 停止 PPT 生成
-    if (pptAbortRef.current) {
-      pptAbortRef.current.abort()
-      pptAbortRef.current = null
-    }
-    isStreamingRef.current = false
-    setChatLoading(false)
-    setGenerating(false)
-  }, [pptAbortRef])
-
   const handleChatScroll = React.useCallback(() => {
     const el = chatScrollRef.current
     if (!el) return
@@ -1368,20 +974,34 @@ selectFile(target)
     if (!msg?.docUpdate || !activeFile) return
 
     const newContent = msg.docUpdate.content
-    setFileContent(newContent)
-    setEditContent(newContent)
-    const blob = new Blob([newContent], { type: "text/markdown" })
-    const file = new File([blob], activeFile)
-    const formData = new FormData()
-    formData.append("file", file)
-    await fetch(
-      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(activeFile)}`,
-      { method: "DELETE" }
-    )
-    await fetch(
-      `/api/projects/${encodeURIComponent(projectId)}/files`,
-      { method: "POST", body: formData }
-    )
+    fileCache.setFileContent(activeFile, newContent)
+
+    // 使用 PUT 原子更新替代之前的 DELETE + POST 两步操作
+    // 避免竞态条件：若 DELETE 成功但 POST 失败，文件会丢失
+    // 发送 JSON body（与 PUT route handler 的 request.json() 匹配）
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/files/${activeFile
+          .split("/")
+          .map((s) => encodeURIComponent(s))
+          .join("/")}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: newContent }),
+        }
+      )
+      if (!res.ok) {
+        // PUT 失败时回退：不更新 UI 状态
+        const data = await res.json().catch(() => ({}))
+        showToast("error", `更新失败: ${data.error || "未知错误"}`)
+        return
+      }
+    } catch (err) {
+      showToast("error", "网络错误，文档更新失败")
+      return
+    }
+
     setChatMessages((prev) =>
       prev.map((m) =>
         m.id === msgId ? { ...m, docUpdate: { ...m.docUpdate!, status: "applied" } } : m
@@ -1399,217 +1019,6 @@ selectFile(target)
       )
     )
     showToast("success", "已退回修改")
-  }
-
-  // ─── AI Note Generation ───
-
-  const handleGenerate = async (type: string) => {
-    const config = getAIConfig()
-    if (!config) {
-      showToast("error", "请先配置 API Key")
-      return
-    }
-
-    const { GENERATE_TEMPLATES } = await import("./notebook/types")
-    const templateLabel = GENERATE_TEMPLATES.find((t) => t.type === type)?.label || "AI 生成"
-    const aiMsgId = `gen-${Date.now()}`
-
-    const userMsg: ChatMessage = {
-      id: `user-gen-${Date.now()}`,
-      role: "user",
-      content: `生成${templateLabel}`,
-      timestamp: new Date(),
-    }
-    const aiMsg: ChatMessage = {
-      id: aiMsgId,
-      role: "assistant",
-      content: "",
-      timestamp: new Date(),
-      generateMeta: { type, label: templateLabel, done: false },
-    }
-    setChatMessages((prev) => [...prev, userMsg, aiMsg])
-    setChatLoading(true)
-    setGenerating(true)
-    isStreamingRef.current = true
-
-    try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type,
-          apiKey: config.apiKey,
-          apiBase: config.apiBase,
-          model: chatModel,
-          deepThink: deepThinkMode,
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setChatMessages((prev) =>
-          prev.map((m) =>
-            m.id === aiMsgId
-              ? { ...m, content: `⚠️ ${data.error || "生成失败"}`, generateMeta: { type, label: templateLabel, done: true } }
-              : m
-          )
-        )
-        return
-      }
-
-      const reader = res.body?.getReader()
-      if (!reader) {
-        setChatMessages((prev) =>
-          prev.map((m) =>
-            m.id === aiMsgId
-              ? { ...m, content: "⚠️ 无法读取响应流", generateMeta: { type, label: templateLabel, done: true } }
-              : m
-          )
-        )
-        return
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ""
-      let fullContent = ""
-      let fullReasoning = ""
-      let rafScheduled = false
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith("data: ")) continue
-          const data = trimmed.slice(6)
-          if (data === "[DONE]") continue
-
-          try {
-            const parsed = JSON.parse(data)
-            if (parsed.error) {
-              fullContent += `\n⚠️ ${parsed.error}`
-            } else if (parsed.content) {
-              fullContent += parsed.content
-            }
-            if (parsed.reasoning) {
-              fullReasoning += parsed.reasoning
-            }
-          } catch {
-            // skip
-          }
-        }
-
-        if (!rafScheduled) {
-          rafScheduled = true
-          const snapshot = fullContent
-          const reasoningSnapshot = fullReasoning
-          const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
-          requestAnimationFrame(() => {
-            setChatMessages((prev) =>
-              prev.map((m) => (m.id === aiMsgId ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined } : m))
-            )
-            rafScheduled = false
-          })
-        }
-      }
-
-      if (!fullContent) fullContent = "未能生成内容，请重试。"
-
-      // 从 content 中解析「## 思考过程」
-      const parsedFinal = parseReasoningFromContent(fullContent, fullReasoning)
-      fullContent = parsedFinal.content
-      fullReasoning = parsedFinal.reasoning
-
-      setChatMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, content: fullContent, reasoning: fullReasoning || undefined, generateMeta: { type, label: templateLabel, done: true } }
-            : m
-        )
-      )
-    } catch {
-      setChatMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, content: "⚠️ 网络错误，请重试", generateMeta: { type, label: templateLabel, done: true } }
-            : m
-        )
-      )
-    } finally {
-      setGenerating(false)
-      setChatLoading(false)
-      isStreamingRef.current = false
-    }
-  }
-
-  const handleSaveGenerated = async (msgId: string) => {
-    const msg = chatMessages.find((m) => m.id === msgId)
-    if (!msg?.content) return
-    const label = msg.generateMeta?.label || "AI笔记"
-    const filename = `${label}-${new Date().toISOString().slice(0, 10)}.md`
-
-    try {
-      const blob = new Blob([msg.content], { type: "text/markdown" })
-      const file = new File([blob], filename, { type: "text/markdown" })
-      const formData = new FormData()
-      formData.append("file", file)
-
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
-        method: "POST",
-        body: formData,
-      })
-      if (res.ok) {
-        showToast("success", `已保存为「${filename}」`)
-        await fetchFiles()
-      } else {
-        showToast("error", "保存失败")
-      }
-    } catch {
-      showToast("error", "保存失败")
-    }
-  }
-
-  const handleCopyGenerated = async (msgId: string) => {
-    const msg = chatMessages.find((m) => m.id === msgId)
-    if (!msg?.content) return
-    try {
-      await navigator.clipboard.writeText(msg.content)
-      showToast("success", "已复制到剪贴板")
-    } catch {
-      showToast("error", "复制失败")
-    }
-  }
-
-  const handleRegenerateGuide = (type: string) => {
-    handleGenerate(type)
-  }
-
-  const handleRegenerateChat = async (msgId: string) => {
-    if (chatLoading || generating) return
-
-    const msgIndex = chatMessages.findIndex((m) => m.id === msgId)
-    if (msgIndex < 0) return
-
-    const preceding = chatMessages.slice(0, msgIndex)
-    const newAiMsgId = `ai-${Date.now()}`
-    const newAiMsg: ChatMessage = {
-      id: newAiMsgId,
-      role: "assistant",
-      content: "",
-      timestamp: new Date(),
-    }
-    setChatMessages([...preceding, newAiMsg])
-    setChatLoading(true)
-    isStreamingRef.current = true
-
-    await streamAI(preceding, newAiMsgId, deepThinkMode)
-    isStreamingRef.current = false
-    setChatLoading(false)
   }
 
   // ─── Active file title ───
@@ -1643,6 +1052,7 @@ selectFile(target)
           isDragging={isDragging}
           deleting={deleting}
           fileInputRef={fileInputRef}
+          recentFiles={recentFiles}
           onBack={() => router.push("/docs/projects")}
           onSelectFile={selectFile}
           onDeleteRequest={(filename: string) => {
@@ -1685,6 +1095,7 @@ selectFile(target)
                     files={files}
                     activeFile={activeFile}
                     deleting={deleting}
+                    recentFiles={recentFiles}
                     onSelectFile={selectFile}
                     onDeleteRequest={(filename: string) => {
                       deleteTargetRef.current = filename
@@ -1774,7 +1185,13 @@ selectFile(target)
                         variant="ghost"
                         size="sm"
                         className="gap-1.5 text-xs"
-                        onClick={() => { setEditContent(fileContent); setEditMode(false) }}
+                        onClick={() => {
+                          if (editContent !== fileContent) {
+                            if (!window.confirm("有未保存的编辑内容，确定要放弃吗？")) return
+                          }
+                          setEditContent(fileContent)
+                          setEditMode(false)
+                        }}
                       >
                         <IconX className="size-3.5" />
                         取消
@@ -1835,13 +1252,17 @@ selectFile(target)
                   <p className="text-sm">选择一个文件开始阅读</p>
                 </div>
               ) : editMode ? (
-                <div className="h-full p-4">
-                  <RichTextEditor content={editContent} onChange={setEditContent} />
-                </div>
+                <ErrorBoundary section="编辑器">
+                  <div className="h-full p-4">
+                    <RichTextEditor content={editContent} onChange={setEditContent} />
+                  </div>
+                </ErrorBoundary>
               ) : (
-                <div className="mx-auto max-w-5xl p-6">
-                  <MarkdownRenderer content={fileContent} />
-                </div>
+                <ErrorBoundary section="文档渲染">
+                  <div className="mx-auto max-w-5xl p-6">
+                    <MarkdownRenderer content={fileContent} />
+                  </div>
+                </ErrorBoundary>
               )}
             </div>
               {/* Reading mode panel */}
@@ -1868,6 +1289,7 @@ selectFile(target)
         </div>
 
         {/* ─── Right: AI Chat Panel ─── */}
+        <ErrorBoundary section="AI 助手">
         <ChatPanel
           projectName={currentProjectName}
           projectId={projectId}
@@ -1907,7 +1329,7 @@ selectFile(target)
           onSetChatInput={setChatInput}
           onSendMessage={handleSendMessage}
           onStopGeneration={handleStopGeneration}
-          onToggleDeepThink={() => setDeepThinkMode((v) => !v)}
+          onToggleDeepThink={handleToggleDeepThink}
           selectedText={selectedText}
           onClearSelectedText={() => setSelectedText("")}
           onStartNewConversation={startNewConversation}
@@ -1937,7 +1359,47 @@ selectFile(target)
           onPptGuideClick={() => pptFlow.startPptFlow(selectedText ? `基于选中内容生成 PPT：${selectedText.slice(0, 100)}` : "生成 PPT")}
           onPptCancel={pptFlow.handlePptCancel}
         />
+        </ErrorBoundary>
       </div>
+
+      {/* ─── Unsaved Changes Confirmation Dialog ─── */}
+      <AlertDialog
+        open={!!pendingFileSwitch}
+        onOpenChange={(open) => {
+          if (!open) setPendingFileSwitch(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>有未保存的更改</AlertDialogTitle>
+            <AlertDialogDescription>
+              当前文件有未保存的编辑内容，切换文件将丢失这些更改。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续编辑</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const target = pendingFileSwitch
+                setPendingFileSwitch(null)
+                if (target) {
+                  setEditContent(fileContent)
+                  setActiveFile(target)
+                  setEditMode(false)
+                  fileCache.loadFileContent(target)
+                  setRecentFiles((prev) => {
+                    const filtered = prev.filter((f) => f !== target)
+                    return [target, ...filtered].slice(0, 10)
+                  })
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              放弃更改
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ─── Delete Confirmation Dialog ─── */}
       <AlertDialog
@@ -2022,18 +1484,8 @@ selectFile(target)
         </DialogContent>
       </Dialog>
 
-      {/* ─── Toast ─── */}
-      {toast && (
-        <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2">
-          <div
-            className={`px-4 py-2 text-sm text-white shadow-lg ${
-              toast.type === "success" ? "bg-green-600" : "bg-red-600"
-            }`}
-          >
-            {toast.msg}
-          </div>
-        </div>
-      )}
+      {/* ─── Toast Queue ─── */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </TooltipProvider>
   )
 }

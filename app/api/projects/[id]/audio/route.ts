@@ -96,7 +96,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   if (!hasProvidedScript) {
     // ─── 读取项目文档 ───
-    const allFiles = await listFiles(`projects/${projectId}/`)
+    const allFiles = await listFiles(`projects/${projectId}/`, true)
     mdFiles = allFiles.filter(
       (f) =>
         !f.pathname.endsWith("/meta.json") &&
@@ -109,11 +109,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return Response.json({ error: "项目中没有可用的文档" }, { status: 400 })
     }
 
+    const projectPrefix = `projects/${projectId}/`
     const documents: string[] = []
     for (const file of mdFiles) {
       const content = await readFile(file.pathname)
       if (content && content.trim().length > 0) {
-        const filename = file.pathname.split("/").pop() || file.pathname
+        const filename = file.pathname.slice(projectPrefix.length)
         documents.push(`--- 文档: ${filename} ---\n${content}`)
       }
     }

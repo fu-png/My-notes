@@ -55,7 +55,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   // 1. 读取项目所有文档
-  const allFiles = await listFiles(`projects/${projectId}/`)
+  const allFiles = await listFiles(`projects/${projectId}/`, true)
   let mdFiles = allFiles.filter(
     (f) =>
       !f.pathname.endsWith("/meta.json") &&
@@ -64,8 +64,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       (f.pathname.endsWith(".md") || f.pathname.endsWith(".txt") || f.pathname.endsWith(".markdown"))
   )
 
+  const projectPrefix = `projects/${projectId}/`
   if (selectedFiles && selectedFiles.length > 0) {
-    mdFiles = mdFiles.filter((f) => selectedFiles.includes(f.pathname.split("/").pop() || ""))
+    mdFiles = mdFiles.filter((f) => selectedFiles.includes(f.pathname.slice(projectPrefix.length)))
   }
 
   if (mdFiles.length === 0) {

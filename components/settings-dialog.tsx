@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import {
   Tooltip,
@@ -39,159 +40,74 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// ─── Storage Keys ───
+// Re-export all config utilities from the decoupled module for backward compatibility.
+// New consumers should import directly from "@/lib/ai-config".
+export {
+  getAIConfig,
+  getTTSConfig,
+  isAIConfigured,
+  getConfiguredModel,
+  getImageConfig,
+  isImageConfigured,
+  getPersonaPrompt,
+  getUserName,
+  getProviderList,
+  switchActiveProvider,
+  PROVIDER_PRESETS,
+  TTS_VOICE_OPTIONS,
+  DEFAULT_API_BASE,
+  DEFAULT_MODEL,
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_VOICE_HOST,
+  DEFAULT_TTS_VOICE_EXPERT,
+  DEFAULT_IMAGE_API_BASE,
+  DEFAULT_IMAGE_MODEL,
+  STORAGE_KEY_API_KEY,
+  STORAGE_KEY_API_BASE,
+  STORAGE_KEY_MODEL,
+  STORAGE_KEY_TTS_API_KEY,
+  STORAGE_KEY_TTS_API_BASE,
+  STORAGE_KEY_TTS_MODEL,
+  STORAGE_KEY_TTS_VOICE_HOST,
+  STORAGE_KEY_TTS_VOICE_EXPERT,
+  STORAGE_KEY_IMAGE_API_KEY,
+  STORAGE_KEY_IMAGE_API_BASE,
+  STORAGE_KEY_IMAGE_MODEL,
+  STORAGE_KEY_PERSONA,
+  STORAGE_KEY_USER_NAME,
+  STORAGE_KEY_PROVIDERS,
+  STORAGE_KEY_ACTIVE_PROVIDER,
+} from "@/lib/ai-config"
 
-const STORAGE_KEY_API_KEY = "ai-assistant-api-key"
-const STORAGE_KEY_API_BASE = "ai-assistant-api-base"
-const STORAGE_KEY_MODEL = "ai-assistant-model"
+import type { ProviderInfo } from "@/lib/ai-config"
+export type { ProviderInfo }
 
-// TTS 配置
-const STORAGE_KEY_TTS_API_KEY = "ai-tts-api-key"
-const STORAGE_KEY_TTS_API_BASE = "ai-tts-api-base"
-const STORAGE_KEY_TTS_MODEL = "ai-tts-model"
-const STORAGE_KEY_TTS_VOICE_HOST = "ai-tts-voice-host"
-const STORAGE_KEY_TTS_VOICE_EXPERT = "ai-tts-voice-expert"
-
-// 生图模型配置
-const STORAGE_KEY_IMAGE_API_KEY = "ai-image-api-key"
-const STORAGE_KEY_IMAGE_API_BASE = "ai-image-api-base"
-const STORAGE_KEY_IMAGE_MODEL = "ai-image-model"
-
-// ─── Defaults ───
-
-const DEFAULT_API_BASE = "https://api.openai.com/v1"
-const DEFAULT_MODEL = "gpt-4o-mini"
-const DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
-const DEFAULT_TTS_VOICE_HOST = "冰糖"
-const DEFAULT_TTS_VOICE_EXPERT = "苏打"
-const DEFAULT_IMAGE_API_BASE = "https://www.hfsyapi.cn"
-const DEFAULT_IMAGE_MODEL = "gpt-image-2"
-
-// ─── Provider Presets ───
-
-const PROVIDER_PRESETS = [
-  { name: "OpenAI", apiBase: "https://api.openai.com/v1", models: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1", "o4-mini"] },
-  { name: "DeepSeek", apiBase: "https://api.deepseek.com", models: ["deepseek-chat", "deepseek-reasoner"] },
-  { name: "硅基流动", apiBase: "https://api.siliconflow.cn/v1", models: ["deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"] },
-  { name: "Moonshot", apiBase: "https://api.moonshot.cn/v1", models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
-  { name: "通义千问", apiBase: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen-plus", "qwen-turbo", "qwen-max"] },
-  { name: "智谱 GLM", apiBase: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-flash", "glm-4-air", "glm-4"] },
-  { name: "自定义", apiBase: "", models: [] },
-]
-
-// ─── TTS Voice Options ───
-
-const TTS_VOICE_OPTIONS = [
-  { value: "冰糖", label: "冰糖（中文女声）" },
-  { value: "茉莉", label: "茉莉（中文女声）" },
-  { value: "苏打", label: "苏打（中文男声）" },
-  { value: "白桦", label: "白桦（中文男声）" },
-  { value: "Mia", label: "Mia（英文女声）" },
-  { value: "Chloe", label: "Chloe（英文女声）" },
-  { value: "Milo", label: "Milo（英文男声）" },
-  { value: "Dean", label: "Dean（英文男声）" },
-]
-
-// ─── Multi-provider Utility Functions ───
-
-const STORAGE_KEY_PROVIDERS = "ai-assistant-providers"
-const STORAGE_KEY_ACTIVE_PROVIDER = "ai-assistant-active-provider"
-
-export interface ProviderInfo {
-  id: string
-  model: string
-  apiBase: string
-  isActive: boolean
-}
-
-/** Get all configured providers for model switching */
-export function getProviderList(): ProviderInfo[] {
-  if (typeof window === "undefined") return []
-  const raw = localStorage.getItem(STORAGE_KEY_PROVIDERS)
-  if (!raw) return []
-  try {
-    const providers = JSON.parse(raw) as { id: string; model: string; apiBase: string; apiKey: string }[]
-    const activeId = localStorage.getItem(STORAGE_KEY_ACTIVE_PROVIDER) || ""
-    return providers
-      .filter((p) => p.apiKey && p.model)
-      .map((p) => ({ id: p.id, model: p.model, apiBase: p.apiBase, isActive: p.id === activeId }))
-  } catch {
-    return []
-  }
-}
-
-/** Switch active provider and sync to legacy keys */
-export function switchActiveProvider(providerId: string): string | null {
-  if (typeof window === "undefined") return null
-  const raw = localStorage.getItem(STORAGE_KEY_PROVIDERS)
-  if (!raw) return null
-  try {
-    const providers = JSON.parse(raw) as { id: string; model: string; apiBase: string; apiKey: string }[]
-    const target = providers.find((p) => p.id === providerId)
-    if (!target) return null
-    localStorage.setItem(STORAGE_KEY_ACTIVE_PROVIDER, providerId)
-    localStorage.setItem(STORAGE_KEY_API_KEY, target.apiKey)
-    localStorage.setItem(STORAGE_KEY_API_BASE, target.apiBase || DEFAULT_API_BASE)
-    localStorage.setItem(STORAGE_KEY_MODEL, target.model || DEFAULT_MODEL)
-    window.dispatchEvent(new CustomEvent("ai-config-changed"))
-    return target.model
-  } catch {
-    return null
-  }
-}
-
-// ─── Utility Functions ───
-
-export function getAIConfig() {
-  if (typeof window === "undefined") return null
-  const apiKey = localStorage.getItem(STORAGE_KEY_API_KEY)
-  const apiBase = localStorage.getItem(STORAGE_KEY_API_BASE) || DEFAULT_API_BASE
-  const model = localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL
-  if (!apiKey) return null
-  return { apiKey, apiBase, model }
-}
-
-export function getTTSConfig() {
-  if (typeof window === "undefined") return null
-  const aiConfig = getAIConfig()
-  const ttsApiKey = localStorage.getItem(STORAGE_KEY_TTS_API_KEY) || aiConfig?.apiKey || ""
-  const ttsApiBase = localStorage.getItem(STORAGE_KEY_TTS_API_BASE) || aiConfig?.apiBase || DEFAULT_API_BASE
-  const ttsModel = localStorage.getItem(STORAGE_KEY_TTS_MODEL) || DEFAULT_TTS_MODEL
-  const voiceHost = localStorage.getItem(STORAGE_KEY_TTS_VOICE_HOST) || DEFAULT_TTS_VOICE_HOST
-  const voiceExpert = localStorage.getItem(STORAGE_KEY_TTS_VOICE_EXPERT) || DEFAULT_TTS_VOICE_EXPERT
-
-  if (!ttsApiKey) return null
-  return { apiKey: ttsApiKey, apiBase: ttsApiBase, model: ttsModel, voiceHost, voiceExpert }
-}
-
-export function isAIConfigured(): boolean {
-  if (typeof window === "undefined") return false
-  return !!localStorage.getItem(STORAGE_KEY_API_KEY)
-}
-
-/** Get the configured model name (from settings) */
-export function getConfiguredModel(): string {
-  if (typeof window === "undefined") return DEFAULT_MODEL
-  return localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL
-}
-
-// ─── Image Generation Config ───
-
-export function getImageConfig() {
-  if (typeof window === "undefined") return null
-  const aiConfig = getAIConfig()
-  const imageApiKey = localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || aiConfig?.apiKey || ""
-  const imageApiBase = localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || aiConfig?.apiBase?.replace(/\/v1$/, "") || DEFAULT_IMAGE_API_BASE
-  const imageModel = localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL
-  if (!imageApiKey) return null
-  return { apiKey: imageApiKey, apiBase: imageApiBase, model: imageModel }
-}
-
-export function isImageConfigured(): boolean {
-  if (typeof window === "undefined") return false
-  const aiConfig = getAIConfig()
-  return !!(localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || aiConfig?.apiKey)
-}
+import {
+  PROVIDER_PRESETS,
+  TTS_VOICE_OPTIONS,
+  DEFAULT_API_BASE,
+  DEFAULT_MODEL,
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_VOICE_HOST,
+  DEFAULT_TTS_VOICE_EXPERT,
+  DEFAULT_IMAGE_API_BASE,
+  DEFAULT_IMAGE_MODEL,
+  STORAGE_KEY_API_KEY,
+  STORAGE_KEY_API_BASE,
+  STORAGE_KEY_MODEL,
+  STORAGE_KEY_TTS_API_KEY,
+  STORAGE_KEY_TTS_API_BASE,
+  STORAGE_KEY_TTS_MODEL,
+  STORAGE_KEY_TTS_VOICE_HOST,
+  STORAGE_KEY_TTS_VOICE_EXPERT,
+  STORAGE_KEY_IMAGE_API_KEY,
+  STORAGE_KEY_IMAGE_API_BASE,
+  STORAGE_KEY_IMAGE_MODEL,
+  STORAGE_KEY_PERSONA,
+  STORAGE_KEY_USER_NAME,
+  STORAGE_KEY_PROVIDERS,
+  STORAGE_KEY_ACTIVE_PROVIDER,
+} from "@/lib/ai-config"
 
 // ─── Component ───
 
@@ -221,6 +137,10 @@ export function SettingsDialog() {
   const [imageApiBase, setImageApiBase] = React.useState(DEFAULT_IMAGE_API_BASE)
   const [imageModel, setImageModel] = React.useState(DEFAULT_IMAGE_MODEL)
   const [useSameImageKey, setUseSameImageKey] = React.useState(true)
+
+  // AI 个性 / Persona
+  const [personaPrompt, setPersonaPrompt] = React.useState("")
+  const [userName, setUserName] = React.useState("")
 
   // 可选模型列表（基于当前 provider）
   const [modelOptions, setModelOptions] = React.useState<string[]>([])
@@ -258,6 +178,9 @@ export function SettingsDialog() {
       setImageApiBase(localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || DEFAULT_IMAGE_API_BASE)
       setImageModel(localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL)
       setUseSameImageKey(!savedImageKey)
+
+      setPersonaPrompt(localStorage.getItem(STORAGE_KEY_PERSONA) || "")
+      setUserName(localStorage.getItem(STORAGE_KEY_USER_NAME) || "")
 
       setSaved(false)
     }
@@ -301,6 +224,18 @@ export function SettingsDialog() {
       localStorage.setItem(STORAGE_KEY_IMAGE_API_BASE, imageApiBase.trim() || DEFAULT_IMAGE_API_BASE)
     }
     localStorage.setItem(STORAGE_KEY_IMAGE_MODEL, imageModel.trim() || DEFAULT_IMAGE_MODEL)
+
+    // Persona
+    if (userName.trim()) {
+      localStorage.setItem(STORAGE_KEY_USER_NAME, userName.trim())
+    } else {
+      localStorage.removeItem(STORAGE_KEY_USER_NAME)
+    }
+    if (personaPrompt.trim()) {
+      localStorage.setItem(STORAGE_KEY_PERSONA, personaPrompt.trim())
+    } else {
+      localStorage.removeItem(STORAGE_KEY_PERSONA)
+    }
 
     setSaved(true)
     window.dispatchEvent(new CustomEvent("ai-config-changed"))
@@ -544,6 +479,44 @@ export function SettingsDialog() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* ─── Section: AI 个性 / Persona ─── */}
+        <div className="space-y-4 py-1">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <IconRobot className="size-4 text-primary" />
+            AI 个性
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            自定义 AI 助手的行为风格和称呼方式，对所有对话生效。
+          </p>
+
+          <div className="space-y-2">
+            <Label htmlFor="user-name">你的昵称</Label>
+            <Input
+              id="user-name"
+              placeholder="你的名字"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="persona-prompt">AI 行为提示词</Label>
+            <Textarea
+              id="persona-prompt"
+              placeholder="例如：请用简洁专业的风格回答，避免使用过多表情。偏好用英文回答技术问题。"
+              value={personaPrompt}
+              onChange={(e) => setPersonaPrompt(e.target.value)}
+              rows={3}
+              className="resize-none"
+            />
+            <p className="text-xs text-muted-foreground">
+              可以指定 AI 的回答风格、语言偏好、专业领域等。留空则使用默认行为。
+            </p>
           </div>
         </div>
 

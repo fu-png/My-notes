@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
     "/api/projects": ["./content/**/*"],
     "/api/projects/[id]": ["./content/**/*"],
     "/api/projects/[id]/files": ["./content/**/*"],
-    "/api/projects/[id]/files/[filename]": ["./content/**/*"],
+    "/api/projects/[id]/files/[[...pathname]]": ["./content/**/*"],
     "/api/uploads": ["./content/**/*"],
     "/api/uploads/[filename]": ["./content/**/*"],
   },

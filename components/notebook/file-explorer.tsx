@@ -8,6 +8,8 @@ import {
   IconLoader2,
   IconChevronLeft,
   IconDotsVertical,
+  IconFileText,
+  IconFolder,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -28,6 +30,157 @@ import { getFileIcon } from "./types"
 
 const FILE_INPUT_ACCEPT = ".md,.txt,.json,.yaml,.yml,.csv,.tsv,.xml,.html,.htm,.js,.ts,.jsx,.tsx,.css,.py,.go,.java,.rs,.sh,.toml,.ini,.env,.log,.pdf,.docx,.xlsx,.pptx"
 
+function formatRelativeTime(timestamp: number): string {
+  const diffMs = Date.now() - timestamp
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 1) return "刚刚"
+  if (diffMins < 60) return `${diffMins}分钟前`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}小时前`
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 7) return `${diffDays}天前`
+  return new Date(timestamp).toLocaleDateString("zh-CN")
+}
+
+// ─── Tree structure for subdirectories ───
+
+interface TreeNode {
+  name: string
+  path: string
+  isDir: boolean
+  children: TreeNode[]
+  file?: DocFile
+  lastModified?: number
+}
+
+function buildFileTree(files: DocFile[]): TreeNode {
+  const root: TreeNode = { name: "", path: "", isDir: true, children: [] }
+
+  for (const file of files) {
+    const parts = file.filename.split("/")
+    let current = root
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]
+      const isLast = i === parts.length - 1
+      const pathSoFar = parts.slice(0, i + 1).join("/")
+
+      if (isLast) {
+        // File node
+        current.children.push({
+          name: part,
+          path: pathSoFar,
+          isDir: false,
+          children: [],
+          file,
+          lastModified: file.lastModified,
+        })
+      } else {
+        // Directory node
+        let dir = current.children.find((c) => c.isDir && c.name === part)
+        if (!dir) {
+          dir = {
+            name: part,
+            path: pathSoFar,
+            isDir: true,
+            children: [],
+            lastModified: file.lastModified,
+          }
+          current.children.push(dir)
+        }
+        // Update directory lastModified to most recent child
+        if (file.lastModified && (dir.lastModified || 0) < file.lastModified) {
+          dir.lastModified = file.lastModified
+        }
+        current = dir
+      }
+    }
+  }
+
+  // Sort: directories first, then by lastModified desc
+  function sortTree(node: TreeNode) {
+    node.children.sort((a, b) => {
+      if (a.isDir && !b.isDir) return -1
+      if (!a.isDir && b.isDir) return 1
+      return (b.lastModified || 0) - (a.lastModified || 0)
+    })
+    node.children.forEach(sortTree)
+  }
+  sortTree(root)
+
+  return root
+}
+
+// ─── Directory Item ───
+
+interface DirItemProps {
+  node: TreeNode
+  level: number
+  activeFile: string | null
+  deleting: string | null
+  expandedDirs: Set<string>
+  onToggleDir: (path: string) => void
+  onSelectFile: (filename: string) => void
+  onDeleteRequest: (filename: string) => void
+}
+
+const DirItem = React.memo(function DirItem({
+  node,
+  level,
+  activeFile,
+  deleting,
+  expandedDirs,
+  onToggleDir,
+  onSelectFile,
+  onDeleteRequest,
+}: DirItemProps) {
+  if (!node.isDir) return null
+  const isExpanded = expandedDirs.has(node.path)
+
+  return (
+    <div>
+      <button
+        onClick={() => onToggleDir(node.path)}
+        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+        style={{ paddingLeft: `${12 + level * 12}px` }}
+      >
+        <span className="text-[10px]">{isExpanded ? "▼" : "▶"}</span>
+        <IconFolder className="size-3.5 shrink-0 text-muted-foreground/70" />
+        <span className="truncate">{node.name}</span>
+      </button>
+      {isExpanded && (
+        <div>
+          {node.children.map((child) =>
+            child.isDir ? (
+              <DirItem
+                key={child.path}
+                node={child}
+                level={level + 1}
+                activeFile={activeFile}
+                deleting={deleting}
+                expandedDirs={expandedDirs}
+                onToggleDir={onToggleDir}
+                onSelectFile={onSelectFile}
+                onDeleteRequest={onDeleteRequest}
+              />
+            ) : child.file ? (
+              <FileItem
+                key={child.path}
+                file={child.file}
+                isActive={activeFile === child.file.filename}
+                deleting={deleting}
+                onSelect={onSelectFile}
+                onDeleteRequest={onDeleteRequest}
+                level={level + 1}
+              />
+            ) : null
+          )}
+        </div>
+      )}
+    </div>
+  )
+})
+
 // ─── File Item (shared between desktop and mobile sidebar) ───
 
 interface FileItemProps {
@@ -36,6 +189,7 @@ interface FileItemProps {
   deleting: string | null
   onSelect: (filename: string) => void
   onDeleteRequest: (filename: string) => void
+  level?: number
 }
 
 const FileItem = React.memo(function FileItem({
@@ -44,6 +198,7 @@ const FileItem = React.memo(function FileItem({
   deleting,
   onSelect,
   onDeleteRequest,
+  level = 0,
 }: FileItemProps) {
   const isDeleting = deleting === file.filename
 
@@ -54,13 +209,21 @@ const FileItem = React.memo(function FileItem({
           ? "border-l-2 border-primary bg-accent text-accent-foreground"
           : "border-l-2 border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       }`}
+      style={{ paddingLeft: `${12 + level * 12}px` }}
     >
       <button
         onClick={() => onSelect(file.filename)}
         className="flex min-w-0 flex-1 items-center gap-2"
       >
         {getFileIcon(file.filename)}
-        <span className="truncate">{file.title}</span>
+        <div className="flex min-w-0 flex-col text-left">
+          <span className="truncate">{file.title}</span>
+          {file.lastModified ? (
+            <p className="text-[10px] text-muted-foreground/60">
+              {formatRelativeTime(file.lastModified)}
+            </p>
+          ) : null}
+        </div>
       </button>
       <div className="ml-1 w-0 shrink-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:w-6 group-hover:opacity-100">
         <DropdownMenu>
@@ -103,6 +266,7 @@ export interface FileExplorerProps {
   isDragging: boolean
   deleting: string | null
   fileInputRef: React.RefObject<HTMLInputElement | null>
+  recentFiles?: string[]
   onBack: () => void
   onSelectFile: (filename: string) => void
   onDeleteRequest: (filename: string) => void
@@ -123,6 +287,7 @@ export const FileExplorer = React.memo(function FileExplorer({
   isDragging,
   deleting,
   fileInputRef,
+  recentFiles,
   onBack,
   onSelectFile,
   onDeleteRequest,
@@ -133,6 +298,22 @@ export const FileExplorer = React.memo(function FileExplorer({
   onDragLeave,
   onDrop,
 }: FileExplorerProps) {
+  const [expandedDirs, setExpandedDirs] = React.useState<Set<string>>(() => new Set())
+
+  const tree = React.useMemo(() => buildFileTree(files), [files])
+
+  const toggleDir = React.useCallback((path: string) => {
+    setExpandedDirs((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) {
+        next.delete(path)
+      } else {
+        next.add(path)
+      }
+      return next
+    })
+  }, [])
+
   return (
     <div
       className={`relative hidden w-60 shrink-0 flex-col overflow-hidden border-r bg-muted/20 md:flex ${isDragging ? "ring-2 ring-inset ring-primary/50" : ""}`}
@@ -189,6 +370,33 @@ export const FileExplorer = React.memo(function FileExplorer({
       {/* File list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="py-1">
+          {recentFiles && recentFiles.length > 0 && (
+            <div className="mb-3">
+              <p className="mb-1.5 px-1 text-[11px] font-medium tracking-wider text-muted-foreground/60">
+                最近打开
+              </p>
+              <div className="flex flex-wrap gap-1.5 px-1">
+                {recentFiles.map((filename) => {
+                  const file = files.find((f) => f.filename === filename)
+                  if (!file) return null
+                  return (
+                    <button
+                      key={filename}
+                      onClick={() => onSelectFile(filename)}
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                        activeFile === filename
+                          ? "border-primary/30 bg-primary/5 text-primary"
+                          : "border-border bg-background text-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <IconFileText className="size-3 shrink-0 text-muted-foreground" />
+                      <span className="max-w-[120px] truncate">{file.title}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {loadingFiles ? (
             <div className="flex items-center justify-center py-12">
               <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
@@ -205,16 +413,31 @@ export const FileExplorer = React.memo(function FileExplorer({
               )}
             </div>
           ) : (
-            files.map((file) => (
-              <FileItem
-                key={file.filename}
-                file={file}
-                isActive={activeFile === file.filename}
-                deleting={deleting}
-                onSelect={onSelectFile}
-                onDeleteRequest={onDeleteRequest}
-              />
-            ))
+            tree.children.map((node) =>
+              node.isDir ? (
+                <DirItem
+                  key={node.path}
+                  node={node}
+                  level={0}
+                  activeFile={activeFile}
+                  deleting={deleting}
+                  expandedDirs={expandedDirs}
+                  onToggleDir={toggleDir}
+                  onSelectFile={onSelectFile}
+                  onDeleteRequest={onDeleteRequest}
+                />
+              ) : node.file ? (
+                <FileItem
+                  key={node.file.filename}
+                  file={node.file}
+                  isActive={activeFile === node.file.filename}
+                  deleting={deleting}
+                  onSelect={onSelectFile}
+                  onDeleteRequest={onDeleteRequest}
+                  level={0}
+                />
+              ) : null
+            )
           )}
         </div>
       </div>
@@ -252,6 +475,7 @@ export interface MobileFileListProps {
   files: DocFile[]
   activeFile: string | null
   deleting: string | null
+  recentFiles?: string[]
   onSelectFile: (filename: string) => void
   onDeleteRequest: (filename: string) => void
 }
@@ -261,25 +485,56 @@ export const MobileFileList = React.memo(function MobileFileList({
   files,
   activeFile,
   deleting,
+  recentFiles,
   onSelectFile,
   onDeleteRequest,
 }: MobileFileListProps) {
+  const [expandedDirs, setExpandedDirs] = React.useState<Set<string>>(() => new Set())
+  const tree = React.useMemo(() => buildFileTree(files), [files])
+
+  const toggleDir = React.useCallback((path: string) => {
+    setExpandedDirs((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) {
+        next.delete(path)
+      } else {
+        next.add(path)
+      }
+      return next
+    })
+  }, [])
+
   return (
     <>
       <div className="border-b px-3 py-2 text-left">
         <span className="text-sm font-medium">{projectName}</span>
       </div>
       <div className="h-[calc(100vh-4rem)] overflow-y-auto py-1">
-        {files.map((file) => (
-          <FileItem
-            key={file.filename}
-            file={file}
-            isActive={activeFile === file.filename}
-            deleting={deleting}
-            onSelect={onSelectFile}
-            onDeleteRequest={onDeleteRequest}
-          />
-        ))}
+        {tree.children.map((node) =>
+          node.isDir ? (
+            <DirItem
+              key={node.path}
+              node={node}
+              level={0}
+              activeFile={activeFile}
+              deleting={deleting}
+              expandedDirs={expandedDirs}
+              onToggleDir={toggleDir}
+              onSelectFile={onSelectFile}
+              onDeleteRequest={onDeleteRequest}
+            />
+          ) : node.file ? (
+            <FileItem
+              key={node.file.filename}
+              file={node.file}
+              isActive={activeFile === node.file.filename}
+              deleting={deleting}
+              onSelect={onSelectFile}
+              onDeleteRequest={onDeleteRequest}
+              level={0}
+            />
+          ) : null
+        )}
       </div>
     </>
   )
