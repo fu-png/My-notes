@@ -954,6 +954,7 @@ function PptFlowControls({
   const [customPromptText, setCustomPromptText] = React.useState("")
   const [editedOutline, setEditedOutline] = React.useState<PptOutline | null>(null)
   const [showNotesForSlide, setShowNotesForSlide] = React.useState<number | null>(null)
+  const [showCustomCount, setShowCustomCount] = React.useState(false)
 
   // Sync edited outline when meta.outline changes — always sync on new outline
   const outlineJson = meta.outline ? JSON.stringify(meta.outline) : null
@@ -998,26 +999,55 @@ function PptFlowControls({
   if (meta.step === "slide-count") {
     const counts = [5, 6, 7, 8, 10, 12, 15]
     return (
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {counts.map((c) => (
-          <button
-            key={c}
-            className="border border-border px-3 py-1.5 text-[12px] transition-colors hover:bg-primary/5 hover:border-primary/50"
-            onClick={() => onSlideCountSelect(c)}
-          >
-            {c} 页
-          </button>
-        ))}
-        <button
-          className="border border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50"
-          onClick={() => {
-            const input = prompt("输入页数 (3-15):", "8")
-            const n = parseInt(input || "", 10)
-            if (n >= 3 && n <= 15) onSlideCountSelect(n)
-          }}
-        >
-          自定义
-        </button>
+      <div className="mt-2 space-y-1.5">
+        <div className="flex flex-wrap gap-1.5">
+          {counts.map((c) => (
+            <button
+              key={c}
+              className="border border-border px-3 py-1.5 text-[12px] transition-colors hover:bg-primary/5 hover:border-primary/50"
+              onClick={() => onSlideCountSelect(c)}
+            >
+              {c} 页
+            </button>
+          ))}
+          {!showCustomCount && (
+            <button
+              className="border border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50"
+              onClick={() => setShowCustomCount(true)}
+            >
+              自定义
+            </button>
+          )}
+        </div>
+        {showCustomCount && (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min={3}
+              max={15}
+              defaultValue={8}
+              className="w-16 border border-border bg-background px-2 py-1 text-[12px] rounded"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const n = parseInt((e.target as HTMLInputElement).value, 10)
+                  if (n >= 3 && n <= 15) onSlideCountSelect(n)
+                }
+              }}
+              autoFocus
+            />
+            <span className="text-[11px] text-muted-foreground">页 (3-15)</span>
+            <button
+              className="text-[11px] text-primary hover:underline"
+              onClick={() => {
+                const input = document.querySelector<HTMLInputElement>("input[type=number]")
+                const n = parseInt(input?.value || "", 10)
+                if (n >= 3 && n <= 15) onSlideCountSelect(n)
+              }}
+            >
+              确定
+            </button>
+          </div>
+        )}
       </div>
     )
   }
