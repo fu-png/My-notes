@@ -74,11 +74,15 @@ export interface Conversation {
   updatedAt: string
 }
 
-// ─── Chat History Storage ───
+// ─── Chat History Storage (OSS + localStorage cache) ───
 
 const CHAT_HISTORY_KEY = "ai-chat-history"
 
-export function loadConversations(projectId: string): Conversation[] {
+/**
+ * Load conversations: localStorage cache first (instant), then fetch from OSS.
+ * Returns cached data synchronously via callback, then updates with OSS data.
+ */
+export function loadConversationsSync(projectId: string): Conversation[] {
   if (typeof window === "undefined") return []
   try {
     const raw = localStorage.getItem(`${CHAT_HISTORY_KEY}-${projectId}`)
@@ -88,42 +92,87 @@ export function loadConversations(projectId: string): Conversation[] {
   }
 }
 
-export function saveConversations(projectId: string, conversations: Conversation[]) {
-  if (typeof window === "undefined") return
+export async function loadConversations(projectId: string): Promise<Conversation[]> {
   try {
-    // Strip large data URLs from slideImages to avoid exceeding localStorage quota
-    const cleaned = conversations.map((conv) => ({
-      ...conv,
-      messages: conv.messages.map((msg) => {
-        if (!msg.pptMeta?.slideImages) return msg
-        return {
-          ...msg,
-          pptMeta: {
-            ...msg.pptMeta,
-            slideImages: msg.pptMeta.slideImages.map((img) => ({
-              ...img,
-              // Only keep remote URLs, drop base64 data URLs (too large for localStorage)
-              url: img.url && !img.url.startsWith("data:") ? img.url : null,
-            })),
-          },
-        }
-      }),
-    }))
-    localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(cleaned))
-  } catch (e) {
-    // localStorage quota exceeded — try saving without slide images
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/chat-history`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    const conversations = data.conversations || []
+    // Update localStorage cache
     try {
-      const minimal = conversations.map((conv) => ({
-        ...conv,
-        messages: conv.messages.map((msg) => {
-          if (!msg.pptMeta?.slideImages) return msg
-          return { ...msg, pptMeta: { ...msg.pptMeta, slideImages: undefined } }
-        }),
-      }))
-      localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(minimal))
-    } catch {
-      console.error("Failed to save conversations:", e)
+      localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(conversations))
+    } catch { /* ignore quota errors */ }
+    return conversations
+  } catch {
+    // Fallback to localStorage
+    return loadConversationsSync(projectId)
+  }
+}
+
+/** Debounced save state to prevent rapid API calls */
+const _saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+export function saveConversations(projectId: string, conversations: Conversation[]) {
+  // Immediate localStorage cache update (sync, fast)
+  try {
+    const cleaned = cleanConversations(conversations)
+    localStorage.setItem(`${CHAT_HISTORY_KEY}-${projectId}`, JSON.stringify(cleaned))
+  } catch { /* ignore quota errors */ }
+
+  // Debounced OSS save (async, 1.5s delay)
+  const existing = _saveTimers.get(projectId)
+  if (existing) clearTimeout(existing)
+
+  _saveTimers.set(projectId, setTimeout(async () => {
+    _saveTimers.delete(projectId)
+    try {
+      await fetch(`/api/projects/${encodeURIComponent(projectId)}/chat-history`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversations }),
+      })
+    } catch (e) {
+      console.error("[chat-history] OSS save failed:", e)
     }
+  }, 1500))
+}
+
+/** Strip base64 data URLs from slideImages to reduce storage size */
+function cleanConversations(conversations: Conversation[]): Conversation[] {
+  return conversations.map((conv) => ({
+    ...conv,
+    messages: conv.messages.map((msg) => {
+      if (!msg.pptMeta?.slideImages) return msg
+      return {
+        ...msg,
+        pptMeta: {
+          ...msg.pptMeta,
+          slideImages: msg.pptMeta.slideImages.map((img) => ({
+            ...img,
+            url: img.url && !img.url.startsWith("data:") ? img.url : null,
+          })),
+        },
+      }
+    }),
+  }))
+}
+
+/**
+ * Migrate localStorage data to OSS (one-time, on first load).
+ * Call this after loadConversations returns empty from OSS but localStorage has data.
+ */
+export async function migrateLocalToOSS(projectId: string): Promise<void> {
+  const local = loadConversationsSync(projectId)
+  if (local.length === 0) return
+
+  try {
+    await fetch(`/api/projects/${encodeURIComponent(projectId)}/chat-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversations: local }),
+    })
+  } catch (e) {
+    console.error("[chat-history] Migration failed:", e)
   }
 }
 

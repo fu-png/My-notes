@@ -62,7 +62,9 @@ const MarkdownRenderer = dynamic(
 import type { DocFile, ChatMessage, Conversation } from "./notebook/types"
 import {
   loadConversations,
+  loadConversationsSync,
   saveConversations,
+  migrateLocalToOSS,
   countWords,
   WELCOME_MESSAGE,
 } from "./notebook/types"
@@ -294,7 +296,17 @@ const searchParams = useSearchParams()
   const [showHistory, setShowHistory] = React.useState(false)
 
   React.useEffect(() => {
-    setConversations(loadConversations(projectId))
+    // Instant load from localStorage cache
+    setConversations(loadConversationsSync(projectId))
+    // Then fetch from OSS and update (with auto-migration)
+    loadConversations(projectId).then((ossConvs) => {
+      if (ossConvs.length > 0) {
+        setConversations(ossConvs)
+      } else {
+        // OSS is empty but localStorage has data → migrate
+        migrateLocalToOSS(projectId)
+      }
+    })
   }, [projectId])
 
   // Save current conversation
