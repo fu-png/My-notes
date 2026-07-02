@@ -33,6 +33,8 @@ function getOSSClient(): OSS {
       accessKeyId: process.env.OSS_ACCESS_KEY_ID!,
       accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET!,
       bucket: process.env.OSS_BUCKET || "my-notes-fzc",
+      timeout: 120000, // 120s — 默认 60s 在跨区域（Vercel US → OSS Beijing）上传大文件时不够
+      retryCount: 3,
     })
   }
   return _ossClient
