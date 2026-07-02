@@ -1025,14 +1025,14 @@ function PptFlowControls({
             <input
               ref={customCountRef}
               type="number"
-              min={3}
+              min={1}
               max={15}
               defaultValue={8}
               className="w-16 border border-border bg-background px-2 py-1 text-[12px] rounded"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   const n = parseInt((e.target as HTMLInputElement).value, 10)
-                  if (isNaN(n) || n < 3 || n > 15) {
+                  if (isNaN(n) || n < 1 || n > 15) {
                     (e.target as HTMLInputElement).value = "8"
                     return
                   }
@@ -1047,7 +1047,7 @@ function PptFlowControls({
               onClick={() => {
                 const val = customCountRef.current?.value || ""
                 const n = parseInt(val, 10)
-                if (isNaN(n) || n < 3 || n > 15) {
+                if (isNaN(n) || n < 1 || n > 15) {
                   if (customCountRef.current) {
                     customCountRef.current.value = "8"
                     customCountRef.current.focus()
