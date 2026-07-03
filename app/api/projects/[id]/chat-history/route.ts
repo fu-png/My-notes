@@ -81,6 +81,15 @@ export async function POST(
       return NextResponse.json({ error: "conversations must be an array" }, { status: 400 })
     }
 
+    // 限制对话数量，防止过大负载
+    const MAX_CONVERSATIONS = 200
+    if (conversations.length > MAX_CONVERSATIONS) {
+      return NextResponse.json(
+        { error: `对话数量超出限制（最多 ${MAX_CONVERSATIONS} 个）` },
+        { status: 400 }
+      )
+    }
+
     // 清理大数据（base64 图片等）再存储
     const cleaned = conversations.map((conv: Record<string, unknown>) => ({
       ...conv,
@@ -108,7 +117,7 @@ export async function POST(
   } catch (error) {
     console.error("[chat-history] POST error:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "保存失败" },
+      { error: "保存失败" },
       { status: 500 }
     )
   }

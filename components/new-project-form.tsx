@@ -84,9 +84,10 @@ export function NewProjectForm() {
               autoFocus
               className="h-11"
               disabled={loading}
+              aria-label="项目名称"
             />
             {error && (
-              <p className="mt-1.5 text-xs text-destructive">{error}</p>
+              <p className="mt-1.5 text-xs text-destructive" role="alert">{error}</p>
             )}
           </div>
 

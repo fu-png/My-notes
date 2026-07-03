@@ -41,7 +41,7 @@ export async function ingestProject(
   const lock = new Promise<void>((resolve) => { resolveLock = resolve })
   indexingLocks.set(projectId, lock)
   try {
-  const log = onProgress || console.log
+  const log = onProgress || (() => {})
 
   log("正在读取项目文件...")
 
@@ -165,7 +165,7 @@ export async function queryProject(
     decomposeQuery(question, config),
     embedBatch([question], config), // 先为原始问题生成 embedding，分解完成后按需补充
   ])
-  console.log(`[pipeline] 查询分解为 ${decomposed.subQueries.length} 个子查询:`, decomposed.subQueries)
+  console.debug(`[pipeline] 查询分解为 ${decomposed.subQueries.length} 个子查询:`, decomposed.subQueries)
 
   // 2. 检索 — 批量 Embedding + 并行检索
   const subQueries = decomposed.subQueries
@@ -233,7 +233,7 @@ export async function queryProject(
     if (graph && graph.entities.size > 0) {
       const expansion = expandWithGraph(reranked, graph, allChunks, 8)
       if (expansion.results.length > 0) {
-        console.log(`[pipeline] Graph RAG 扩展：${expansion.results.length} 个补充块，${expansion.entities.length} 个相关实体`)
+        console.debug(`[pipeline] Graph RAG 扩展：${expansion.results.length} 个补充块，${expansion.entities.length} 个相关实体`)
         withGraphExpansion = [...reranked, ...expansion.results]
       }
     }
@@ -243,7 +243,7 @@ export async function queryProject(
 
   // 6. 组装上下文
   const context = buildContext(withGraphExpansion, config.maxContextTokens || 12000)
-  console.log(`[pipeline] 组装上下文: ${context.sources.length} 个来源, ${context.totalTokens} tokens`)
+  console.debug(`[pipeline] 组装上下文: ${context.sources.length} 个来源, ${context.totalTokens} tokens`)
 
   return context
 }

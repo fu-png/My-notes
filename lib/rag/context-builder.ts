@@ -51,7 +51,9 @@ export function buildContext(
       if (selected.length > 0) break
       // 如果第一个块就超预算，截断内容以适配 token 预算
       // 使用 estimateTokens 函数进行更精确的截断
-      const maxChars = Math.max(200, (maxTokens - headerOverhead) * 2) // 保守按 1 token ≈ 2 字符（兼顾中文）
+      // 使用与 chunker 一致的比率估算（中文 ~1.5 字符/token，英文 ~4 字符/token）
+      // 取保守值 1.5 以避免超预算
+      const maxChars = Math.max(200, Math.floor((maxTokens - headerOverhead) * 1.5))
       selected.push({
         ...result,
         chunk: {

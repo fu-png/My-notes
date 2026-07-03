@@ -79,6 +79,7 @@ function TocList({
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                 }`}
                 style={{ paddingLeft: `${(heading.level - minLevel) * 12 + 8}px` }}
+                aria-current={activeId === heading.id ? "true" : undefined}
               >
                 {heading.text}
               </a>
@@ -144,7 +145,7 @@ export function TableOfContents({ content }: { content: string }) {
               <span className="pl-1 text-sm font-medium text-foreground">目录</span>
             )}
             <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-7">
+              <Button variant="ghost" size="icon" className="size-7" aria-label={open ? "收起目录" : "展开目录"}>
                 {open ? (
                   <IconChevronLeft className="size-4" />
                 ) : (
@@ -169,7 +170,7 @@ export function TableOfContents({ content }: { content: string }) {
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
           className="fixed bottom-20 right-4 z-50 flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
-          aria-label="展开目录"
+          aria-label={mobileOpen ? "关闭目录" : "展开目录"}
         >
           {mobileOpen ? <IconX className="size-5" /> : <IconList className="size-5" />}
         </button>
@@ -187,6 +188,7 @@ export function TableOfContents({ content }: { content: string }) {
                 <button
                   onClick={() => setMobileOpen(false)}
                   className="p-1 text-muted-foreground hover:text-foreground"
+                  aria-label="关闭目录"
                 >
                   <IconX className="size-4" />
                 </button>

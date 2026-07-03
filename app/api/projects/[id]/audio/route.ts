@@ -116,14 +116,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const projectPrefix = `projects/${projectId}/`
-    const documents: string[] = []
-    for (const file of mdFiles) {
-      const content = await readFile(file.pathname)
-      if (content && content.trim().length > 0) {
-        const filename = file.pathname.slice(projectPrefix.length)
-        documents.push(`--- 文档: ${filename} ---\n${content}`)
-      }
-    }
+    const documentEntries = await Promise.all(
+      mdFiles.map(async (file) => {
+        const content = await readFile(file.pathname)
+        if (content && content.trim().length > 0) {
+          const filename = file.pathname.slice(projectPrefix.length)
+          return `--- 文档: ${filename} ---\n${content}`
+        }
+        return null
+      })
+    )
+    const documents = documentEntries.filter((d): d is string => d !== null)
 
     const fullContent = documents.join("\n\n")
     const maxChars = 60000

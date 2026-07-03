@@ -751,7 +751,7 @@ export function ReadingModePanel({
             <span className="text-[11px] text-muted-foreground">{completedSteps.size}/{STEP_META.length}</span>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-6" onClick={handleReset}>
+                <Button variant="ghost" size="icon" className="size-6" onClick={handleReset} aria-label="重新精读">
                   <IconRefresh className="size-3.5" />
                 </Button>
               </TooltipTrigger>
@@ -771,6 +771,7 @@ export function ReadingModePanel({
                 <button
                   onClick={() => goToStep(i)}
                   disabled={i > currentStep && !completedSteps.has(s.id)}
+                  aria-label={s.title}
                   className={`flex size-7 items-center justify-center rounded-full text-xs transition-all ${
                     i === currentStep
                       ? "bg-primary text-primary-foreground"
@@ -874,11 +875,11 @@ export function ReadingModePanel({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-muted-foreground">滚动速度</span>
                 <div className="flex items-center gap-1.5">
-                  <Button variant="ghost" size="icon" className="size-6" onClick={() => changeSpeed(-1)} disabled={speedLevel === 0}>
+                  <Button variant="ghost" size="icon" className="size-6" onClick={() => changeSpeed(-1)} disabled={speedLevel === 0} aria-label="降低阅读速度">
                     <IconMinus className="size-3" />
                   </Button>
                   <span className="w-8 text-center text-[11px] font-medium">{SPEED_LABELS[speedLevel]}</span>
-                  <Button variant="ghost" size="icon" className="size-6" onClick={() => changeSpeed(1)} disabled={speedLevel === SPEED_VALUES.length - 1}>
+                  <Button variant="ghost" size="icon" className="size-6" onClick={() => changeSpeed(1)} disabled={speedLevel === SPEED_VALUES.length - 1} aria-label="提高阅读速度">
                     <IconPlus className="size-3" />
                   </Button>
                 </div>
@@ -935,6 +936,7 @@ export function ReadingModePanel({
                     <button
                       onClick={() => { setManualNote(false); setSectionNote("") }}
                       className="text-[11px] text-muted-foreground hover:text-foreground"
+                      aria-label="关闭笔记面板"
                     >
                       <IconX className="size-3" />
                     </button>

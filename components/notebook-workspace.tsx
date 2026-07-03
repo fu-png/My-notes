@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { encodeFilePath } from "@/lib/utils"
 import {
   IconFile,
   IconLoader2,
@@ -850,10 +851,7 @@ queueMicrotask(() => selectFile(target))
     setDeleting(filename)
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${filename
-          .split("/")
-          .map((s) => encodeURIComponent(s))
-          .join("/")}`,
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeFilePath(filename)}`,
         { method: "DELETE" }
       )
       if (res.ok) {
@@ -882,10 +880,7 @@ queueMicrotask(() => selectFile(target))
     setSaving(true)
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${activeFile
-          .split("/")
-          .map((s) => encodeURIComponent(s))
-          .join("/")}`,
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeFilePath(activeFile)}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -999,10 +994,7 @@ queueMicrotask(() => selectFile(target))
     // 发送 JSON body（与 PUT route handler 的 request.json() 匹配）
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${activeFile
-          .split("/")
-          .map((s) => encodeURIComponent(s))
-          .join("/")}`,
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeFilePath(activeFile)}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

@@ -44,7 +44,14 @@ export async function decomposeQuery(
   }
 
   try {
-    const baseUrl = config.apiBase.replace(/\/+$/, "")
+    const baseUrl = (config.apiBase || "").replace(/\/+$/, "")
+    if (!baseUrl) {
+      return {
+        original: question,
+        subQueries: [question],
+        reasoning: "API Base URL 未配置",
+      }
+    }
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -106,6 +113,17 @@ export async function decomposeQuery(
   }
 }
 
+/** 预编译复杂度指标正则（仅在模块加载时编译一次） */
+const COMPLEX_INDICATOR_PATTERNS = [
+  "对比", "区别", "不同", "差异", "比较",
+  "哪些", "列举", "总结", "概述", "综合",
+  "分别", "各自", "以及", "和.*的关系",
+  "之间", "还是", "还是说", "同时", "另外", "此外",
+  "vs", "compare", "difference", "versus",
+  "how.*and.*", "what are the", "list",
+  "summarize", "overview", "between", "relation", "impact",
+].map(p => new RegExp(p, "i"))
+
 /** 快速判断是否是简单问题 */
 function isSimpleQuery(question: string): boolean {
   const trimmed = question.trim()
@@ -119,61 +137,7 @@ function isSimpleQuery(question: string): boolean {
   }
 
   // 不包含对比、多概念标志词
-  const complexIndicators = [
-    "对比",
-    "区别",
-    "不同",
-    "差异",
-    "比较",
-    "哪些",
-    "列举",
-    "总结",
-    "概述",
-    "综合",
-    "分别",
-    "各自",
-    "以及",
-    "和.*的关系",
-    "如何",
-    "怎么",
-    "为什么",
-    "原因",
-    "影响",
-    "关系",
-    "联系",
-    "关联",
-    "流程",
-    "步骤",
-    "方案",
-    "方法",
-    "实现",
-    "原理",
-    "机制",
-    "之间",
-    "还是",
-    "还是说",
-    "同时",
-    "另外",
-    "此外",
-    "vs",
-    "compare",
-    "difference",
-    "versus",
-    "how.*and.*",
-    "what are the",
-    "list",
-    "summarize",
-    "overview",
-    "between",
-    "relation",
-    "impact",
-  ]
-
-  const isComplex = complexIndicators.some((indicator) =>
-    new RegExp(indicator, "i").test(trimmed)
-  )
-
-  return !isComplex
+  return !COMPLEX_INDICATOR_PATTERNS.some(re => re.test(trimmed))
 }
 
 /** 解析 LLM 的 JSON 响应 */
@@ -185,7 +149,9 @@ function parseDecomposeResponse(content: string): {
     // 尝试直接解析
     const parsed = JSON.parse(content)
     return {
-      subQueries: Array.isArray(parsed.sub_queries) ? parsed.sub_queries : [],
+      subQueries: Array.isArray(parsed.sub_queries)
+        ? parsed.sub_queries.filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
+        : [],
       reasoning: parsed.reasoning || "",
     }
   } catch {
@@ -196,7 +162,7 @@ function parseDecomposeResponse(content: string): {
         const parsed = JSON.parse(jsonMatch[1].trim())
         return {
           subQueries: Array.isArray(parsed.sub_queries)
-            ? parsed.sub_queries
+            ? parsed.sub_queries.filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
             : [],
           reasoning: parsed.reasoning || "",
         }
@@ -212,7 +178,7 @@ function parseDecomposeResponse(content: string): {
         const parsed = JSON.parse(braceMatch[0])
         return {
           subQueries: Array.isArray(parsed.sub_queries)
-            ? parsed.sub_queries
+            ? parsed.sub_queries.filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
             : [],
           reasoning: parsed.reasoning || "",
         }

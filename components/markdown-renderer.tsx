@@ -112,7 +112,7 @@ function MermaidBlock({ code }: { code: string }) {
 
   if (error) {
     return (
-      <div className="my-4 overflow-x-auto rounded-md border bg-muted/30 p-4">
+      <div className="my-4 overflow-x-auto rounded-md border bg-muted/30 p-4" role="alert">
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="inline-block size-2 rounded-full bg-amber-500" />
           <span>图表语法暂不支持渲染</span>
@@ -124,7 +124,7 @@ function MermaidBlock({ code }: { code: string }) {
 
   if (!svg) {
     return (
-      <div className="flex items-center justify-center rounded-md border bg-muted/20 p-8 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center rounded-md border bg-muted/20 p-8 text-sm text-muted-foreground" role="status" aria-live="polite">
         图表渲染中…
       </div>
     )
@@ -134,9 +134,19 @@ function MermaidBlock({ code }: { code: string }) {
     <div
       ref={containerRef}
       className="my-4 flex justify-center overflow-x-auto rounded-md border bg-background p-4 [&_svg]:max-w-full"
+      role="img"
+      aria-label="Mermaid 图表"
       dangerouslySetInnerHTML={{ __html: svg
         .replace(/<script[\s\S]*?<\/script>/gi, '')
-        .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '') }}
+        .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+        .replace(/<object[\s\S]*?<\/object>/gi, '')
+        .replace(/<embed[\s\S]*?>/gi, '')
+        .replace(/<link[\s\S]*?>/gi, '')
+        .replace(/<base[\s\S]*?>/gi, '')
+        .replace(/<form[\s\S]*?<\/form>/gi, '')
+        .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '')
+        .replace(/\shref\s*=\s*["']javascript:[^"]*["']/gi, '')
+        .replace(/\sxlink:href\s*=\s*["']javascript:[^"]*["']/gi, '') }}
     />
   )
 }

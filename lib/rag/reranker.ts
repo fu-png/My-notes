@@ -74,7 +74,7 @@ async function rerankViaAPI(
 
     return data.results.map((r) => ({
       id: candidates[r.index]?.chunk.id ?? "",
-      score: r.relevance_score * 10, // 归一化到与旧方案一致的 0-10 量纲
+      score: r.relevance_score, // API 路径返回 0-1 原始分
     })).filter((r) => r.id)
   } catch (err) {
     console.warn("[reranker] Rerank API call failed, falling back:", err)
@@ -186,7 +186,7 @@ export async function rerankResults(
     scoreMap.set(s.id, s.score)
   }
 
-  const minScore = usedFallback ? 5 : MIN_RELEVANCE * 10
+  const minScore = usedFallback ? 0.5 : MIN_RELEVANCE
 
   // 对候选项按分数重排序
   const reranked = candidates
@@ -201,7 +201,7 @@ export async function rerankResults(
     .filter((r) => r.llmScore >= minScore)
     .map((r) => ({
       ...r.result,
-      score: r.llmScore / 10,
+      score: usedFallback ? r.llmScore / 10 : r.llmScore,
     }))
 
   // 如果过滤后结果太少，放宽阈值，至少保留合理数量
@@ -209,14 +209,14 @@ export async function rerankResults(
     ? kept
     : reranked.slice(0, Math.min(8, candidates.length)).map((r) => ({
         ...r.result,
-        score: r.llmScore / 10,
+        score: usedFallback ? r.llmScore / 10 : r.llmScore,
       }))
 
   // 追加未参与 rerank 的剩余结果（保持原序），避免丢失候选池外的长尾结果
   const rerankedIds = new Set(candidates.map((r) => r.chunk.id))
   const remaining = results.filter((r) => !rerankedIds.has(r.chunk.id))
 
-  console.log(
+  console.debug(
     `[reranker] (${usedFallback ? "chat-fallback" : "rerank-api"}) Reranked ${candidates.length} candidates, kept ${finalResults.length} after filtering`
   )
 
@@ -272,11 +272,15 @@ function parseRerankResponse(content: string): RerankResult[] {
 
   // 最后手段：用正则从损坏的 JSON 文本中抢救 "id": "xxx" ... "score": n 键值对
   // 应对模型输出语法损坏（多余逗号、缺失括号）但键值本身完整的情况
-  const pairPattern = /"id"\s*:\s*"([^"]+)"[^}]*?"score"\s*:\s*(\d+(?:\.\d+)?)/g
+  const pairPattern = /(?:"id"\s*:\s*"([^"]+)"[^}]*?"score"\s*:\s*(\d+(?:\.\d+)?))|(?:"score"\s*:\s*(\d+(?:\.\d+)?)[^}]*?"id"\s*:\s*"([^"]+)")/g
   const salvaged: RerankResult[] = []
   let match: RegExpExecArray | null
   while ((match = pairPattern.exec(content)) !== null) {
-    salvaged.push({ id: match[1], score: Number(match[2]) })
+    if (match[1] && match[2]) {
+      salvaged.push({ id: match[1], score: Number(match[2]) })
+    } else if (match[3] && match[4]) {
+      salvaged.push({ id: match[4], score: Number(match[3]) })
+    }
   }
   if (salvaged.length > 0) {
     console.warn(`[reranker] Salvaged ${salvaged.length} scores from malformed JSON via regex`)

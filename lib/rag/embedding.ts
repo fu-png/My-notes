@@ -18,6 +18,11 @@ const RATE_LIMIT_RETRY_DELAY_MS = 3000 // 429 限流专用退避基数（比普�
 const BATCH_SIZE = 50 // 每批最多 50 条
 const MAX_CONCURRENCY = 10 // 同时在途的批次请求数上限
 
+// 查询 embedding 缓存：避免重复 API 调用（相同文本短时间内返回相同结果）
+const embeddingCache = new Map<string, { vector: number[]; cachedAt: number }>()
+const EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000 // 10 分钟
+const EMBEDDING_CACHE_MAX_SIZE = 100
+
 interface EmbeddingResponse {
   data: { embedding: number[]; index: number }[]
   model: string
@@ -29,8 +34,20 @@ export async function embed(
   text: string,
   config: RAGConfig
 ): Promise<number[]> {
+  const cacheKey = `${config.embeddingModel || "default"}:${text}`
+  const cached = embeddingCache.get(cacheKey)
+  if (cached && Date.now() - cached.cachedAt < EMBEDDING_CACHE_TTL_MS) {
+    return cached.vector
+  }
   const results = await embedBatch([text], config)
-  return results[0]
+  const vector = results[0]
+  // 缓存结果，超过上限时清除最旧条目
+  if (embeddingCache.size >= EMBEDDING_CACHE_MAX_SIZE) {
+    const oldestKey = embeddingCache.keys().next().value
+    if (oldestKey) embeddingCache.delete(oldestKey)
+  }
+  embeddingCache.set(cacheKey, { vector, cachedAt: Date.now() })
+  return vector
 }
 
 /** 批量生成 embedding 向量

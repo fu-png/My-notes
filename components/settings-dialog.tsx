@@ -113,6 +113,9 @@ export function SettingsDialog() {
   const [showTtsKey, setShowTtsKey] = React.useState(false)
   const [showImageKey, setShowImageKey] = React.useState(false)
   const [saved, setSaved] = React.useState(false)
+  const [apiBaseError, setApiBaseError] = React.useState("")
+  const [ttsApiBaseError, setTtsApiBaseError] = React.useState("")
+  const [imageApiBaseError, setImageApiBaseError] = React.useState("")
 
   // AI 对话配置
   const [apiKey, setApiKey] = React.useState("")
@@ -198,6 +201,38 @@ export function SettingsDialog() {
   }
 
   const handleSave = () => {
+    // Validate API Base URLs before saving
+    const trimmedApiBase = apiBase.trim()
+    if (trimmedApiBase) {
+      try {
+        const parsed = new URL(trimmedApiBase)
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("invalid protocol")
+      } catch {
+        setApiBaseError("请输入合法的 http:// 或 https:// URL")
+        return
+      }
+    }
+    const trimmedTtsApiBase = !useSameKey ? ttsApiBase.trim() : ""
+    if (trimmedTtsApiBase) {
+      try {
+        const parsed = new URL(trimmedTtsApiBase)
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("invalid protocol")
+      } catch {
+        setTtsApiBaseError("请输入合法的 http:// 或 https:// URL")
+        return
+      }
+    }
+    const trimmedImageApiBase = !useSameImageKey ? imageApiBase.trim() : ""
+    if (trimmedImageApiBase) {
+      try {
+        const parsed = new URL(trimmedImageApiBase)
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("invalid protocol")
+      } catch {
+        setImageApiBaseError("请输入合法的 http:// 或 https:// URL")
+        return
+      }
+    }
+
     localStorage.setItem(STORAGE_KEY_API_KEY, apiKey.trim())
     localStorage.setItem(STORAGE_KEY_API_BASE, apiBase.trim() || DEFAULT_API_BASE)
     localStorage.setItem(STORAGE_KEY_MODEL, model.trim() || DEFAULT_MODEL)
@@ -244,7 +279,7 @@ export function SettingsDialog() {
       <Tooltip>
         <TooltipTrigger asChild>
           <DialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8">
+            <Button variant="ghost" size="icon" className="size-8" aria-label="设置">
               <IconSettings className="size-4" />
             </Button>
           </DialogTrigger>
@@ -307,6 +342,7 @@ export function SettingsDialog() {
                 size="icon"
                 className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
                 onClick={() => setShowKey(!showKey)}
+                aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
               >
                 {showKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
               </Button>
@@ -329,11 +365,13 @@ export function SettingsDialog() {
               value={apiBase}
               onChange={(e) => {
                 setApiBase(e.target.value)
+                setApiBaseError("")
                 setProvider(detectProvider(e.target.value))
                 const preset = PROVIDER_PRESETS.find((p) => p.apiBase === e.target.value)
                 setModelOptions(preset?.models || [])
               }}
             />
+            {apiBaseError && <p className="text-xs text-destructive">{apiBaseError}</p>}
             <p className="text-xs text-muted-foreground">
               默认为 OpenAI 官方地址，也可配置为兼容服务。
             </p>
@@ -416,6 +454,7 @@ export function SettingsDialog() {
                     size="icon"
                     className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
                     onClick={() => setShowTtsKey(!showTtsKey)}
+                    aria-label={showTtsKey ? "隐藏 TTS Key" : "显示 TTS Key"}
                   >
                     {showTtsKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
                   </Button>
@@ -428,8 +467,12 @@ export function SettingsDialog() {
                   type="url"
                   placeholder={DEFAULT_API_BASE}
                   value={ttsApiBase}
-                  onChange={(e) => setTtsApiBase(e.target.value)}
+                  onChange={(e) => {
+                    setTtsApiBase(e.target.value)
+                    setTtsApiBaseError("")
+                  }}
                 />
+                {ttsApiBaseError && <p className="text-xs text-destructive">{ttsApiBaseError}</p>}
               </div>
             </>
           )}
@@ -561,6 +604,7 @@ export function SettingsDialog() {
                     size="icon"
                     className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
                     onClick={() => setShowImageKey(!showImageKey)}
+                    aria-label={showImageKey ? "隐藏生图 Key" : "显示生图 Key"}
                   >
                     {showImageKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
                   </Button>
@@ -573,8 +617,12 @@ export function SettingsDialog() {
                   type="url"
                   placeholder={DEFAULT_IMAGE_API_BASE}
                   value={imageApiBase}
-                  onChange={(e) => setImageApiBase(e.target.value)}
+                  onChange={(e) => {
+                    setImageApiBase(e.target.value)
+                    setImageApiBaseError("")
+                  }}
                 />
+                {imageApiBaseError && <p className="text-xs text-destructive">{imageApiBaseError}</p>}
               </div>
             </>
           )}

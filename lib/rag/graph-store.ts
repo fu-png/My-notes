@@ -242,7 +242,7 @@ export function buildKnowledgeGraph(chunks: Chunk[]): KnowledgeGraph {
     }
   }
   if (hubEntityIds.size > 0) {
-    console.log(
+    console.debug(
       `[graph-store] 剔除 ${hubEntityIds.size} 个超级节点实体（文档覆盖率过高，阈值 > ${hubThreshold} 篇）`
     )
   }

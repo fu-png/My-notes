@@ -27,6 +27,7 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
   const { toasts, showToast, removeToast } = useToast()
   const [files, setFiles] = React.useState<UploadedFile[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState("")
   const [deleting, setDeleting] = React.useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null)
 
@@ -35,10 +36,16 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
     fetch("/api/uploads")
       .then((res) => res.json())
       .then((data) => {
-        if (active) setFiles(data.files || [])
+        if (active) {
+          setFiles(data.files || [])
+          setLoadError("")
+        }
       })
       .catch(() => {
-        if (active) setFiles([])
+        if (active) {
+          setFiles([])
+          setLoadError("加载失败，请刷新重试")
+        }
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -80,8 +87,8 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
 
   if (files.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
-        暂无上传的文档
+      <p className={`py-8 text-center text-sm ${loadError ? "text-destructive" : "text-muted-foreground"}`}>
+        {loadError || "暂无上传的文档"}
       </p>
     )
   }

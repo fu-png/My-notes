@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { encodeFilePath } from "@/lib/utils"
 import {
   IconChevronLeft,
   IconFile,
@@ -115,10 +116,7 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
     setDeleting(filename)
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${filename
-          .split("/")
-          .map((s) => encodeURIComponent(s))
-          .join("/")}`,
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeFilePath(filename)}`,
         { method: "DELETE" }
       )
       if (res.ok) {
@@ -231,10 +229,7 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
               <p>{uploadResult.message}</p>
               {uploadResult.success && uploadResult.filename && (
                 <Link
-                  href={`/docs/projects/${encodeURIComponent(projectId)}/${uploadResult.filename!
-                    .split("/")
-                    .map((s) => encodeURIComponent(s))
-                    .join("/")}`}
+                  href={`/docs/projects/${encodeURIComponent(projectId)}/${encodeFilePath(uploadResult.filename!)}`}
                   className="mt-1 inline-flex items-center gap-1 text-xs underline underline-offset-2 hover:no-underline"
                 >
                   <IconFile className="size-3" />
@@ -245,6 +240,7 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
             <button
               onClick={() => setUploadResult(null)}
               className="shrink-0 opacity-60 hover:opacity-100"
+              aria-label="关闭上传结果"
             >
               <IconX className="size-3.5" />
             </button>
@@ -276,10 +272,7 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
                 className="group flex items-center justify-between rounded-md px-3 py-2.5 transition-colors hover:bg-muted"
               >
                 <Link
-                  href={`/docs/projects/${encodeURIComponent(projectId)}/${file.filename
-                    .split("/")
-                    .map((s) => encodeURIComponent(s))
-                    .join("/")}`}
+                  href={`/docs/projects/${encodeURIComponent(projectId)}/${encodeFilePath(file.filename)}`}
                   className="flex min-w-0 flex-1 items-center gap-2 text-sm"
                 >
                   <IconFile className="size-4 shrink-0 text-muted-foreground" />
@@ -290,6 +283,7 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
                   disabled={deleting === file.filename}
                   className="ml-2 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
                   title="删除"
+                  aria-label="删除文件"
                 >
                   {deleting === file.filename ? (
                     <IconLoader2 className="size-3.5 animate-spin" />

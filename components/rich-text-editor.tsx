@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -42,6 +43,7 @@ import {
   IconHighlight,
   IconArrowBackUp,
   IconArrowForwardUp,
+  IconLoader2,
 } from "@tabler/icons-react"
 
 interface RichTextEditorProps {
@@ -222,6 +224,7 @@ function ToolbarButton({
           onClick={onClick}
           disabled={disabled}
           type="button"
+          aria-label={tooltip}
         >
           {children}
         </Button>
@@ -298,7 +301,8 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
 
   if (!editor) {
     return (
-      <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <IconLoader2 className="size-4 animate-spin" />
         编辑器加载中…
       </div>
     )
@@ -487,6 +491,7 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
       <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>插入链接</DialogTitle></DialogHeader>
+          <DialogDescription className="sr-only">输入链接地址</DialogDescription>
           <input
             type="url"
             placeholder="https://example.com"
@@ -495,6 +500,7 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
             onKeyDown={(e) => e.key === "Enter" && confirmLink()}
             className="h-9 w-full rounded-md border px-3 text-sm"
             autoFocus
+            aria-label="链接 URL"
           />
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setLinkDialogOpen(false)}>取消</Button>
@@ -507,6 +513,7 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
       <Dialog open={imageDialogOpen} onOpenChange={setImageDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>插入图片</DialogTitle></DialogHeader>
+          <DialogDescription className="sr-only">输入图片地址</DialogDescription>
           <input
             type="url"
             placeholder="https://example.com/image.png"
@@ -515,6 +522,7 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
             onKeyDown={(e) => e.key === "Enter" && confirmImage()}
             className="h-9 w-full rounded-md border px-3 text-sm"
             autoFocus
+            aria-label="图片 URL"
           />
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setImageDialogOpen(false)}>取消</Button>

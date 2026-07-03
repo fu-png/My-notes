@@ -23,6 +23,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 限制消息数量
+    const MAX_MESSAGES = 200
+    if (messages.length > MAX_MESSAGES) {
+      return Response.json({ error: `消息数量超出限制（最多 ${MAX_MESSAGES} 条）` }, { status: 400 })
+    }
+
     const baseUrl = (apiBase || "https://api.openai.com/v1").replace(/\/+$/, "")
     const chatModel = model || "gpt-4o-mini"
 

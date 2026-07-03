@@ -349,6 +349,9 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       <div
         className="relative flex h-[min(720px,88vh)] w-[min(960px,92vw)] overflow-hidden rounded-xl border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="设置"
       >
         {/* Left Nav */}
         <nav className="flex w-[180px] shrink-0 flex-col border-r bg-muted/30">
@@ -358,7 +361,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
           <div className="flex-1 overflow-y-auto px-2 pb-4">
             {NAV_GROUPS.map((group, gi) => (
               <div key={group.title} className={gi > 0 ? "mt-5" : ""}>
-                <p className="mb-1.5 px-2.5 text-[11px] font-medium tracking-wider text-muted-foreground/60">
+                <p className="mb-1.5 px-2.5 text-[11px] font-medium tracking-wider text-muted-foreground/80">
                   {group.title}
                 </p>
                 <div className="space-y-0.5">
@@ -392,6 +395,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
             <button
               onClick={onClose}
               className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="关闭设置"
             >
               <IconX className="size-4" />
             </button>
@@ -570,15 +574,16 @@ function ProviderCard({
         <div className="flex shrink-0 items-center gap-1">
           {canDelete && (
             <button
-              className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className="rounded p-1 text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
               onClick={(e) => { e.stopPropagation(); onRemove() }}
               title="删除"
+              aria-label="删除服务商配置"
             >
               <IconTrash className="size-3.5" />
             </button>
           )}
           <svg
-            className={`size-4 text-muted-foreground/50 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+            className={`size-4 text-muted-foreground/70 transition-transform ${isExpanded ? "rotate-180" : ""}`}
             fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -643,6 +648,7 @@ function ProviderCard({
                 type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 onClick={() => setShowKey(!showKey)}
+                aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
               >
                 {showKey ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />}
               </button>
@@ -713,6 +719,7 @@ function SectionTTS({
                 type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 onClick={() => setShowTtsKey(!showTtsKey)}
+                aria-label={showTtsKey ? "隐藏 TTS Key" : "显示 TTS Key"}
               >
                 {showTtsKey ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />}
               </button>
@@ -817,6 +824,7 @@ function SectionImage({
                 type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 onClick={() => setShowImageKey(!showImageKey)}
+                aria-label={showImageKey ? "隐藏生图 Key" : "显示生图 Key"}
               >
                 {showImageKey ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />}
               </button>

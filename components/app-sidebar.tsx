@@ -140,7 +140,7 @@ export function TopNav() {
 
           {/* 搜索结果下拉 */}
           {open && (
-            <div className="absolute left-0 top-full mt-1 w-full rounded-md border bg-background shadow-lg">
+            <div className="absolute left-0 top-full mt-1 w-full rounded-md border bg-background shadow-lg" role="listbox" aria-label="搜索结果">
               {results.length === 0 ? (
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                   {searching ? "搜索中..." : "没有找到匹配的文件"}
@@ -151,6 +151,8 @@ export function TopNav() {
                     <button
                       key={`${r.projectId}-${r.filename}-${i}`}
                       onClick={() => handleSelect(r)}
+                      role="option"
+                      aria-selected={false}
                       className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/50"
                     >
                       <IconFileText className="size-4 shrink-0 text-muted-foreground" />
@@ -172,6 +174,7 @@ export function TopNav() {
           <button
             onClick={() => inputRef.current?.focus()}
             className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted md:hidden"
+            aria-label="聚焦搜索框"
           >
             <IconSearch className="size-4" />
           </button>

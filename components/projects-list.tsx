@@ -57,6 +57,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { ToastContainer } from "@/components/toast-container"
 import { IconSearch } from "@tabler/icons-react"
+import { formatRelativeTime } from "@/lib/utils"
 
 interface Project {
   id: string
@@ -197,27 +198,6 @@ export function ProjectsList() {
 
   const currentSortOption = SORT_OPTIONS.find((o) => o.field === sortField)
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("zh-CN", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    })
-
-  const getRelativeTime = React.useCallback((dateStr: string) => {
-    const now = Date.now()
-    const date = new Date(dateStr).getTime()
-    const diff = now - date
-    const minutes = Math.floor(diff / 60000)
-    const hours = Math.floor(diff / 3600000)
-    const days = Math.floor(diff / 86400000)
-    if (minutes < 1) return "刚刚"
-    if (minutes < 60) return `${minutes} 分钟前`
-    if (hours < 24) return `${hours} 小时前`
-    if (days < 30) return `${days} 天前`
-    return formatDate(dateStr)
-  }, [])
-
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 md:px-8">
       {/* Page header */}
@@ -324,13 +304,13 @@ export function ProjectsList() {
         </div>
       ) : filteredProjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="mb-4 flex size-16 items-center justify-center border border-dashed border-muted-foreground/30">
-            <IconNotebook className="size-8 text-muted-foreground/40" />
+          <div className="mb-4 flex size-16 items-center justify-center border border-dashed border-muted-foreground/50">
+            <IconNotebook className="size-8 text-muted-foreground/70" />
           </div>
           <p className="mb-1 text-sm font-medium text-muted-foreground">
             {search.trim() ? "没有找到匹配的笔记" : "开始记录你的想法"}
           </p>
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-xs text-muted-foreground/80">
             {search.trim() ? "试试其他关键词" : "点击右上角按钮创建第一本笔记"}
           </p>
         </div>
@@ -369,6 +349,7 @@ export function ProjectsList() {
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRename() }}
                         disabled={saving || !editName.trim()}
                         className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
+                        aria-label="确认重命名"
                       >
                         {saving ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconCheck className="size-3.5" />}
                       </button>
@@ -376,6 +357,7 @@ export function ProjectsList() {
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); cancelEditing() }}
                         disabled={saving}
                         className="shrink-0 p-1 text-muted-foreground hover:text-destructive"
+                        aria-label="取消重命名"
                       >
                         <IconX className="size-3.5" />
                       </button>
@@ -393,7 +375,7 @@ export function ProjectsList() {
                   </Badge>
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
                     <IconClock className="size-3" />
-                    {getRelativeTime(project.createdAt)}
+                    {formatRelativeTime(project.createdAt)}
                   </span>
                 </div>
                 <div className="relative z-20 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
@@ -477,6 +459,7 @@ export function ProjectsList() {
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRename() }}
                       disabled={saving || !editName.trim()}
                       className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
+                      aria-label="确认重命名"
                     >
                       {saving ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconCheck className="size-3.5" />}
                     </button>
@@ -484,6 +467,7 @@ export function ProjectsList() {
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); cancelEditing() }}
                       disabled={saving}
                       className="shrink-0 p-1 text-muted-foreground hover:text-destructive"
+                      aria-label="取消重命名"
                     >
                       <IconX className="size-3.5" />
                     </button>
@@ -498,7 +482,7 @@ export function ProjectsList() {
               </Badge>
               <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex">
                 <IconClock className="size-3" />
-                {getRelativeTime(project.createdAt)}
+                {formatRelativeTime(project.createdAt)}
               </span>
               <div className="relative z-20 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                 <button

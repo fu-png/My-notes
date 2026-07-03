@@ -77,33 +77,34 @@ export async function POST(
       return NextResponse.json({ error: "没有可下载的图片" }, { status: 400 })
     }
 
-    // Fetch all images server-side (no CORS issues)
-    const fetched: FetchedImage[] = []
-    for (const url of images) {
-      if (url.startsWith("data:")) {
-        // base64 data URL — extract mime from header
-        const header = url.split(",")[0]
-        const mime = header.match(/data:(image\/\w+)/)?.[1] || "image/png"
-        const ext = mime === "image/jpeg" ? "jpg" : mime.split("/")[1] || "png"
-        const base64 = url.split(",")[1]
-        fetched.push({ buffer: Buffer.from(base64, "base64"), mime, ext })
-      } else {
-        // SSRF 防护：拒绝内网地址
+    // Fetch all images server-side (no CORS issues) — parallel for speed
+    const fetchResults = await Promise.allSettled(
+      images.map(async (url: string): Promise<FetchedImage | null> => {
+        if (url.startsWith("data:")) {
+          const header = url.split(",")[0]
+          const mime = header.match(/data:(image\/\w+)/)?.[1] || "image/png"
+          const ext = mime === "image/jpeg" ? "jpg" : mime.split("/")[1] || "png"
+          const base64 = url.split(",")[1]
+          return { buffer: Buffer.from(base64, "base64"), mime, ext }
+        }
         if (!isAllowedImageUrl(url)) {
           console.error('Blocked SSRF attempt:', url)
-          continue
+          return null
         }
         const res = await fetch(url)
         if (!res.ok) {
           console.error(`Failed to fetch image: ${url} — ${res.status}`)
-          continue
+          return null
         }
         const buf = Buffer.from(await res.arrayBuffer())
         const mime = res.headers.get("content-type") || detectMime(buf)
         const ext = mime === "image/jpeg" ? "jpg" : mime.split("/")[1] || "png"
-        fetched.push({ buffer: buf, mime, ext })
-      }
-    }
+        return { buffer: buf, mime, ext }
+      })
+    )
+    const fetched: FetchedImage[] = fetchResults
+      .filter((r): r is PromiseFulfilledResult<FetchedImage | null> => r.status === "fulfilled" && r.value !== null)
+      .map(r => r.value!)
 
     if (fetched.length === 0) {
       return NextResponse.json({ error: "图片获取失败" }, { status: 500 })
@@ -157,7 +158,7 @@ export async function POST(
   } catch (error) {
     console.error("[download] error:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "下载失败" },
+      { error: "下载处理失败" },
       { status: 500 }
     )
   }

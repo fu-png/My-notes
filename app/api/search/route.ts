@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
             const filename = file.pathname.slice(`projects/${project.id}/`.length)
             if (filename === "meta.json" || filename.startsWith(".") || filename.includes("/.")) continue
 
-            const title = filename.replace(/\.[^.]+$/, "")
+            const title = filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ")
 
             if (
               title.toLowerCase().includes(q) ||
@@ -141,10 +141,21 @@ function extractSnippet(
   maxLength: number = 120
 ): string {
   const lowerContent = content.toLowerCase()
-  const idx = lowerContent.indexOf(query)
+  let idx = lowerContent.indexOf(query)
+
+  // 完整查询未匹配到时，尝试匹配查询中的各个词
+  if (idx === -1) {
+    const words = query.split(/\s+/).filter(w => w.length > 1)
+    for (const word of words) {
+      const wordIdx = lowerContent.indexOf(word)
+      if (wordIdx !== -1) {
+        idx = wordIdx
+        break
+      }
+    }
+  }
 
   if (idx === -1) {
-    // 关键词未直接出现（可能是分词匹配），返回开头摘要
     return content.slice(0, maxLength).replace(/\s+/g, " ").trim() + "…"
   }
 

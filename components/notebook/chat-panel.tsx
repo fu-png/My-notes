@@ -54,6 +54,12 @@ import {
 } from "@/components/ui/collapsible"
 import dynamic from "next/dynamic"
 import { Switch } from "@/components/ui/switch"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import type { ProviderInfo } from "@/components/settings-dialog"
 import type { ChatMessage, Conversation, DocFile, PptOutline } from "./types"
 import { GENERATE_TEMPLATES, PPT_STYLE_PRESETS } from "./types"
@@ -802,43 +808,32 @@ function ModelSwitcher({
   providers: { id: string; model: string; isActive: boolean }[]
   onSwitch: (id: string) => void
 }) {
-  const [open, setOpen] = React.useState(false)
-  const ref = React.useRef<HTMLDivElement>(null)
-
-  React.useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", handler)
-    return () => document.removeEventListener("mousedown", handler)
-  }, [])
-
   return (
-    <div ref={ref} className="relative inline-block">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors"
-      >
-        {model}
-        <IconChevronDown className={`size-3 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <div className="absolute bottom-full left-0 z-50 mb-1 min-w-[160px] rounded-md border bg-background py-1 shadow-lg">
-          {providers.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => { onSwitch(p.id); setOpen(false) }}
-              className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-[11px] transition-colors hover:bg-muted ${
-                p.isActive ? "text-primary font-medium" : "text-foreground"
-              }`}
-            >
-              <span className="truncate">{p.model}</span>
-              {p.isActive && <IconCheck className="size-3 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors"
+          aria-label="切换 AI 模型"
+        >
+          {model}
+          <IconChevronDown className="size-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[160px]">
+        {providers.map((p) => (
+          <DropdownMenuItem
+            key={p.id}
+            onClick={() => onSwitch(p.id)}
+            className={`flex items-center justify-between text-[11px] ${
+              p.isActive ? "text-primary font-medium" : ""
+            }`}
+          >
+            <span className="truncate">{p.model}</span>
+            {p.isActive && <IconCheck className="size-3 shrink-0" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

@@ -26,24 +26,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
+import { formatRelativeTime } from "@/lib/utils"
 import type { DocFile } from "./types"
 import { getFileIcon } from "./types"
 
 // ─── Constants ───
 
 const FILE_INPUT_ACCEPT = ".md,.txt,.json,.yaml,.yml,.csv,.tsv,.xml,.html,.htm,.js,.ts,.jsx,.tsx,.css,.py,.go,.java,.rs,.sh,.toml,.ini,.env,.log,.pdf,.docx,.xlsx,.pptx"
-
-function formatRelativeTime(timestamp: number): string {
-  const diffMs = Date.now() - timestamp
-  const diffMins = Math.floor(diffMs / 60000)
-  if (diffMins < 1) return "刚刚"
-  if (diffMins < 60) return `${diffMins}分钟前`
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours}小时前`
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays < 7) return `${diffDays}天前`
-  return new Date(timestamp).toLocaleDateString("zh-CN")
-}
 
 // ─── Tree structure for subdirectories ───
 

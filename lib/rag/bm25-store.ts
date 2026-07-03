@@ -14,6 +14,10 @@ import MiniSearch from "minisearch"
 import type { Chunk, SearchResult } from "./types"
 import { readFile, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
 
+// 内存缓存：避免每次搜索都从存储读取和反序列化
+const bm25Cache = new Map<string, { index: MiniSearch<MiniSearchDoc>; loadedAt: number }>()
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 分钟
+
 // ─── 中英文混合分词器 ───
 
 const CJK_RANGE = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/g
@@ -103,14 +107,21 @@ export async function createBm25Index(
   await storageWrite(getBm25Path(projectId), JSON.stringify(ms), {
     contentType: "application/json",
   })
+  bm25Cache.delete(projectId)
 }
 
 /** 加载持久化的 BM25 索引 */
 async function loadIndex(projectId: string): Promise<MiniSearch<MiniSearchDoc> | null> {
+  const cached = bm25Cache.get(projectId)
+  if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
+    return cached.index
+  }
   const json = await readFile(getBm25Path(projectId))
   if (!json) return null
   try {
-    return MiniSearch.loadJSON<MiniSearchDoc>(json, MINISEARCH_OPTIONS)
+    const index = MiniSearch.loadJSON<MiniSearchDoc>(json, MINISEARCH_OPTIONS)
+    bm25Cache.set(projectId, { index, loadedAt: Date.now() })
+    return index
   } catch (err) {
     console.error("[bm25-store] Failed to parse bm25.json:", err)
     return null
@@ -156,6 +167,7 @@ export async function searchByBm25(
 /** 删除 BM25 索引 */
 export async function deleteBm25Index(projectId: string): Promise<void> {
   await storageDelete(getBm25Path(projectId))
+  bm25Cache.delete(projectId)
 }
 
 // 辅助：从 vector-store 模块加载 chunks 数据

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { encodeFilePath } from "@/lib/utils"
 
 interface CachedFile {
   content: string
@@ -90,10 +91,7 @@ export function useFileCache({
       try {
         // filename may contain / for subdirectories, e.g. "folder/file.md"
         // We encode each path segment individually for the catch-all route
-        const url = `/api/projects/${encodeURIComponent(projectId)}/files/${filename
-          .split("/")
-          .map((s) => encodeURIComponent(s))
-          .join("/")}`
+        const url = `/api/projects/${encodeURIComponent(projectId)}/files/${encodeFilePath(filename)}`
         const res = await fetch(url, { signal })
         if (!res.ok) return null
         const data = await res.json()

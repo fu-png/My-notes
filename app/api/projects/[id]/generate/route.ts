@@ -113,16 +113,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return Response.json({ error: "项目中没有可用的文档" }, { status: 400 })
   }
 
-  // 2. 读取所有文件内容
-  const documents: string[] = []
+  // 2. 读取所有文件内容（并行）
   const projectPrefix = `projects/${projectId}/`
-  for (const file of mdFiles) {
-    const content = await readFile(file.pathname)
-    if (content && content.trim().length > 0) {
-      const filename = file.pathname.slice(projectPrefix.length)
-      documents.push(`--- 文档: ${filename} ---\n${content}`)
-    }
-  }
+  const documentEntries = await Promise.all(
+    mdFiles.map(async (file) => {
+      const content = await readFile(file.pathname)
+      if (content && content.trim().length > 0) {
+        const filename = file.pathname.slice(projectPrefix.length)
+        return `--- 文档: ${filename} ---\n${content}`
+      }
+      return null
+    })
+  )
+  const documents = documentEntries.filter((d): d is string => d !== null)
 
   // 3. 构建 prompt
   const taskPrompt = customPrompt || template.prompt
