@@ -6,9 +6,12 @@ import { IconSun, IconMoon } from "@tabler/icons-react"
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = React.useState(false)
-
-  React.useEffect(() => setMounted(true), [])
+  // 使用 useSyncExternalStore 检测客户端挂载状态，避免 set-state-in-effect
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
 
   if (!mounted) {
     return <div className="size-8" /> // placeholder to avoid layout shift

@@ -63,7 +63,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const layoutText = layoutDesc[slideData.layout] || layoutDesc.content
 
   const bulletText = slideData.bulletPoints
-    .map((bp, i) => `• ${bp}`)
+    .map((bp) => `• ${bp}`)
     .join("\n")
 
   let prompt = `Create a stunning, print-quality presentation slide.

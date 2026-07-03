@@ -3,7 +3,7 @@
 import * as React from "react"
 import type { DocFile, ChatMessage } from "@/components/notebook/types"
 import { WELCOME_MESSAGE } from "@/components/notebook/types"
-import { getAIConfig, isAIConfigured, getConfiguredModel, getProviderList, switchActiveProvider, getPersonaPrompt, getUserName } from "@/components/settings-dialog"
+import { getAIConfig, getConfiguredModel, getProviderList, switchActiveProvider, getPersonaPrompt, getUserName } from "@/components/settings-dialog"
 import type { ProviderInfo } from "@/components/settings-dialog"
 import { detectIntent } from "@/lib/agents/supervisor"
 import { buildSystemPrompt, trimConversationHistory } from "@/lib/agents/context-manager"
@@ -28,7 +28,6 @@ export interface UseChatFlowParams {
   // 回调
   showToast: (type: "success" | "error", msg: string) => void
   fetchFiles: () => Promise<void>
-  triggerAutoIndex: () => void
 }
 
 export interface UseChatFlowReturn {
@@ -74,7 +73,6 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     startPptFlowRef,
     showToast,
     fetchFiles,
-    triggerAutoIndex,
   } = params
 
   // ─── State ───

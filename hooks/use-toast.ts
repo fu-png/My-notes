@@ -63,9 +63,10 @@ export function useToast() {
 
   // 清理所有定时器
   React.useEffect(() => {
+    const timers = timerMapRef.current
     return () => {
-      timerMapRef.current.forEach((timer) => clearTimeout(timer))
-      timerMapRef.current.clear()
+      timers.forEach((timer) => clearTimeout(timer))
+      timers.clear()
     }
   }, [])
 

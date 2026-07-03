@@ -292,6 +292,8 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
   // 用于顺序播放多个 chunk 的索引
   const chunkIndexRef = React.useRef(0)
   const chunkListRef = React.useRef<string[]>([])
+  // 使用 ref 避免 useCallback 自引用（lint: cannot-access-variable-before-declared）
+  const playNextChunkRef = React.useRef<() => void>(() => {})
 
   const playNextChunk = React.useCallback(() => {
     const chunks = chunkListRef.current
@@ -306,15 +308,20 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
     setAudioCurrentLine(idx)
     audioRef.current.onended = () => {
       chunkIndexRef.current += 1
-      playNextChunk()
+      playNextChunkRef.current()
     }
     audioRef.current.onerror = () => {
       // 跳过失败的 chunk
       chunkIndexRef.current += 1
-      playNextChunk()
+      playNextChunkRef.current()
     }
     audioRef.current.play()
   }, [])
+
+  // 保持 ref 与最新回调同步
+  React.useEffect(() => {
+    playNextChunkRef.current = playNextChunk
+  }, [playNextChunk])
 
   const handleAudioPlay = (msgId: string) => {
     const msg = chatMessages.find((m) => m.id === msgId)

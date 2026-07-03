@@ -28,7 +28,8 @@ export default async function UploadedDocPage({
   const content = await readFile(`uploads/${decoded}`)
   if (content === null) notFound()
 
-  const title = decoded.replace(/\.md$/, "")
+  // title 由页面内容中的 Markdown 标题自动渲染，无需单独提取
+  void decoded
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-8 lg:px-10">

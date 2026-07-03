@@ -19,16 +19,17 @@ function MermaidBlock({ code }: { code: string }) {
   const [error, setError] = React.useState<string>("")
 
   // Detect dark mode from the <html> class (set by next-themes)
-  const [isDark, setIsDark] = React.useState(false)
-  React.useEffect(() => {
-    const html = document.documentElement
-    setIsDark(html.classList.contains("dark"))
-    const observer = new MutationObserver(() => {
-      setIsDark(html.classList.contains("dark"))
-    })
-    observer.observe(html, { attributes: true, attributeFilter: ["class"] })
-    return () => observer.disconnect()
-  }, [])
+  // 使用 useSyncExternalStore 订阅 dark class 变化，避免 set-state-in-effect
+  const isDark = React.useSyncExternalStore(
+    (callback: () => void) => {
+      const html = document.documentElement
+      const observer = new MutationObserver(callback)
+      observer.observe(html, { attributes: true, attributeFilter: ["class"] })
+      return () => observer.disconnect()
+    },
+    () => document.documentElement.classList.contains("dark"),
+    () => false
+  )
 
   React.useEffect(() => {
     let cancelled = false
@@ -202,12 +203,12 @@ const sanitizeSchema = {
   },
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const rehypePlugins: any[] = [
+// rehype 插件列表（类型由 react-markdown 的 rehypePlugins prop 推断）
+const rehypePlugins = [
   rehypeRaw,
   [rehypeSanitize, sanitizeSchema],
   rehypeSlug,
-]
+] as React.ComponentProps<typeof ReactMarkdown>["rehypePlugins"]
 
 // ── Static components map (stable reference) ──────────────────────
 const markdownComponents = {

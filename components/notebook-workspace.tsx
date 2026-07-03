@@ -310,13 +310,16 @@ loadConversationSummaries(projectId).then(async (summaries) => {
 
   // Flush pending saves and warn about unsaved edits on page unload
   const conversationsRef = React.useRef(conversations)
-  conversationsRef.current = conversations
   const editModeRef = React.useRef(false)
   const editContentRef = React.useRef("")
   const fileContentRef = React.useRef("")
-  editModeRef.current = editMode
-  editContentRef.current = editContent
-  fileContentRef.current = fileContent
+  // 在 effect 中同步 ref 值，避免在 render 阶段修改 ref（lint: refs-during-render）
+  React.useEffect(() => {
+    conversationsRef.current = conversations
+    editModeRef.current = editMode
+    editContentRef.current = editContent
+    fileContentRef.current = fileContent
+  })
   React.useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (conversationsRef.current.length > 0) {
@@ -360,12 +363,10 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     return () => window.removeEventListener("ai-config-changed", handleConfigChange)
   }, [])
 
-  // Fetch RAG index status on mount
-  React.useEffect(() => {
-    fetchIndexStatus()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId])
+  // Toast (professional queue system with animations) — 前置声明以供 fetchIndexStatus/fetchSourcesData 使用
+  const { toasts, showToast, removeToast } = useToast()
 
+  // Fetch RAG index status
   const fetchIndexStatus = async () => {
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
@@ -383,6 +384,12 @@ loadConversationSummaries(projectId).then(async (summaries) => {
       // 索引状态查询为后台操作，仅记录日志不打扰用户
     }
   }
+
+  // Fetch RAG index status on mount
+  React.useEffect(() => {
+    fetchIndexStatus()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
 
   const fetchSourcesData = async () => {
     setSourcesLoading(true)
@@ -498,6 +505,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
           console.warn("[autoIndex]", err)
         })
     }, 2000)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
   React.useEffect(() => {
@@ -507,9 +515,6 @@ loadConversationSummaries(projectId).then(async (summaries) => {
       }
     }
   }, [])
-
-  // Toast (professional queue system with animations)
-  const { toasts, showToast, removeToast } = useToast()
 
   // ─── Data Fetching (moved before useChatFlow which depends on fetchFiles) ───
 
@@ -555,7 +560,6 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     startPptFlowRef,
     showToast,
     fetchFiles,
-    triggerAutoIndex,
   })
   const {
     chatMessages, setChatMessages, chatInput, setChatInput,
@@ -578,10 +582,12 @@ loadConversationSummaries(projectId).then(async (summaries) => {
   })
   const { pptSession, setPptSession } = pptFlow
 
-  // Sync refs after pptFlow initializes
-  pptSessionRef.current = pptSession
-  pptAbortRef.current = pptFlow.pptAbortRef.current
-  startPptFlowRef.current = pptFlow.startPptFlow
+  // 在 effect 中同步 ref 值，避免在 render 阶段修改 ref（lint: refs-during-render）
+  React.useEffect(() => {
+    pptSessionRef.current = pptSession
+    pptAbortRef.current = pptFlow.pptAbortRef.current
+    startPptFlowRef.current = pptFlow.startPptFlow
+  })
 
   // ─── Audio Overview (via hook) ───
   const audioFlow = useAudioFlow({
@@ -597,9 +603,12 @@ loadConversationSummaries(projectId).then(async (summaries) => {
   // Save current conversation (must be after useChatFlow which provides chatMessages)
   const savePendingRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeConvIdRef = React.useRef(activeConversationId)
-  activeConvIdRef.current = activeConversationId
   const chatMessagesRef = React.useRef(chatMessages)
-  chatMessagesRef.current = chatMessages
+  // 在 effect 中同步 ref 值，避免在 render 阶段修改 ref（lint: refs-during-render）
+  React.useEffect(() => {
+    activeConvIdRef.current = activeConversationId
+    chatMessagesRef.current = chatMessages
+  })
 
   React.useEffect(() => {
     if (chatMessages.length <= 1) return
@@ -690,16 +699,8 @@ const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMet
     }
   }
 
-React.useEffect(() => {
-if (!loadingFiles && files.length > 0 && !activeFile) {
-const fileParam = searchParams.get("file")
-const target = fileParam && files.some(f => f.filename === fileParam) ? fileParam : files[0].filename
-selectFile(target)
-}
-}, [loadingFiles, files]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Track whether editor has unsaved changes
-  const hasUnsavedEdits = editMode && editContent !== fileContent
+  // Track whether editor has unsaved changes (用于退出编辑模式时判断是否需要确认)
+  const [cancelEditConfirm, setCancelEditConfirm] = React.useState(false)
 
   const [pendingFileSwitch, setPendingFileSwitch] = React.useState<string | null>(null)
 
@@ -718,6 +719,14 @@ selectFile(target)
       return [filename, ...filtered].slice(0, 10) // 最多保留10个
     })
   }, [fileCache.loadFileContent, editMode, editContent, fileContent])
+
+React.useEffect(() => {
+if (!loadingFiles && files.length > 0 && !activeFile) {
+const fileParam = searchParams.get("file")
+const target = fileParam && files.some(f => f.filename === fileParam) ? fileParam : files[0].filename
+selectFile(target)
+}
+}, [loadingFiles, files]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── File Operations ───
 
@@ -997,7 +1006,7 @@ selectFile(target)
         showToast("error", `更新失败: ${data.error || "未知错误"}`)
         return
       }
-    } catch (err) {
+    } catch {
       showToast("error", "网络错误，文档更新失败")
       return
     }
@@ -1187,7 +1196,8 @@ selectFile(target)
                         className="gap-1.5 text-xs"
                         onClick={() => {
                           if (editContent !== fileContent) {
-                            if (!window.confirm("有未保存的编辑内容，确定要放弃吗？")) return
+                            setCancelEditConfirm(true)
+                            return
                           }
                           setEditContent(fileContent)
                           setEditMode(false)
@@ -1442,6 +1452,34 @@ selectFile(target)
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ─── Cancel Edit Confirmation Dialog ─── */}
+      <AlertDialog
+        open={cancelEditConfirm}
+        onOpenChange={setCancelEditConfirm}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>放弃编辑</AlertDialogTitle>
+            <AlertDialogDescription>
+              有未保存的编辑内容，确定要放弃吗？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续编辑</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setCancelEditConfirm(false)
+                setEditContent(fileContent)
+                setEditMode(false)
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              放弃更改
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

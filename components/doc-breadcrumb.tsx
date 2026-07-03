@@ -41,19 +41,20 @@ function useProjectName(projectId: string | null): string | null {
 
   React.useEffect(() => {
     if (!projectId) return
-    if (projectNameCache[projectId]) {
-      setName(projectNameCache[projectId])
-      return
-    }
+    // 如果缓存已有名称，useState 初始值已使用它，无需再 setName
+    if (projectNameCache[projectId]) return
+    let cancelled = false
     fetch(`/api/projects/${encodeURIComponent(projectId)}`)
       .then((r) => r.json())
       .then((data) => {
+        if (cancelled) return
         if (data?.project?.name) {
           projectNameCache[projectId] = data.project.name
           setName(data.project.name)
         }
       })
       .catch(() => {/* silently ignore */})
+    return () => { cancelled = true }
   }, [projectId])
 
   return name

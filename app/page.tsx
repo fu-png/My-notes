@@ -4,7 +4,7 @@ import dynamic from "next/dynamic"
 import Image from "next/image"
 import Link from "next/link"
 import { useTheme } from "next-themes"
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { IconArrowRight } from "@tabler/icons-react"
 
@@ -14,9 +14,12 @@ const PixelBlast = dynamic(() => import("@/components/pixel-blast"), {
 
 export default function Home() {
   const { resolvedTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
+  // 使用 useSyncExternalStore 实现 mounted 检测，避免 set-state-in-effect
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
 
   // 亮色模式用浅灰色粒子，暗色模式用低对比度的深灰色粒子
   const isDark = mounted && resolvedTheme === "dark"

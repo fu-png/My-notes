@@ -5,7 +5,6 @@ import Link from "next/link"
 import {
   IconBook,
   IconFileText,
-  IconFolder,
   IconNotebook,
   IconClock,
   IconChartBar,

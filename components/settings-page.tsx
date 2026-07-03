@@ -382,9 +382,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
             {activeSection === "chat" && (
               <SectionChat
                 providers={providers}
-                activeProviderId={activeProviderId}
                 editingProviderId={editingProviderId}
-                setActiveProviderId={setActiveProviderId}
                 setEditingProviderId={setEditingProviderId}
                 addProvider={addProvider}
                 removeProvider={removeProvider}
@@ -442,14 +440,12 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
 // ─── Section: 对话模型（多服务商卡片式） ───
 
 function SectionChat({
-  providers, activeProviderId, editingProviderId,
-  setActiveProviderId, setEditingProviderId,
+  providers, editingProviderId,
+  setEditingProviderId,
   addProvider, removeProvider, updateProvider,
 }: {
   providers: ProviderConfig[]
-  activeProviderId: string
   editingProviderId: string | null
-  setActiveProviderId: (id: string) => void
   setEditingProviderId: (id: string | null) => void
   addProvider: () => void
   removeProvider: (id: string) => void

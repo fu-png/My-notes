@@ -80,7 +80,7 @@ const TEMPLATES: Record<string, { name: string; prompt: string }> = {
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
   const body = await request.json()
-  const { type, apiKey, apiBase, model, customPrompt, deepThink } = body
+  const { type, apiKey, apiBase, model, customPrompt } = body
 
   if (!projectId) {
     return Response.json({ error: "缺少项目 ID" }, { status: 400 })

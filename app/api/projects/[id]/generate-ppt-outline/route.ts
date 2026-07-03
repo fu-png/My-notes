@@ -44,7 +44,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     ragConfig,
     conversationContext,
     selectedFiles,
-    activeFileName,
   } = body
 
   if (!projectId) {

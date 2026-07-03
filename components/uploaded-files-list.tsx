@@ -16,21 +16,23 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
   const [loading, setLoading] = React.useState(true)
   const [deleting, setDeleting] = React.useState<string | null>(null)
 
-  const fetchFiles = React.useCallback(async () => {
-    try {
-      const res = await fetch("/api/uploads")
-      const data = await res.json()
-      setFiles(data.files || [])
-    } catch {
-      setFiles([])
-    } finally {
-      setLoading(false)
+  React.useEffect(() => {
+    let active = true
+    fetch("/api/uploads")
+      .then((res) => res.json())
+      .then((data) => {
+        if (active) setFiles(data.files || [])
+      })
+      .catch(() => {
+        if (active) setFiles([])
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
     }
   }, [])
-
-  React.useEffect(() => {
-    fetchFiles()
-  }, [fetchFiles])
 
   const handleDelete = async (filename: string) => {
     if (!confirm(`确定要删除 "${filename}" 吗？`)) return
