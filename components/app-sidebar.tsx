@@ -40,12 +40,14 @@ export function TopNav() {
 
     const query = search.trim()
     if (!query) {
-      setResults([])
-      setOpen(false)
+      queueMicrotask(() => {
+        setResults([])
+        setOpen(false)
+      })
       return
     }
 
-    setSearching(true)
+    queueMicrotask(() => setSearching(true))
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`)
@@ -122,11 +124,13 @@ export function TopNav() {
               onChange={(e) => setSearch(e.target.value)}
               onFocus={() => { if (search.trim() && results.length > 0) setOpen(true) }}
               placeholder="搜索文件… ⌘K"
+              aria-label="搜索文件"
               className="h-8 w-full rounded-md border-transparent bg-muted pl-8 pr-8 text-sm placeholder:text-muted-foreground/60 focus:bg-muted focus:outline-none"
             />
             {search && (
               <button
                 onClick={() => { setSearch(""); setResults([]); setOpen(false) }}
+                aria-label="清除搜索"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
                 {searching ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconX className="size-3.5" />}
@@ -188,6 +192,7 @@ function SettingsButton() {
     <>
       <button
         onClick={() => setShowSettings(true)}
+        aria-label="设置"
         className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
         title="设置"
       >

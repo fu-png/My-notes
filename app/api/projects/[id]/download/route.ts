@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -21,7 +22,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  await params
+  const { id } = await params
+
+  if (!isValidProjectId(id)) {
+    return invalidProjectIdResponse()
+  }
 
   try {
     const body = await request.json()

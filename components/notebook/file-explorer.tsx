@@ -560,7 +560,6 @@ export const MobileFileList = React.memo(function MobileFileList({
   files,
   activeFile,
   deleting,
-  recentFiles,
   onSelectFile,
   onDeleteRequest,
 }: MobileFileListProps) {

@@ -16,6 +16,7 @@
 
 import { NextRequest } from "next/server"
 import { readFile, listFiles, writeFile } from "@/lib/storage"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 export const maxDuration = 300
 
@@ -59,6 +60,11 @@ const DIALOGUE_PROMPT = `你是一个专业的播客脚本撰写人。请基于�
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
+
+  if (!isValidProjectId(projectId)) {
+    return invalidProjectIdResponse()
+  }
+
   const body = await request.json()
   const { action, apiKey, apiBase, model, ttsModel, voiceHost, voiceExpert, script: providedScript } = body
 

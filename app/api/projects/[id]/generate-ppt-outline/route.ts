@@ -10,6 +10,7 @@ import { NextRequest } from "next/server"
 import { readFile, listFiles } from "@/lib/storage"
 import { queryProject, getIndexStatus } from "@/lib/rag/pipeline"
 import type { RAGConfig } from "@/lib/rag/types"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 export const maxDuration = 300
 
@@ -31,6 +32,11 @@ const DEFAULT_RAG_CONFIG: RAGConfig = {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
+
+  if (!isValidProjectId(projectId)) {
+    return invalidProjectIdResponse()
+  }
+
   const body = await request.json()
   const {
     apiKey,

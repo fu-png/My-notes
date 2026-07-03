@@ -4,6 +4,16 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { IconFile, IconTrash, IconLoader2 } from "@tabler/icons-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface UploadedFile {
   filename: string
@@ -15,6 +25,7 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
   const [files, setFiles] = React.useState<UploadedFile[]>([])
   const [loading, setLoading] = React.useState(true)
   const [deleting, setDeleting] = React.useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     let active = true
@@ -35,8 +46,7 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
   }, [])
 
   const handleDelete = async (filename: string) => {
-    if (!confirm(`确定要删除 "${filename}" 吗？`)) return
-
+    setDeleteTarget(null)
     setDeleting(filename)
     try {
       const res = await fetch(
@@ -46,9 +56,11 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
       if (res.ok) {
         setFiles((prev) => prev.filter((f) => f.filename !== filename))
         router.refresh()
+      } else {
+        alert("删除失败，请重试")
       }
     } catch {
-      // ignore
+      alert("网络错误，删除失败")
     } finally {
       setDeleting(null)
     }
@@ -86,8 +98,9 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
             <span className="truncate">{file.title}</span>
           </Link>
           <button
-            onClick={() => handleDelete(file.filename)}
+            onClick={() => setDeleteTarget(file.filename)}
             disabled={deleting === file.filename}
+            aria-label="删除"
             className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
             title="删除"
           >
@@ -99,6 +112,23 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
           </button>
         </div>
       ))}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除 &ldquo;{deleteTarget}&rdquo; 吗？此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteTarget && handleDelete(deleteTarget)}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

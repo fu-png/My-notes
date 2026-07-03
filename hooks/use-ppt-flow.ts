@@ -260,6 +260,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
       let rawContent = ""
       let receivedOutline: PptOutline | null = null
 
+      try {
       for await (const parsed of parseSSEStream(reader)) {
         if (abortCtrl.signal.aborted) break
 
@@ -277,8 +278,9 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
           updatePptMsg(outlineMsgId, { step: "error", streamingText: parsed.error as string })
         }
       }
-
-      clearInterval(scrollTimer)
+      } finally {
+        clearInterval(scrollTimer)
+      }
       pptAbortRef.current = null
 
       if (abortCtrl.signal.aborted) {

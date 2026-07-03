@@ -39,6 +39,7 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
 
   const [files, setFiles] = React.useState<DocFile[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState(false)
   const [deleting, setDeleting] = React.useState<string | null>(null)
   const [uploading, setUploading] = React.useState(false)
   const [isDragging, setIsDragging] = React.useState(false)
@@ -54,15 +55,17 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
       const data = await res.json()
       setFiles(data.files || [])
+      setLoadError(false)
     } catch {
       setFiles([])
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
   }, [projectId])
 
   React.useEffect(() => {
-    fetchFiles()
+    queueMicrotask(() => fetchFiles())
   }, [fetchFiles])
 
   const handleUpload = async (file: File) => {
@@ -120,7 +123,7 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
         router.refresh()
       }
     } catch {
-      // ignore
+      alert("删除失败，请重试")
     } finally {
       setDeleting(null)
     }
@@ -249,16 +252,20 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
       {/* File list */}
       <div>
         <h2 className="mb-3 text-base font-semibold">文档列表</h2>
-        {loading ? (
-          <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-            <IconLoader2 className="size-4 animate-spin" />
-            加载中...
-          </div>
-        ) : files.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">
-            还没有文档，上传第一个 .md 文件开始吧
-          </p>
-        ) : (
+{loading ? (
+<div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+<IconLoader2 className="size-4 animate-spin" />
+加载中...
+</div>
+) : loadError ? (
+<p className="py-10 text-center text-sm text-destructive">
+文件列表加载失败，请刷新页面重试
+</p>
+) : files.length === 0 ? (
+<p className="py-10 text-center text-sm text-muted-foreground">
+还没有文档，上传第一个 .md 文件开始吧
+</p>
+) : (
           <div className="space-y-1">
             {files.map((file) => (
               <div

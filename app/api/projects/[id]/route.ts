@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { getProject, deletePrefix, readFile, writeFile } from "@/lib/storage"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 
@@ -10,6 +11,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+
+  if (!isValidProjectId(id)) {
+    return invalidProjectIdResponse()
+  }
 
   try {
     const result = await getProject(id)
@@ -29,6 +34,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+
+  if (!isValidProjectId(id)) {
+    return invalidProjectIdResponse()
+  }
 
   try {
     const body = await request.json()
@@ -67,6 +76,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+
+  if (!isValidProjectId(id)) {
+    return invalidProjectIdResponse()
+  }
 
   try {
     const success = await deletePrefix(`projects/${id}/`)

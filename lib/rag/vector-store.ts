@@ -59,6 +59,8 @@ async function saveVectorStore(projectId: string, data: VectorStoreData): Promis
 
 /** 余弦相似度 */
 function cosineSimilarity(a: number[], b: number[]): number {
+  // 维度不匹配或空向量时返回 0（避免 NaN 污染搜索结果）
+  if (a.length === 0 || a.length !== b.length) return 0
   let dot = 0
   let normA = 0
   let normB = 0

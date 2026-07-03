@@ -49,9 +49,17 @@ export function buildContext(
     if (currentTokens + chunkTokens > maxTokens) {
       // 如果至少有一个块了，停止
       if (selected.length > 0) break
-      // 如果第一个块就超预算，截断内容
-      selected.push(result)
-      currentTokens += chunkTokens
+      // 如果第一个块就超预算，截断内容以适配 token 预算
+      const maxChars = Math.max(200, (maxTokens - headerOverhead) * 4) // 粗略按 1 token ≈ 4 字符估算
+      selected.push({
+        ...result,
+        chunk: {
+          ...result.chunk,
+          content: result.chunk.content.slice(0, maxChars) + "\n\n[... 内容因长度限制被截断]",
+          tokenCount: maxTokens - headerOverhead,
+        },
+      })
+      currentTokens = maxTokens
       break
     }
     selected.push(result)

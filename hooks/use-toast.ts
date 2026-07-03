@@ -26,16 +26,17 @@ export function useToast() {
   const removeToast = React.useCallback((id: string) => {
     // 先标记为 exiting 触发退出动画
     setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)))
-    // 动画结束后真正移除
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, EXIT_ANIMATION_MS)
-    // 清理定时器
-    const timer = timerMapRef.current.get(id)
-    if (timer) {
-      clearTimeout(timer)
-      timerMapRef.current.delete(id)
+    // 清理自动消失定时器（如果有）
+    const existingTimer = timerMapRef.current.get(id)
+    if (existingTimer) {
+      clearTimeout(existingTimer)
     }
+    // 动画结束后真正移除（同时追踪此定时器以便卸载时清理）
+    const exitTimer = setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+      timerMapRef.current.delete(id)
+    }, EXIT_ANIMATION_MS)
+    timerMapRef.current.set(id, exitTimer)
   }, [])
 
   const showToast = React.useCallback(

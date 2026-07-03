@@ -196,10 +196,7 @@ const searchParams = useSearchParams()
     return () => document.removeEventListener("mouseup", handleSelection)
   }, [])
 
-  // 切换文件时清除划词
-  React.useEffect(() => {
-    setSelectedText("")
-  }, [activeFile])
+  // 切换文件时清除划词 — moved into selectFile() to avoid set-state-in-effect
 
   const handleResizeStart = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -282,7 +279,7 @@ const searchParams = useSearchParams()
 React.useEffect(() => {
 // Instant load from localStorage cache (full data, for immediate use)
 const cached = loadConversationsSync(projectId)
-setConversations(cached)
+queueMicrotask(() => setConversations(cached))
 // Then fetch summaries from OSS (lightweight — no message content)
 loadConversationSummaries(projectId).then(async (summaries) => {
   if (summaries.length > 0) {
@@ -298,7 +295,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     if (needsFullFetch) {
       // Fetch full conversations (one-time, to populate cache)
       const fullConvs = await loadConversations(projectId)
-      setConversations(fullConvs)
+      queueMicrotask(() => setConversations(fullConvs))
     }
     // If cache is up-to-date, we already have full data from localStorage
   } else if (cached.length > 0) {
@@ -354,10 +351,9 @@ loadConversationSummaries(projectId).then(async (summaries) => {
   }, [showAI])
 
   // AI config
-  const [aiConfigured, setAiConfigured] = React.useState(false)
+  const [aiConfigured, setAiConfigured] = React.useState(() => isAIConfigured())
 
   React.useEffect(() => {
-    setAiConfigured(isAIConfigured())
     const handleConfigChange = () => setAiConfigured(isAIConfigured())
     window.addEventListener("ai-config-changed", handleConfigChange)
     return () => window.removeEventListener("ai-config-changed", handleConfigChange)
@@ -387,7 +383,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
 
   // Fetch RAG index status on mount
   React.useEffect(() => {
-    fetchIndexStatus()
+    queueMicrotask(() => fetchIndexStatus())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
@@ -537,7 +533,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
   }, [projectId, showToast])
 
   React.useEffect(() => {
-    fetchFiles()
+    queueMicrotask(() => fetchFiles())
   }, [fetchFiles])
 
   // ─── Refs to break circular dependency between useChatFlow ↔ usePptFlow ───
@@ -712,19 +708,20 @@ const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMet
     }
     setActiveFile(filename)
     setEditMode(false)
+    setSelectedText("") // 切换文件时清除划词
     fileCache.loadFileContent(filename)
     // 添加到最近打开列表
     setRecentFiles((prev) => {
       const filtered = prev.filter((f) => f !== filename)
       return [filename, ...filtered].slice(0, 10) // 最多保留10个
     })
-  }, [fileCache.loadFileContent, editMode, editContent, fileContent])
+  }, [fileCache, editMode, editContent, fileContent])
 
 React.useEffect(() => {
 if (!loadingFiles && files.length > 0 && !activeFile) {
 const fileParam = searchParams.get("file")
 const target = fileParam && files.some(f => f.filename === fileParam) ? fileParam : files[0].filename
-selectFile(target)
+queueMicrotask(() => selectFile(target))
 }
 }, [loadingFiles, files]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -968,6 +965,7 @@ selectFile(target)
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: isStreamingRef.current ? "instant" : "smooth" })
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatMessages])
 
   React.useEffect(() => {
@@ -1383,10 +1381,9 @@ selectFile(target)
           onPptConfirmOutline={pptFlow.handlePptConfirmOutline}
           onPptRetrySlide={pptFlow.handlePptRetrySlide}
           onPptRegenerateOutline={pptFlow.handlePptRegenerateOutline}
-          onPptGuideClick={() => pptFlow.startPptFlow(selectedText ? `基于选中内容生成 PPT：${selectedText.slice(0, 100)}` : "生成 PPT")}
-          onPptCancel={pptFlow.handlePptCancel}
-        />
-        </ErrorBoundary>
+onPptGuideClick={() => pptFlow.startPptFlow(selectedText ? `基于选中内容生成 PPT：${selectedText.slice(0, 100)}` : "生成 PPT")}
+/>
+</ErrorBoundary>
       </div>
 
       {/* ─── Unsaved Changes Confirmation Dialog ─── */}

@@ -21,10 +21,14 @@ export function isValidProjectId(id: string): boolean {
  * 移除 .. 和反斜杠，保留字母、数字、中文、点、下划线、连字符、斜杠
  */
 export function sanitizeFilename(filename: string): string {
-  return filename
+  const sanitized = filename
     .replace(/\.\./g, "") // 移除路径遍历序列
     .replace(/\\/g, "") // 移除反斜杠
+    .replace(/\0/g, "") // 移除 null 字节
+    .replace(/[\x00-\x1f]/g, "") // 移除控制字符
     .trim()
+  // 确保结果非空
+  return sanitized || "untitled"
 }
 
 /**

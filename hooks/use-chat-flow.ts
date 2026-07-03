@@ -94,6 +94,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
   const isStreamingRef = React.useRef(false)
   const abortControllerRef = React.useRef<AbortController | null>(null)
+  const rafIdsRef = React.useRef<Set<number>>(new Set())
 
   // ─── DeepThink persistence ───
 
@@ -112,14 +113,18 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     return () => window.removeEventListener("ai-config-changed", handler)
   }, [])
 
-  // 组件卸载时中止所有进行中的请求，防止在已卸载组件上更新状态
+  // 组件卸载时中止所有进行中的请求和 rAF，防止在已卸载组件上更新状态
   React.useEffect(() => {
+    const rafIds = rafIdsRef.current
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
         abortControllerRef.current = null
       }
       isStreamingRef.current = false
+      // 取消所有未完成的 requestAnimationFrame
+      rafIds.forEach((id) => cancelAnimationFrame(id))
+      rafIds.clear()
     }
   }, [])
 
@@ -424,12 +429,14 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
           const snapshot = fullContent
           const reasoningSnapshot = fullReasoning
           const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
-          requestAnimationFrame(() => {
+          const rafId = requestAnimationFrame(() => {
             setChatMessages((prev) =>
               prev.map((m) => (m.id === aiMsgId ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined } : m))
             )
             rafScheduled = false
+            rafIdsRef.current.delete(rafId)
           })
+          rafIdsRef.current.add(rafId)
         }
       }
 
@@ -621,12 +628,14 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
           const snapshot = fullContent
           const reasoningSnapshot = fullReasoning
           const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
-          requestAnimationFrame(() => {
+          const rafId = requestAnimationFrame(() => {
             setChatMessages((prev) =>
               prev.map((m) => (m.id === aiMsgId ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined } : m))
             )
             rafScheduled = false
+            rafIdsRef.current.delete(rafId)
           })
+          rafIdsRef.current.add(rafId)
         }
       }
 

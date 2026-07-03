@@ -14,6 +14,7 @@
 
 import { NextRequest } from "next/server"
 import { readFile, listFiles } from "@/lib/storage"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 export const maxDuration = 300
 
@@ -79,6 +80,11 @@ const TEMPLATES: Record<string, { name: string; prompt: string }> = {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
+
+  if (!isValidProjectId(projectId)) {
+    return invalidProjectIdResponse()
+  }
+
   const body = await request.json()
   const { type, apiKey, apiBase, model, customPrompt } = body
 

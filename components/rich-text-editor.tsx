@@ -228,7 +228,8 @@ function ToolbarButton({
 
 // ── Main Component ─────────────────────────────────────────────────
 export function RichTextEditor({ content, onChange, placeholder = "开始编辑..." }: RichTextEditorProps) {
-  const initialContent = React.useRef(markdownToHtml(content))
+  // 仅用于初始化编辑器内容，无需 ref（避免 render 阶段访问 ref）
+  const initialHtml = markdownToHtml(content)
   const isInternalUpdate = React.useRef(false)
 
   const editor = useEditor({
@@ -256,7 +257,7 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
       TableHeader,
       TableCell,
     ],
-    content: initialContent.current,
+    content: initialHtml,
     editorProps: {
       attributes: {
         class:

@@ -690,7 +690,6 @@ export default function PixelBlast({
         container.removeChild(t.renderer.domElement)
       threeRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     antialias,
     liquid,

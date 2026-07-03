@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { fileExists, writeFile } from "@/lib/storage"
 import path from "path"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 /**
  * POST /api/projects/[id]/import-url
@@ -11,6 +12,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+
+  if (!isValidProjectId(id)) {
+    return invalidProjectIdResponse()
+  }
 
   // 验证项目是否存在
   const projectExists = await fileExists(`projects/${id}/meta.json`)

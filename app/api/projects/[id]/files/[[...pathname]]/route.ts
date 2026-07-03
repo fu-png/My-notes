@@ -105,6 +105,11 @@ export async function GET(
     return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
   }
 
+  // 防止路径遍历：拒绝包含 .. 的路径段
+  if (decodedPathname.includes("..")) {
+    return NextResponse.json({ error: "非法的文件路径" }, { status: 400 })
+  }
+
   const pathname = `projects/${id}/${decodedPathname}`
 
   // 二进制资源（如 .audio 目录下的 TTS 音频）不应作为文本内容返回，
@@ -149,6 +154,11 @@ export async function PUT(
     return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
   }
 
+  // 防止路径遍历：拒绝包含 .. 的路径段
+  if (decodedPathname.includes("..")) {
+    return NextResponse.json({ error: "非法的文件路径" }, { status: 400 })
+  }
+
   const pathname = `projects/${id}/${decodedPathname}`
 
   try {
@@ -182,6 +192,11 @@ export async function PATCH(
   // 校验 projectId 格式
   if (!isValidProjectId(id)) {
     return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
+  }
+
+  // 防止路径遍历：拒绝包含 .. 的路径段
+  if (decodedPathname.includes("..")) {
+    return NextResponse.json({ error: "非法的文件路径" }, { status: 400 })
   }
 
   const oldPathname = `projects/${id}/${decodedPathname}`
@@ -228,6 +243,11 @@ export async function DELETE(
   // 校验 projectId 格式
   if (!isValidProjectId(id)) {
     return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
+  }
+
+  // 防止路径遍历：拒绝包含 .. 的路径段
+  if (decodedPathname.includes("..")) {
+    return NextResponse.json({ error: "非法的文件路径" }, { status: 400 })
   }
 
   const pathname = `projects/${id}/${decodedPathname}`

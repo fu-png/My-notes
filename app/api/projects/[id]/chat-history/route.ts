@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { readFile, writeFile, fileExists } from "@/lib/storage"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 type Params = Promise<{ id: string }>
 
@@ -18,6 +19,11 @@ export async function GET(
   { params }: { params: Params }
 ) {
   const { id: projectId } = await params
+
+  if (!isValidProjectId(projectId)) {
+    return invalidProjectIdResponse()
+  }
+
   const url = new URL(request.url)
   const mode = url.searchParams.get("mode") // "summary" | undefined
 
@@ -63,6 +69,10 @@ export async function POST(
   { params }: { params: Params }
 ) {
   const { id: projectId } = await params
+
+  if (!isValidProjectId(projectId)) {
+    return invalidProjectIdResponse()
+  }
 
   try {
     const { conversations } = await request.json()

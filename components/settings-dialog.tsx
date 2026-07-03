@@ -75,8 +75,6 @@ export {
   STORAGE_KEY_IMAGE_MODEL,
   STORAGE_KEY_PERSONA,
   STORAGE_KEY_USER_NAME,
-  STORAGE_KEY_PROVIDERS,
-  STORAGE_KEY_ACTIVE_PROVIDER,
 } from "@/lib/ai-config"
 
 import type { ProviderInfo } from "@/lib/ai-config"
@@ -105,8 +103,6 @@ import {
   STORAGE_KEY_IMAGE_MODEL,
   STORAGE_KEY_PERSONA,
   STORAGE_KEY_USER_NAME,
-  STORAGE_KEY_PROVIDERS,
-  STORAGE_KEY_ACTIVE_PROVIDER,
 } from "@/lib/ai-config"
 
 // ─── Component ───
@@ -151,9 +147,9 @@ export function SettingsDialog() {
     return found ? found.name : "自定义"
   }
 
-  // Load saved config on open
-  React.useEffect(() => {
-    if (open) {
+  // 打开对话框时加载已保存的配置（从 effect 移至事件处理以避免 set-state-in-effect）
+  const handleOpenChange = (newOpen: boolean) => {
+    if (newOpen) {
       const savedKey = localStorage.getItem(STORAGE_KEY_API_KEY) || ""
       const savedBase = localStorage.getItem(STORAGE_KEY_API_BASE) || DEFAULT_API_BASE
       const savedModel = localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL
@@ -184,7 +180,8 @@ export function SettingsDialog() {
 
       setSaved(false)
     }
-  }, [open])
+    setOpen(newOpen)
+  }
 
   // 切换服务商时自动填充 API Base 和模型列表
   const handleProviderChange = (name: string) => {
@@ -243,7 +240,7 @@ export function SettingsDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DialogTrigger asChild>

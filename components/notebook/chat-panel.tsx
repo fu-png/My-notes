@@ -55,7 +55,7 @@ import {
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { Switch } from "@/components/ui/switch"
 import type { ProviderInfo } from "@/components/settings-dialog"
-import type { ChatMessage, Conversation, DocFile, PptOutline, SlideImage } from "./types"
+import type { ChatMessage, Conversation, DocFile, PptOutline } from "./types"
 import { GENERATE_TEMPLATES, PPT_STYLE_PRESETS } from "./types"
 
 // ─── Props ───
@@ -168,8 +168,7 @@ export interface ChatPanelProps {
   onPptConfirmOutline: (outline: PptOutline) => void
   onPptRetrySlide: (msgId: string, slideIndex: number) => void
   onPptRegenerateOutline: () => void
-  onPptGuideClick: () => void
-  onPptCancel: () => void
+onPptGuideClick: () => void
 }
 
 // ─── Component ───
@@ -239,7 +238,6 @@ export const ChatPanel = React.memo(function ChatPanel({
   onPptRetrySlide,
   onPptRegenerateOutline,
   onPptGuideClick,
-  onPptCancel,
 }: ChatPanelProps) {
   if (!showAI) return null
 
@@ -575,7 +573,6 @@ export const ChatPanel = React.memo(function ChatPanel({
                           onConfirmOutline={onPptConfirmOutline}
                           onRetrySlide={onPptRetrySlide}
                           onRegenerateOutline={onPptRegenerateOutline}
-                          onCancel={onPptCancel}
                         />
                       )}
                       {/* AI 回复操作按钮 */}
@@ -746,7 +743,7 @@ function ReasoningBlock({
   const wasThinkingRef = React.useRef(isThinking)
 
   React.useEffect(() => {
-    if (defaultOpen) setOpen(true)
+    if (defaultOpen) queueMicrotask(() => setOpen(true))
   }, [defaultOpen])
 
   // 回答完成后自动收起思考过程
@@ -1219,7 +1216,6 @@ function PptFlowControls({
   onConfirmOutline,
   onRetrySlide,
   onRegenerateOutline,
-  onCancel,
 }: {
   msg: ChatMessage
   projectId: string
@@ -1231,12 +1227,11 @@ function PptFlowControls({
   onConfirmOutline: (outline: PptOutline) => void
   onRetrySlide: (msgId: string, slideIndex: number) => void
   onRegenerateOutline: () => void
-  onCancel: () => void
 }) {
   const meta = msg.pptMeta!
   const [customPromptText, setCustomPromptText] = React.useState("")
   const [editedOutline, setEditedOutline] = React.useState<PptOutline | null>(null)
-  const [showNotesForSlide, setShowNotesForSlide] = React.useState<number | null>(null)
+  const [showNotesForSlide] = React.useState<number | null>(null)
   const [showCustomCount, setShowCustomCount] = React.useState(false)
   const customCountRef = React.useRef<HTMLInputElement>(null)
   const [previewMode, setPreviewMode] = React.useState<"none" | "single" | "all">("none")

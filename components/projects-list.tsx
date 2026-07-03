@@ -107,7 +107,7 @@ export function ProjectsList() {
   }, [showToast])
 
   React.useEffect(() => {
-    fetchProjects()
+    queueMicrotask(() => fetchProjects())
   }, [fetchProjects])
 
   const handleDelete = async () => {
@@ -204,7 +204,7 @@ export function ProjectsList() {
       day: "numeric",
     })
 
-  const getRelativeTime = (dateStr: string) => {
+  const getRelativeTime = React.useCallback((dateStr: string) => {
     const now = Date.now()
     const date = new Date(dateStr).getTime()
     const diff = now - date
@@ -216,7 +216,7 @@ export function ProjectsList() {
     if (hours < 24) return `${hours} 小时前`
     if (days < 30) return `${days} 天前`
     return formatDate(dateStr)
-  }
+  }, [])
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 md:px-8">

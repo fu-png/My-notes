@@ -13,6 +13,7 @@ import { ingestProject, queryProject, getIndexStatus } from "@/lib/rag/pipeline"
 import type { RAGConfig } from "@/lib/rag/types"
 import { loadChunksData } from "@/lib/rag/vector-store"
 import { deletePrefix } from "@/lib/storage"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 export const maxDuration = 300 // 索引操作可能较慢
 
@@ -21,6 +22,11 @@ type RouteContext = { params: Promise<{ id: string }> }
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id: projectId } = await context.params
+
+    if (!isValidProjectId(projectId)) {
+      return invalidProjectIdResponse()
+    }
+
     const body = await request.json()
     const { action, apiKey, apiBase, model, embeddingModel, question, maxContextTokens, stream, activeFile } = body
 

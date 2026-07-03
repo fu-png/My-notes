@@ -142,33 +142,26 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
   const [activeSection, setActiveSection] = React.useState("chat")
   const [saved, setSaved] = React.useState(false)
 
-  // ─── 多服务商配置 ───
-  const [providers, setProviders] = React.useState<ProviderConfig[]>([])
-  const [activeProviderId, setActiveProviderId] = React.useState("")
-  const [editingProviderId, setEditingProviderId] = React.useState<string | null>(null)
+  // ─── 从 localStorage 加载初始配置（懒初始化，避免 set-state-in-effect） ───
+  const loadedConfig = React.useMemo(() => {
+    const config = {
+      providers: [] as ProviderConfig[],
+      activeProviderId: "",
+      editingProviderId: null as string | null,
+      ttsApiKey: "",
+      ttsApiBase: "",
+      ttsModel: DEFAULT_TTS_MODEL,
+      ttsVoiceHost: DEFAULT_TTS_VOICE_HOST,
+      ttsVoiceExpert: DEFAULT_TTS_VOICE_EXPERT,
+      useSameKey: true,
+      imageApiKey: "",
+      imageApiBase: DEFAULT_IMAGE_API_BASE,
+      imageModel: DEFAULT_IMAGE_MODEL,
+      useSameImageKey: true,
+      personaPrompt: "",
+      userName: "",
+    }
 
-  // TTS 配置
-  const [showTtsKey, setShowTtsKey] = React.useState(false)
-  const [ttsApiKey, setTtsApiKey] = React.useState("")
-  const [ttsApiBase, setTtsApiBase] = React.useState("")
-  const [ttsModel, setTtsModel] = React.useState(DEFAULT_TTS_MODEL)
-  const [ttsVoiceHost, setTtsVoiceHost] = React.useState(DEFAULT_TTS_VOICE_HOST)
-  const [ttsVoiceExpert, setTtsVoiceExpert] = React.useState(DEFAULT_TTS_VOICE_EXPERT)
-  const [useSameKey, setUseSameKey] = React.useState(true)
-
-  // 生图模型配置
-  const [showImageKey, setShowImageKey] = React.useState(false)
-  const [imageApiKey, setImageApiKey] = React.useState("")
-  const [imageApiBase, setImageApiBase] = React.useState(DEFAULT_IMAGE_API_BASE)
-  const [imageModel, setImageModel] = React.useState(DEFAULT_IMAGE_MODEL)
-  const [useSameImageKey, setUseSameImageKey] = React.useState(true)
-
-  // AI 个性 / Persona
-  const [personaPrompt, setPersonaPrompt] = React.useState("")
-  const [userName, setUserName] = React.useState("")
-
-  // Load config
-  React.useEffect(() => {
     // 读取多服务商配置
     const savedProviders = localStorage.getItem(STORAGE_KEY_PROVIDERS)
     const savedActiveId = localStorage.getItem(STORAGE_KEY_ACTIVE_PROVIDER)
@@ -176,13 +169,13 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     if (savedProviders) {
       try {
         const parsed = JSON.parse(savedProviders) as ProviderConfig[]
-        setProviders(parsed)
+        config.providers = parsed
         if (savedActiveId && parsed.find((p) => p.id === savedActiveId)) {
-          setActiveProviderId(savedActiveId)
-          setEditingProviderId(savedActiveId)
+          config.activeProviderId = savedActiveId
+          config.editingProviderId = savedActiveId
         } else if (parsed.length > 0) {
-          setActiveProviderId(parsed[0].id)
-          setEditingProviderId(parsed[0].id)
+          config.activeProviderId = parsed[0].id
+          config.editingProviderId = parsed[0].id
         }
       } catch { /* ignore */ }
     } else {
@@ -199,32 +192,59 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
           apiBase: oldBase,
           model: oldModel,
         }
-        setProviders([migratedProvider])
-        setActiveProviderId(migratedProvider.id)
-        setEditingProviderId(migratedProvider.id)
+        config.providers = [migratedProvider]
+        config.activeProviderId = migratedProvider.id
+        config.editingProviderId = migratedProvider.id
       }
     }
 
     // TTS
     const savedTtsKey = localStorage.getItem(STORAGE_KEY_TTS_API_KEY) || ""
-    setTtsApiKey(savedTtsKey)
-    setTtsApiBase(localStorage.getItem(STORAGE_KEY_TTS_API_BASE) || "")
-    setTtsModel(localStorage.getItem(STORAGE_KEY_TTS_MODEL) || DEFAULT_TTS_MODEL)
-    setTtsVoiceHost(localStorage.getItem(STORAGE_KEY_TTS_VOICE_HOST) || DEFAULT_TTS_VOICE_HOST)
-    setTtsVoiceExpert(localStorage.getItem(STORAGE_KEY_TTS_VOICE_EXPERT) || DEFAULT_TTS_VOICE_EXPERT)
-    setUseSameKey(!savedTtsKey)
+    config.ttsApiKey = savedTtsKey
+    config.ttsApiBase = localStorage.getItem(STORAGE_KEY_TTS_API_BASE) || ""
+    config.ttsModel = localStorage.getItem(STORAGE_KEY_TTS_MODEL) || DEFAULT_TTS_MODEL
+    config.ttsVoiceHost = localStorage.getItem(STORAGE_KEY_TTS_VOICE_HOST) || DEFAULT_TTS_VOICE_HOST
+    config.ttsVoiceExpert = localStorage.getItem(STORAGE_KEY_TTS_VOICE_EXPERT) || DEFAULT_TTS_VOICE_EXPERT
+    config.useSameKey = !savedTtsKey
 
     // Image
     const savedImageKey = localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || ""
-    setImageApiKey(savedImageKey)
-    setImageApiBase(localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || DEFAULT_IMAGE_API_BASE)
-    setImageModel(localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL)
-    setUseSameImageKey(!savedImageKey)
+    config.imageApiKey = savedImageKey
+    config.imageApiBase = localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || DEFAULT_IMAGE_API_BASE
+    config.imageModel = localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL
+    config.useSameImageKey = !savedImageKey
 
     // Persona
-    setPersonaPrompt(localStorage.getItem(STORAGE_KEY_PERSONA) || "")
-    setUserName(localStorage.getItem(STORAGE_KEY_USER_NAME) || "")
+    config.personaPrompt = localStorage.getItem(STORAGE_KEY_PERSONA) || ""
+    config.userName = localStorage.getItem(STORAGE_KEY_USER_NAME) || ""
+
+    return config
   }, [])
+
+  // ─── 多服务商配置 ───
+  const [providers, setProviders] = React.useState<ProviderConfig[]>(loadedConfig.providers)
+  const [activeProviderId, setActiveProviderId] = React.useState(loadedConfig.activeProviderId)
+  const [editingProviderId, setEditingProviderId] = React.useState<string | null>(loadedConfig.editingProviderId)
+
+  // TTS 配置
+  const [showTtsKey, setShowTtsKey] = React.useState(false)
+  const [ttsApiKey, setTtsApiKey] = React.useState(loadedConfig.ttsApiKey)
+  const [ttsApiBase, setTtsApiBase] = React.useState(loadedConfig.ttsApiBase)
+  const [ttsModel, setTtsModel] = React.useState(loadedConfig.ttsModel)
+  const [ttsVoiceHost, setTtsVoiceHost] = React.useState(loadedConfig.ttsVoiceHost)
+  const [ttsVoiceExpert, setTtsVoiceExpert] = React.useState(loadedConfig.ttsVoiceExpert)
+  const [useSameKey, setUseSameKey] = React.useState(loadedConfig.useSameKey)
+
+  // 生图模型配置
+  const [showImageKey, setShowImageKey] = React.useState(false)
+  const [imageApiKey, setImageApiKey] = React.useState(loadedConfig.imageApiKey)
+  const [imageApiBase, setImageApiBase] = React.useState(loadedConfig.imageApiBase)
+  const [imageModel, setImageModel] = React.useState(loadedConfig.imageModel)
+  const [useSameImageKey, setUseSameImageKey] = React.useState(loadedConfig.useSameImageKey)
+
+  // AI 个性 / Persona
+  const [personaPrompt, setPersonaPrompt] = React.useState(loadedConfig.personaPrompt)
+  const [userName, setUserName] = React.useState(loadedConfig.userName)
 
   // ESC 关闭
   React.useEffect(() => {

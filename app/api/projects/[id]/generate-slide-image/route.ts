@@ -7,6 +7,7 @@
  */
 
 import { NextRequest } from "next/server"
+import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
 
 export const maxDuration = 300
 
@@ -22,6 +23,11 @@ interface SlideData {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: projectId } = await context.params
+
+  if (!isValidProjectId(projectId)) {
+    return invalidProjectIdResponse()
+  }
+
   const body = await request.json()
   const {
     imageApiKey,

@@ -40,7 +40,7 @@ export const ToastContainer = React.memo(function ToastContainer({
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col-reverse gap-2">
+    <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col-reverse gap-2" role="alert" aria-live="polite">
       {toasts.map((toast) => {
         const Icon = ICON_MAP[toast.type]
         const style = STYLE_MAP[toast.type]
@@ -59,6 +59,7 @@ export const ToastContainer = React.memo(function ToastContainer({
             <span className="max-w-[280px] leading-snug">{toast.msg}</span>
             <button
               onClick={() => onDismiss(toast.id)}
+              aria-label="关闭通知"
               className="ml-1 shrink-0 rounded p-0.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
             >
               <IconX className="size-3.5" />

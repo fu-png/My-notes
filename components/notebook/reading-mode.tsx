@@ -399,7 +399,7 @@ export function ReadingModePanel({
 
   React.useEffect(() => {
     if (scrolling) {
-      pauseScrolling()
+      queueMicrotask(() => pauseScrolling())
       const t = setTimeout(() => startScrolling(), 16)
       return () => clearTimeout(t)
     }
@@ -483,16 +483,6 @@ export function ReadingModePanel({
     }
   }
 
-  // ── Generic note save — for backward compat (single-note steps use handleAddNote + handleCompleteStep)
-  const handleSaveNote = () => {
-    if (!currentNote.trim()) return
-    setNotes((prev) => [...prev, { stepId: step.id, content: currentNote.trim(), timestamp: Date.now() }])
-    setCompletedSteps((prev) => new Set([...prev, step.id]))
-    setCurrentNote("")
-    if (currentStep < STEP_META.length - 1) {
-      setTimeout(() => setCurrentStep(currentStep + 1), 300)
-    }
-  }
 
   // ── Add-note keydown (for multi-note steps)
   const handleAddKeyDown = (e: React.KeyboardEvent) => {
@@ -572,7 +562,7 @@ export function ReadingModePanel({
         } else {
           container.scrollTop = 0
           scrollPosRef.current = 0
-          setScrollProgress(0)
+          queueMicrotask(() => setScrollProgress(0))
         }
       }
       paragraphPauseRef.current = null
