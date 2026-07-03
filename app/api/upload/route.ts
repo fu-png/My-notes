@@ -11,6 +11,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "未选择文件" }, { status: 400 })
     }
 
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: "文件大小不能超过 10MB" }, { status: 413 })
+    }
+
     // Only accept .md files
     if (!file.name.endsWith(".md")) {
       return NextResponse.json(

@@ -178,7 +178,10 @@ export interface ChatPanelProps {
   onPptConfirmOutline: (outline: PptOutline) => void
   onPptRetrySlide: (msgId: string, slideIndex: number) => void
   onPptRegenerateOutline: () => void
-onPptGuideClick: () => void
+  onPptGuideClick: () => void
+
+  // Toast
+  showToast: (type: "success" | "error", msg: string) => void
 }
 
 // ─── Component ───
@@ -248,6 +251,7 @@ export const ChatPanel = React.memo(function ChatPanel({
   onPptRetrySlide,
   onPptRegenerateOutline,
   onPptGuideClick,
+  showToast,
 }: ChatPanelProps) {
   if (!showAI) return null
 
@@ -257,6 +261,10 @@ export const ChatPanel = React.memo(function ChatPanel({
       <div
         className="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
         onMouseDown={onResizeStart}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整 AI 面板宽度"
+        tabIndex={0}
       />
       {/* Chat header */}
       <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
@@ -377,7 +385,7 @@ export const ChatPanel = React.memo(function ChatPanel({
                 </div>
               )}
               {indexing && (
-                <div className="mb-3 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-primary/80">
+                <div className="mb-3 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-primary/80" role="status" aria-live="polite">
                   <IconLoader2 className="size-3.5 shrink-0 animate-spin" />
                   <span className="truncate">{indexProgress || "正在构建知识索引..."}</span>
                 </div>
@@ -435,7 +443,7 @@ export const ChatPanel = React.memo(function ChatPanel({
             </div>
           ) : (
             /* Chat messages */
-            <div className="space-y-3">
+            <div className="space-y-3" aria-live="polite" aria-relevant="additions">
               {chatMessages.slice(1).map((msg) => (
                 <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
 {msg.role === "user" ? (
@@ -584,6 +592,7 @@ export const ChatPanel = React.memo(function ChatPanel({
                           onConfirmOutline={onPptConfirmOutline}
                           onRetrySlide={onPptRetrySlide}
                           onRegenerateOutline={onPptRegenerateOutline}
+                          showToast={showToast}
                         />
                       )}
                       {/* AI 回复操作按钮 */}
@@ -634,7 +643,7 @@ export const ChatPanel = React.memo(function ChatPanel({
 
       {/* Index progress bar */}
       {indexing && indexProgress && (
-        <div className="shrink-0 border-t bg-muted/30 px-3 py-1.5">
+        <div className="shrink-0 border-t bg-muted/30 px-3 py-1.5" role="status" aria-live="polite">
           <div className="flex items-center gap-2">
             <IconLoader2 className="size-3.5 shrink-0 animate-spin text-primary" />
             <span className="truncate text-[11px] text-muted-foreground">{indexProgress}</span>
@@ -657,6 +666,7 @@ export const ChatPanel = React.memo(function ChatPanel({
               type="button"
               onClick={onClearSelectedText}
               className="shrink-0 text-muted-foreground/50 transition-colors hover:text-foreground"
+              aria-label="清除划词内容"
             >
               <IconX className="size-3.5" />
             </button>
@@ -1218,6 +1228,7 @@ function PptFlowControls({
   onConfirmOutline,
   onRetrySlide,
   onRegenerateOutline,
+  showToast,
 }: {
   msg: ChatMessage
   projectId: string
@@ -1229,6 +1240,7 @@ function PptFlowControls({
   onConfirmOutline: (outline: PptOutline) => void
   onRetrySlide: (msgId: string, slideIndex: number) => void
   onRegenerateOutline: () => void
+  showToast: (type: "success" | "error", msg: string) => void
 }) {
   const meta = msg.pptMeta!
   const [customPromptText, setCustomPromptText] = React.useState("")
@@ -1552,6 +1564,10 @@ function PptFlowControls({
                 <div
                   className="relative aspect-video cursor-pointer"
                   onClick={() => { setPreviewIndex(i); setPreviewMode("single") }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`预览第 ${i + 1} 页`}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPreviewIndex(i); setPreviewMode("single") } }}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={img.url} alt={`Slide ${i + 1}`} className="size-full object-cover" />
@@ -1638,6 +1654,7 @@ function PptFlowControls({
                   URL.revokeObjectURL(a.href)
                 } catch (e) {
                   console.error("ZIP download failed:", e)
+                  showToast("error", "下载失败，请重试")
                 } finally {
                   setDownloading("none")
                 }
@@ -1674,6 +1691,7 @@ function PptFlowControls({
                   URL.revokeObjectURL(a.href)
                 } catch (e) {
                   console.error("PDF export failed:", e)
+                  showToast("error", "下载失败，请重试")
                 } finally {
                   setDownloading("none")
                 }

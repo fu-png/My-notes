@@ -29,6 +29,7 @@ export function TopNav() {
   const [search, setSearch] = React.useState("")
   const [results, setResults] = React.useState<SearchResult[]>([])
   const [searching, setSearching] = React.useState(false)
+  const [searchError, setSearchError] = React.useState(false)
   const [open, setOpen] = React.useState(false)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
@@ -39,23 +40,30 @@ export function TopNav() {
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
     const query = search.trim()
-    if (!query) {
+    if (!query || query.length < 2) {
       queueMicrotask(() => {
         setResults([])
+        setSearchError(false)
         setOpen(false)
       })
       return
     }
 
-    queueMicrotask(() => setSearching(true))
+    queueMicrotask(() => {
+      setSearching(true)
+      setSearchError(false)
+    })
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`)
+        if (!res.ok) throw new Error("搜索失败")
         const data = await res.json()
         setResults(data.results || [])
         setOpen(true)
       } catch {
         setResults([])
+        setSearchError(true)
+        setOpen(true)
       } finally {
         setSearching(false)
       }
@@ -143,7 +151,7 @@ export function TopNav() {
             <div className="absolute left-0 top-full mt-1 w-full rounded-md border bg-background shadow-lg" role="listbox" aria-label="搜索结果">
               {results.length === 0 ? (
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  {searching ? "搜索中..." : "没有找到匹配的文件"}
+                  {searching ? "搜索中..." : searchError ? "搜索失败" : "没有找到匹配的文件"}
                 </div>
               ) : (
                 <div className="max-h-80 overflow-y-auto py-1">

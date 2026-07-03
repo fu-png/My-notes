@@ -783,6 +783,10 @@ queueMicrotask(() => selectFile(target))
   const handleCreateFile = async () => {
     const name = newFileName.trim()
     if (!name) return
+    if (/[\\/:*?"<>|]/.test(newFileName)) {
+      showToast("error", "文件名不能包含特殊字符 / \\ : * ? \" < > |")
+      return
+    }
     const filename = name.endsWith(".md") ? name : `${name}.md`
     const content = `# ${name.replace(/\.md$/, "")}\n\n`
 
@@ -813,6 +817,13 @@ queueMicrotask(() => selectFile(target))
   const handleImportUrl = async () => {
     const url = importUrl.trim()
     if (!url) return
+
+    try {
+      new URL(url)
+    } catch {
+      showToast("error", "请输入合法的 URL")
+      return
+    }
 
     setImportingUrl(true)
     try {
@@ -1122,7 +1133,7 @@ queueMicrotask(() => selectFile(target))
               />
             )}
             {!readingMode && (
-              <Button variant="ghost" size="sm" onClick={() => setShowAI(!showAI)}>
+              <Button variant="ghost" size="sm" onClick={() => setShowAI(!showAI)} aria-label={showAI ? "收起 AI 助手" : "展开 AI 助手"}>
                 <IconLayoutSidebarRightExpand className="size-4" />
               </Button>
             )}
@@ -1303,6 +1314,10 @@ queueMicrotask(() => selectFile(target))
                   <div
                     className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
                     onMouseDown={handleReadingResizeStart}
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整阅读面板宽度"
+                    tabIndex={0}
                   />
                   <ReadingModePanel
                     content={fileContent}
@@ -1385,6 +1400,7 @@ queueMicrotask(() => selectFile(target))
           onPptRetrySlide={pptFlow.handlePptRetrySlide}
           onPptRegenerateOutline={pptFlow.handlePptRegenerateOutline}
 onPptGuideClick={() => pptFlow.startPptFlow(selectedText ? `基于选中内容生成 PPT：${selectedText.slice(0, 100)}` : "生成 PPT")}
+          showToast={showToast}
 />
 </ErrorBoundary>
       </div>

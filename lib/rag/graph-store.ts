@@ -296,6 +296,16 @@ export function expandWithGraph(
     return { results: [], entities: [] }
   }
 
+  // 预构建邻接索引：entity ID → [{ target, weight }]，避免 O(E) 线性扫描
+  const adjacency = new Map<string, { target: string; weight: number }[]>()
+  for (const relation of graph.relations) {
+    if (!adjacency.has(relation.source)) adjacency.set(relation.source, [])
+    adjacency.get(relation.source)!.push({ target: relation.target, weight: relation.weight })
+    // 双向索引
+    if (!adjacency.has(relation.target)) adjacency.set(relation.target, [])
+    adjacency.get(relation.target)!.push({ target: relation.source, weight: relation.weight })
+  }
+
   // 1. 从初始检索结果中提取实体
   const queryEntities = new Set<string>()
   const foundEntityNames: { name: string; type: string; documents: string[] }[] = []
@@ -322,14 +332,18 @@ export function expandWithGraph(
 
   // 2. 在图谱中查找相邻实体（1-hop expansion），按共现权重排序后只取权重最高的若干个，
   //    避免命中多个查询实体时关系边数量叠加、间接引入过多文档
+  //    使用邻接索引避免 O(E) 线性扫描所有关系
   const MAX_NEIGHBOR_ENTITIES = 20
   const neighborWeights = new Map<string, number>()
-  for (const relation of graph.relations) {
-    if (queryEntities.has(relation.source) && !queryEntities.has(relation.target)) {
-      neighborWeights.set(relation.target, (neighborWeights.get(relation.target) || 0) + relation.weight)
-    }
-    if (queryEntities.has(relation.target) && !queryEntities.has(relation.source)) {
-      neighborWeights.set(relation.source, (neighborWeights.get(relation.source) || 0) + relation.weight)
+  for (const entityId of queryEntities) {
+    // 从预构建的邻接表中查找邻居（O(degree) 而非 O(E)）
+    const neighbors = adjacency.get(entityId)
+    if (neighbors) {
+      for (const { target, weight } of neighbors) {
+        if (!queryEntities.has(target)) {
+          neighborWeights.set(target, (neighborWeights.get(target) || 0) + weight)
+        }
+      }
     }
   }
   const neighborEntities = new Set(

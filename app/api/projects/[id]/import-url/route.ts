@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { fileExists, writeFile } from "@/lib/storage"
 import path from "path"
-import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
+import { isValidProjectId, invalidProjectIdResponse, isSafeExternalUrl } from "@/lib/validation"
 
 /**
  * POST /api/projects/[id]/import-url
@@ -44,19 +44,7 @@ export async function POST(
       return NextResponse.json({ error: "仅支持 http/https 链接" }, { status: 400 })
     }
 
-    // 阻止内网地址访问（SSRF 防护）
-    const hostname = parsedUrl.hostname
-    if (
-      hostname === 'localhost' ||
-      hostname.startsWith('127.') ||
-      hostname.startsWith('10.') ||
-      hostname.startsWith('192.168.') ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
-      hostname === '[::1]' ||
-      hostname.startsWith('169.254.') ||
-      hostname.endsWith('.local') ||
-      hostname.endsWith('.internal')
-    ) {
+    if (!isSafeExternalUrl(url)) {
       return NextResponse.json({ error: "不允许访问内部网络地址" }, { status: 400 })
     }
   } catch {

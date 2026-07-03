@@ -59,7 +59,19 @@ export async function POST(
 
     const results: { success: boolean; filename: string; title: string; error?: string }[] = []
 
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+
     for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        results.push({
+          success: false,
+          filename: file.name,
+          title: file.name,
+          error: "文件大小不能超过 10MB",
+        })
+        continue
+      }
+
       if (!isSupportedFile(file.name)) {
         results.push({
           success: false,

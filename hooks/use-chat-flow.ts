@@ -7,6 +7,7 @@ import { getAIConfig, getConfiguredModel, getProviderList, switchActiveProvider,
 import type { ProviderInfo } from "@/components/settings-dialog"
 import { detectIntent } from "@/lib/agents/supervisor"
 import { buildSystemPrompt, trimConversationHistory } from "@/lib/agents/context-manager"
+import { parseSSEStream } from "@/lib/infra/stream-utils"
 
 // ─── Hook Options & Return Types ────────────────────────────────────────────
 
@@ -403,8 +404,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
         return
       }
 
-      // 使用统一的 SSE 流解析工具（消除 60+ 行重复的手写缓冲逻辑）
-      const { parseSSEStream } = await import("@/lib/infra/stream-utils")
+      // 使用统一的 SSE 流解析工具（静态导入，避免每次调用动态 import 开销）
       const reader = res.body.getReader()
       let fullContent = ""
       let fullReasoning = ""
@@ -609,7 +609,6 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       }
 
       // 使用统一的 SSE 流解析工具（与 streamAI 保持一致）
-      const { parseSSEStream } = await import("@/lib/infra/stream-utils")
       let fullContent = ""
       let fullReasoning = ""
       let finishReason = ""

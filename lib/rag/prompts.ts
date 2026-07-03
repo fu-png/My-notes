@@ -22,6 +22,13 @@ export function buildRAGSystemPrompt(
   const hasContext = context.text.length > 0
   const hasActiveFile = activeFileName && activeFileContent
 
+  // 当有 RAG 上下文时，截断当前文件内容以防止 token 溢出
+  // 估算比率：1.5 字符/token（中英混合），RAG 模式下限 6000 字符（≈4000 tokens）
+  const MAX_ACTIVE_FILE_CHARS = hasContext ? 6000 : 16000
+  const truncatedFileContent = activeFileContent && activeFileContent.length > MAX_ACTIVE_FILE_CHARS
+    ? activeFileContent.slice(0, MAX_ACTIVE_FILE_CHARS) + "\n\n[... 文档内容过长，已截断]"
+    : activeFileContent
+
   // 构建来源清单
   const sourceList = context.sources
     .map(
@@ -44,7 +51,7 @@ ${sourceList}` : "### 未检索到相关参考资料\n知识库中没有找到�
 
 ${hasActiveFile ? `### 当前打开的文档
 用户正在查看「${activeFileName}」，文档内容：
-${activeFileContent}` : ""}
+${truncatedFileContent}` : ""}
 
 ## 回答规范
 
@@ -68,9 +75,14 @@ export function buildPlainSystemPrompt(
   activeFileContent?: string
 ): string {
   if (activeFileName && activeFileContent) {
+    // 截断超长文档内容，防止 token 溢出（非 RAG 模式给予更大预算）
+    const MAX_CHARS = 16000
+    const truncated = activeFileContent.length > MAX_CHARS
+      ? activeFileContent.slice(0, MAX_CHARS) + "\n\n[... 文档内容过长，已截断]"
+      : activeFileContent
     return `你是一个笔记 AI 助手。用户当前正在查看文档「${activeFileName}」。文档内容如下：
 
-${activeFileContent}
+${truncated}
 
 请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。
 

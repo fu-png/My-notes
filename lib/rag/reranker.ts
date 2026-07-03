@@ -106,7 +106,7 @@ async function rerankViaChatModel(
 ): Promise<RerankResult[] | null> {
   try {
     const chunkTexts = candidates.map((r, i) => {
-      const preview = r.chunk.content.slice(0, 500)
+      const preview = r.chunk.content.slice(0, 1000)
       return `[片段${i + 1}] ID: ${r.chunk.id}\n来源: ${r.chunk.fileTitle} > ${r.chunk.headingPath.join(" > ")}\n内容: ${preview}`
     })
 

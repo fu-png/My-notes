@@ -524,6 +524,7 @@ export function ReadingModePanel({
 
   // ── Reset session
   const handleReset = () => {
+    if (notes.length > 0 && !window.confirm("确定要重置所有阅读进度和笔记吗？")) return
     clearSession(fileKey)
     setCurrentStep(0)
     setCompletedSteps(new Set())

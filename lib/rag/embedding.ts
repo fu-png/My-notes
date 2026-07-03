@@ -37,6 +37,9 @@ export async function embed(
   const cacheKey = `${config.embeddingModel || "default"}:${text}`
   const cached = embeddingCache.get(cacheKey)
   if (cached && Date.now() - cached.cachedAt < EMBEDDING_CACHE_TTL_MS) {
+    // LRU 策略：命中时移到末尾（Map 保持插入顺序，末尾为最近使用）
+    embeddingCache.delete(cacheKey)
+    embeddingCache.set(cacheKey, cached)
     return cached.vector
   }
   const results = await embedBatch([text], config)

@@ -26,6 +26,12 @@ export function FileUpload({ redirectBase = "/docs/uploads" }: { redirectBase?: 
       return
     }
 
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      setResult({ success: false, message: "文件大小不能超过 10MB" })
+      return
+    }
+
     setUploading(true)
     setResult(null)
 
@@ -156,6 +162,7 @@ export function FileUpload({ redirectBase = "/docs/uploads" }: { redirectBase?: 
           <button
             onClick={() => setResult(null)}
             className="shrink-0 opacity-60 hover:opacity-100"
+            aria-label="关闭上传结果"
           >
             <IconX className="size-3.5" />
           </button>

@@ -203,9 +203,9 @@ export async function queryProject(
     ? perQueryResults[0]
     : simpleRRFFuse(perQueryResults, 25)
 
-  // 3. Score 阈值过滤：去除得分低于最高分 8% 的结果（更宽容，避免长尾相关结果被过早砍掉，
-  //    交给下游 reranker 做精细区分）
-  const filtered = filterByScoreThreshold(results, 0.08)
+  // 3. Score 阈值过滤：去除得分低于最高分 15% 的结果
+  //    RRF 分数压缩严重，8% 几乎不过滤；提升到 15% 减少reranker处理量
+  const filtered = filterByScoreThreshold(results, 0.15)
 
   // 4. 当前打开文件加权提升（×1.3）
   const boosted = activeFile

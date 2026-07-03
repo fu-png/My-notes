@@ -419,7 +419,7 @@ export const FileExplorer = React.memo(function FileExplorer({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="py-1">
           {loadingFiles ? (
-            <div className="space-y-1 px-3 py-2">
+            <div className="space-y-1 px-3 py-2" role="status" aria-label="正在加载文件列表">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-2 py-2">
                   <Skeleton className="size-3.5 shrink-0" />

@@ -558,6 +558,10 @@ function ProviderCard({
       <div
         className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5"
         onClick={onToggleExpand}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggleExpand() } }}
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -700,7 +704,7 @@ function SectionTTS({
           <p className="text-[13px] font-medium">复用对话模型 API Key</p>
           <p className="text-[11px] text-muted-foreground">开启后自动使用当前激活服务商的 Key 和地址</p>
         </div>
-        <Switch checked={useSameKey} onCheckedChange={setUseSameKey} />
+        <Switch checked={useSameKey} onCheckedChange={setUseSameKey} aria-label="复用对话模型 API Key" />
       </div>
 
       {!useSameKey && (
@@ -805,7 +809,7 @@ function SectionImage({
           <p className="text-[13px] font-medium">复用对话模型 API Key</p>
           <p className="text-[11px] text-muted-foreground">开启后自动使用当前激活服务商的 Key</p>
         </div>
-        <Switch checked={useSameImageKey} onCheckedChange={setUseSameImageKey} />
+        <Switch checked={useSameImageKey} onCheckedChange={setUseSameImageKey} aria-label="复用对话模型 API Key" />
       </div>
 
       {!useSameImageKey && (

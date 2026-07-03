@@ -17,11 +17,20 @@ const DEFAULT_CHUNK_OVERLAP = 0.15 // 15% overlap
 const MIN_CHUNK_SIZE = 30 // 低于此值的碎片块丢弃
 
 // 粗略估算 token 数：英文约 4 字符/token，中文约 1.5 字符/token
+// 使用 charCodeAt 代替正则，显著提升长文本性能
+function isCJKChar(code: number): boolean {
+  return (
+    (code >= 0x4e00 && code <= 0x9fff) ||
+    (code >= 0x3400 && code <= 0x4dbf) ||
+    (code >= 0xf900 && code <= 0xfaff)
+  )
+}
+
 function estimateTokens(text: string): number {
   let cjk = 0
   let other = 0
-  for (const ch of text) {
-    if (/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/.test(ch)) {
+  for (let i = 0; i < text.length; i++) {
+    if (isCJKChar(text.charCodeAt(i))) {
       cjk++
     } else {
       other++

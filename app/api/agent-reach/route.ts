@@ -1,43 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { isSafeExternalUrl } from "@/lib/validation"
 
 export const maxDuration = 60
-
-/**
- * 检查 URL 是否安全（SSRF 防护）
- * 拒绝内网地址和非 http/https 协议
- */
-function isSafeUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    // 仅允许 http/https 协议
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return false
-    }
-    const hostname = parsed.hostname
-    // 拒绝 IPv4 私有/内网地址
-    if (
-      hostname === "localhost" ||
-      hostname.startsWith("127.") ||          // 127.0.0.0/8
-      hostname.startsWith("10.") ||           // 10.0.0.0/8
-      hostname.startsWith("192.168.") ||       // 192.168.0.0/16
-      hostname.startsWith("169.254.") ||       // 169.254.0.0/16 (link-local)
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) // 172.16.0.0/12
-    ) {
-      return false
-    }
-    // 拒绝 IPv6 回环地址
-    if (hostname === "[::1]") {
-      return false
-    }
-    // 拒绝 IPv6 私有地址（fc00::/7 范围）
-    if (/^\[f[cd][0-9a-f]{2}:/.test(hostname)) {
-      return false
-    }
-    return true
-  } catch {
-    return false
-  }
-}
 
 /**
  * Agent Reach API 路由
@@ -75,7 +39,7 @@ export async function POST(request: NextRequest) {
         if (!url) {
           return NextResponse.json({ error: "网页读取需要 url 参数" }, { status: 400 })
         }
-        if (!isSafeUrl(url)) {
+        if (!isSafeExternalUrl(url)) {
           return NextResponse.json({ error: "不允许访问内部网络地址" }, { status: 400 })
         }
         result = await jinaRead(url)
@@ -86,7 +50,7 @@ export async function POST(request: NextRequest) {
         if (!url) {
           return NextResponse.json({ error: "YouTube 需要 url 参数" }, { status: 400 })
         }
-        if (!isSafeUrl(url)) {
+        if (!isSafeExternalUrl(url)) {
           return NextResponse.json({ error: "不允许访问内部网络地址" }, { status: 400 })
         }
         result = await jinaRead(url)
@@ -106,7 +70,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "B站搜索需要 query 或 url 参数" }, { status: 400 })
         }
         if (url) {
-          if (!isSafeUrl(url)) {
+          if (!isSafeExternalUrl(url)) {
             return NextResponse.json({ error: "不允许访问内部网络地址" }, { status: 400 })
           }
           result = await jinaRead(url)

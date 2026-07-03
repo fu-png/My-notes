@@ -26,8 +26,12 @@ function getVectorsPath(projectId: string): string {
   return `projects/${projectId}/.rag/vectors.json`
 }
 
-/** 内存缓存：避免同一次请求处理内反复读取/反序列化大 JSON */
-const cache = new Map<string, VectorStoreData>()
+/** 内存缓存：避免同一次请求处理内反复读取/反序列化大 JSON
+ *  带 TTL（5分钟）和大小限制，防止 Serverless warm 实例内存无限增长
+ */
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 分钟
+const CACHE_MAX_SIZE = 20 // 最多缓存 20 个项目的向量数据
+const cache = new Map<string, { data: VectorStoreData; loadedAt: number }>()
 
 function invalidateCache(projectId: string): void {
   cache.delete(projectId)
@@ -35,14 +39,23 @@ function invalidateCache(projectId: string): void {
 
 async function loadVectorStore(projectId: string): Promise<VectorStoreData | null> {
   const cached = cache.get(projectId)
-  if (cached) return cached
+  if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
+    return cached.data
+  }
+  // 清理过期条目
+  if (cached) cache.delete(projectId)
 
   const raw = await readFile(getVectorsPath(projectId))
   if (!raw) return null
 
   try {
     const data = JSON.parse(raw) as VectorStoreData
-    cache.set(projectId, data)
+    // 超过上限时清除最旧条目（Map 保持插入顺序）
+    if (cache.size >= CACHE_MAX_SIZE) {
+      const oldestKey = cache.keys().next().value
+      if (oldestKey) cache.delete(oldestKey)
+    }
+    cache.set(projectId, { data, loadedAt: Date.now() })
     return data
   } catch (err) {
     console.error("[vector-store] Failed to parse vectors.json:", err)
@@ -54,7 +67,12 @@ async function saveVectorStore(projectId: string, data: VectorStoreData): Promis
   await storageWrite(getVectorsPath(projectId), JSON.stringify(data), {
     contentType: "application/json",
   })
-  cache.set(projectId, data)
+  // 超过上限时清除最旧条目
+  if (cache.size >= CACHE_MAX_SIZE && !cache.has(projectId)) {
+    const oldestKey = cache.keys().next().value
+    if (oldestKey) cache.delete(oldestKey)
+  }
+  cache.set(projectId, { data, loadedAt: Date.now() })
 }
 
 /** 余弦相似度 */

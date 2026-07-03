@@ -7,47 +7,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { isValidProjectId, invalidProjectIdResponse } from "@/lib/validation"
+import { isValidProjectId, invalidProjectIdResponse, isSafeExternalUrl } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
-
-/**
- * 检查图片 URL 是否允许访问（SSRF 防护）
- * 拒绝内网地址和非 http/https 协议
- */
-function isAllowedImageUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    // 仅允许 http/https 协议
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return false
-    }
-    const hostname = parsed.hostname
-    // 拒绝 IPv4 私有/内网地址
-    if (
-      hostname === "localhost" ||
-      hostname.startsWith("127.") ||          // 127.0.0.0/8
-      hostname.startsWith("10.") ||           // 10.0.0.0/8
-      hostname.startsWith("192.168.") ||       // 192.168.0.0/16
-      hostname.startsWith("169.254.") ||       // 169.254.0.0/16 (link-local)
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) // 172.16.0.0/12
-    ) {
-      return false
-    }
-    // 拒绝 IPv6 回环地址
-    if (hostname === "[::1]") {
-      return false
-    }
-    // 拒绝 IPv6 私有地址（fc00::/7 范围）
-    if (/^\[f[cd][0-9a-f]{2}:/.test(hostname)) {
-      return false
-    }
-    return true
-  } catch {
-    return false
-  }
-}
 
 interface FetchedImage {
   buffer: Buffer
@@ -87,7 +50,7 @@ export async function POST(
           const base64 = url.split(",")[1]
           return { buffer: Buffer.from(base64, "base64"), mime, ext }
         }
-        if (!isAllowedImageUrl(url)) {
+        if (!isSafeExternalUrl(url)) {
           console.error('Blocked SSRF attempt:', url)
           return null
         }

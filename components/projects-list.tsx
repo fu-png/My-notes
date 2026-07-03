@@ -123,6 +123,8 @@ export function ProjectsList() {
       if (res.ok) {
         setProjects((prev) => prev.filter((p) => p.id !== id))
         router.refresh()
+      } else {
+        showToast("error", "删除失败，请重试")
       }
     } catch (err) {
       console.error("[handleDelete] Failed:", err)
@@ -344,6 +346,7 @@ export function ProjectsList() {
                         className="h-7 text-sm"
                         autoFocus
                         disabled={saving}
+                        aria-label="重命名笔记"
                       />
                       <button
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRename() }}
@@ -454,6 +457,7 @@ export function ProjectsList() {
                       className="h-7 text-sm"
                       autoFocus
                       disabled={saving}
+                      aria-label="重命名笔记"
                     />
                     <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRename() }}

@@ -420,28 +420,32 @@ export async function getProjects(): Promise<ProjectMeta[]> {
     const metaFiles = await listFiles("projects/")
     const metaBlobs = metaFiles.filter((f) => f.pathname.endsWith("/meta.json"))
 
-    const projects: ProjectMeta[] = []
-    for (const metaBlob of metaBlobs) {
-      try {
-        const result = await client.get(metaBlob.pathname)
-        const content = Buffer.isBuffer(result.content)
-          ? result.content.toString("utf-8")
-          : String(result.content)
-        const meta = JSON.parse(content) as ProjectMeta
+    // 并行读取所有项目的 meta.json（原为串行 for 循环，多项目时延迟显著）
+    const projectResults = await Promise.all(
+      metaBlobs.map(async (metaBlob) => {
+        try {
+          const result = await client.get(metaBlob.pathname)
+          const content = Buffer.isBuffer(result.content)
+            ? result.content.toString("utf-8")
+            : String(result.content)
+          const meta = JSON.parse(content) as ProjectMeta
 
-        const projectPrefix = metaBlob.pathname.replace("meta.json", "")
-        const allFiles = metaFiles.filter(
-          (f) =>
-            f.pathname.startsWith(projectPrefix) &&
-            f.pathname !== metaBlob.pathname &&
-            !f.pathname.endsWith("/chat-history.json") &&
-            !f.pathname.slice(projectPrefix.length).includes("/")
-        )
-        projects.push({ ...meta, fileCount: allFiles.length })
-      } catch {
-        continue
-      }
-    }
+          const projectPrefix = metaBlob.pathname.replace("meta.json", "")
+          const allFiles = metaFiles.filter(
+            (f) =>
+              f.pathname.startsWith(projectPrefix) &&
+              f.pathname !== metaBlob.pathname &&
+              !f.pathname.endsWith("/chat-history.json") &&
+              !f.pathname.slice(projectPrefix.length).includes("/")
+          )
+          return { ...meta, fileCount: allFiles.length } as ProjectMeta
+        } catch {
+          return null
+        }
+      })
+    )
+
+    const projects = projectResults.filter((p): p is ProjectMeta => p !== null)
 
     projects.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -536,7 +540,7 @@ export async function getProject(id: string): Promise<{ meta: ProjectMeta; files
 
 /** 创建项目 */
 export async function createProject(name: string): Promise<ProjectMeta> {
-  const id = `proj-${Date.now()}`
+  const id = `proj-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const meta: ProjectMeta = {
     id,
     name,

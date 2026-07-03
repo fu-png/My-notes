@@ -78,6 +78,12 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
       return
     }
 
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      setUploadResult({ success: false, message: "文件大小不能超过 10MB" })
+      return
+    }
+
     setUploading(true)
     setUploadResult(null)
 
@@ -122,6 +128,8 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
       if (res.ok) {
         setFiles((prev) => prev.filter((f) => f.filename !== filename))
         router.refresh()
+      } else {
+        showToast("error", "删除失败，请重试")
       }
     } catch {
       showToast("error", "删除失败，请重试")

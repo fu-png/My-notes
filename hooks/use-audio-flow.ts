@@ -33,6 +33,39 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
   const [audioCurrentLine, setAudioCurrentLine] = React.useState(-1)
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
   const abortRef = React.useRef<AbortController | null>(null)
+  // rAF 节流：避免进度更新触发过多重渲染
+  const rafScheduledRef = React.useRef(false)
+  const pendingAudioUpdateRef = React.useRef<{ msgId: string; progress?: string; stage?: "script" | "confirming" | "synthesizing" | "done" | "error"; content?: string } | null>(null)
+
+  // 批量刷新音频进度更新（使用 requestAnimationFrame 节流）
+  const flushAudioUpdate = React.useCallback(() => {
+    rafScheduledRef.current = false
+    const update = pendingAudioUpdateRef.current
+    if (!update) return
+    pendingAudioUpdateRef.current = null
+    setChatMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== update.msgId) return m
+        return {
+          ...m,
+          content: update.content ?? m.content,
+          audioMeta: {
+            ...m.audioMeta!,
+            ...(update.stage ? { stage: update.stage } : {}),
+            ...(update.progress ? { progress: update.progress } : {}),
+          },
+        }
+      })
+    )
+  }, [setChatMessages])
+
+  const scheduleAudioUpdate = React.useCallback((update: { msgId: string; progress?: string; stage?: "script" | "confirming" | "synthesizing" | "done" | "error"; content?: string }) => {
+    pendingAudioUpdateRef.current = update
+    if (!rafScheduledRef.current) {
+      rafScheduledRef.current = true
+      requestAnimationFrame(flushAudioUpdate)
+    }
+  }, [flushAudioUpdate])
 
   const handleAudioGenerate = async () => {
     const config = getAIConfig()
@@ -114,13 +147,7 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
           return
         }
         if (parsed.progress) {
-          setChatMessages((prev) =>
-            prev.map((m) =>
-              m.id === aiMsgId
-                ? { ...m, audioMeta: { ...m.audioMeta!, progress: parsed.progress as string } }
-                : m
-            )
-          )
+          scheduleAudioUpdate({ msgId: aiMsgId, progress: parsed.progress as string })
         }
         if (parsed.step === "script_done" && parsed.script) {
           const scriptContent = (parsed.script as { speaker: string; text: string }[])
@@ -237,13 +264,7 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
           return
         }
         if (parsed.progress) {
-          setChatMessages((prev) =>
-            prev.map((m) =>
-              m.id === msgId
-                ? { ...m, audioMeta: { ...m.audioMeta!, progress: parsed.progress as string } }
-                : m
-            )
-          )
+          scheduleAudioUpdate({ msgId, progress: parsed.progress as string })
         }
         if (parsed.step === "tts_unavailable") {
           setChatMessages((prev) =>

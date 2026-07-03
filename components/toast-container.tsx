@@ -40,7 +40,7 @@ export const ToastContainer = React.memo(function ToastContainer({
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col-reverse gap-2" role="alert" aria-live="polite">
+    <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col-reverse gap-2" role="status" aria-live="polite">
       {toasts.map((toast) => {
         const Icon = ICON_MAP[toast.type]
         const style = STYLE_MAP[toast.type]
