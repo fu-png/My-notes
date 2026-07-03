@@ -8,7 +8,7 @@
 import type { SearchResult, AssembledContext, ContextSource } from "./types"
 import { estimateTokens } from "./chunker"
 
-const DEFAULT_MAX_TOKENS = 6000
+const DEFAULT_MAX_TOKENS = 12000
 
 /**
  * 将检索结果组装为上下文文本

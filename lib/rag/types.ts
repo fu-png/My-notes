@@ -40,6 +40,8 @@ export interface RAGConfig {
   embeddingModel: string
   /** 对话模型名称（用于查询分解） */
   chatModel: string
+  /** 专用重排序模型名称（如 BAAI/bge-reranker-v2-m3），未指定时使用默认值 */
+  rerankModel?: string
   /** 上下文组装的最大 token 数 */
   maxContextTokens?: number
 }

@@ -66,6 +66,48 @@ const PROPER_NOUN_RE = /(?:[A-Z][a-z]+(?:\s[A-Z][a-z]+)+)|(?:[A-Z]{2,6}(?=\s|[�
 const BOLD_RE = /\*\*([^*]{2,30})\*\*/g
 
 /**
+ * 停用词 / 结构性噪声词表
+ *
+ * 这些词虽然会被正则命中，但要么是文档的"结构性套话"（每一章/每一节都会出现，
+ * 不携带跨文档语义关联），要么是 Mermaid 等图表 DSL 的语法关键字，要么是过于
+ * 通用的技术缩写（几乎在任何技术文档里都会出现）。
+ *
+ * 如果不过滤，这些词会在知识图谱里变成连接几乎全部文档的"超级节点"（hub node），
+ * 一旦查询结果里出现其中之一，Graph RAG 的 1-hop 扩展就会把几乎整个知识库都
+ * 拉入上下文，完全稀释掉向量/BM25 检索原本精确的结果。
+ */
+const ENTITY_STOPWORDS = new Set(
+  [
+    // Mermaid / 图表 DSL 关键字（方向标记等），会被 PROPER_NOUN_RE 误判为专有名词
+    "TD", "TB", "LR", "RL", "BT",
+    // 文档结构性小节标题（几乎每章都重复出现，不构成有意义的跨文档实体关联）
+    "学习目标：", "学习目标", "交叉引用：", "交叉引用", "最佳实践：", "最佳实践",
+    "关键要点", "实战练习", "反模式警告：", "反模式警告", "本章小结", "小结",
+    "章节导读", "延伸阅读", "参考资料", "练习", "总结", "思考题：", "思考题",
+    "交叉引用提示：", "交叉引用提示",
+    // 过于通用、几乎任意技术文档都会出现的缩写/词汇，作为图谱锚点没有区分度
+    "API", "UI", "AI", "SDK", "CLI", "CI", "CD", "JSON", "URL", "ID",
+    "HTTP", "HTTPS", "OS", "IO", "DB", "SQL",
+  ].map((w) => w.toLowerCase())
+)
+
+/**
+ * 单个实体最多允许出现在总文档数的这个比例中，超过则视为"过于通用"的超级节点。
+ * 实际生效阈值取 (总文档数 × 该比例) 与 HUB_ENTITY_MIN_DOCUMENTS 中的较大者，
+ * 避免文档数很少的小项目里，正常核心概念也被误判为超级节点。
+ */
+const MAX_ENTITY_DOCUMENT_RATIO = 0.3
+
+/** 判断实体名是否为噪声词（停用词，或去除标点后命中停用词表） */
+function isStopwordEntity(name: string): boolean {
+  const normalized = name.toLowerCase().trim()
+  if (ENTITY_STOPWORDS.has(normalized)) return true
+  const stripped = normalized.replace(/[：:，,。.！!？?]+$/g, "")
+  if (ENTITY_STOPWORDS.has(stripped)) return true
+  return false
+}
+
+/**
  * 从文本块中抽取实体候选
  */
 function extractEntities(text: string): string[] {
@@ -74,39 +116,39 @@ function extractEntities(text: string): string[] {
   // Wiki 链接 [[实体名]]
   for (const m of text.matchAll(WIKI_LINK_RE)) {
     const name = m[1].trim()
-    if (name.length >= 2 && name.length <= 30) entities.add(name)
+    if (name.length >= 2 && name.length <= 30 && !isStopwordEntity(name)) entities.add(name)
   }
 
   // Markdown 链接文本
   for (const m of text.matchAll(MD_LINK_RE)) {
     const name = m[1].trim()
-    if (name.length >= 2 && name.length <= 30) entities.add(name)
+    if (name.length >= 2 && name.length <= 30 && !isStopwordEntity(name)) entities.add(name)
   }
 
   // 代码引用 `技术名词`
   for (const m of text.matchAll(CODE_REF_RE)) {
     const name = m[1].trim()
-    if (name.length >= 2 && name.length <= 30) entities.add(name)
+    if (name.length >= 2 && name.length <= 30 && !isStopwordEntity(name)) entities.add(name)
   }
 
   // 加粗文本
   for (const m of text.matchAll(BOLD_RE)) {
     const name = m[1].trim()
-    if (name.length >= 2 && name.length <= 30) entities.add(name)
+    if (name.length >= 2 && name.length <= 30 && !isStopwordEntity(name)) entities.add(name)
   }
 
   // 专有名词
   for (const m of text.matchAll(PROPER_NOUN_RE)) {
     const name = m[0].trim()
-    if (name.length >= 2 && name.length <= 30) entities.add(name)
+    if (name.length >= 2 && name.length <= 30 && !isStopwordEntity(name)) entities.add(name)
   }
 
-  // Markdown 标题作为实体
+  // Markdown 标题作为实体（排除纯结构性小节标题，如"学习目标"）
   const headingMatch = text.match(/^#{1,3}\s+(.+)$/gm)
   if (headingMatch) {
     for (const h of headingMatch) {
       const name = h.replace(/^#{1,3}\s+/, "").trim()
-      if (name.length >= 2 && name.length <= 30) entities.add(name)
+      if (name.length >= 2 && name.length <= 30 && !isStopwordEntity(name)) entities.add(name)
     }
   }
 
@@ -129,7 +171,20 @@ function inferEntityType(name: string): GraphEntity["type"] {
 // ─── 图谱构建 ───
 
 /**
+ * 实体最少需要出现在多少个文档中，才有资格被判定为"超级节点"而剔除。
+ * 避免项目文档数很少时（如 2-3 个文件），阈值比例误伤正常的核心概念实体。
+ */
+const HUB_ENTITY_MIN_DOCUMENTS = 6
+
+/**
  * 从文档分块列表构建知识图谱
+ *
+ * 分两遍扫描：
+ * 1. 第一遍抽取全部候选实体及其出现的文档集合
+ * 2. 根据文档总数计算 document-frequency 上限，剔除覆盖率过高的"超级节点"实体
+ *    （如 "API"、"Claude Code" 这类几乎每章都出现的词），避免它们在图谱查询阶段
+ *    把几乎全部文档都拉入 Graph RAG 扩展结果，稀释检索精度
+ * 3. 第二遍只用保留下来的实体构建共现关系，超级节点不参与任何关系边
  */
 export function buildKnowledgeGraph(chunks: Chunk[]): KnowledgeGraph {
   const entities = new Map<string, GraphEntity>()
@@ -143,11 +198,21 @@ export function buildKnowledgeGraph(chunks: Chunk[]): KnowledgeGraph {
   // 生成关系 key：两个实体名按字典序排列，保证 (a,b) 和 (b,a) 映射到同一 key
   const makeRelationKey = (a: string, b: string) => a < b ? `${a}|${b}` : `${b}|${a}`
 
-  for (const chunk of chunks) {
-    const chunkEntities = extractEntities(chunk.content)
+  // 预先抽取每个 chunk 的实体列表，避免正则重复执行两遍
+  const chunkEntitiesList = chunks.map((chunk) => ({
+    chunk,
+    entityNames: extractEntities(chunk.content),
+  }))
 
-    // 注册实体
-    for (const name of chunkEntities) {
+  // 第一遍：统计全部候选实体的文档覆盖情况
+  const totalDocuments = new Set(chunks.map((c) => c.filename)).size
+  const hubThreshold = Math.max(
+    HUB_ENTITY_MIN_DOCUMENTS,
+    Math.ceil(totalDocuments * MAX_ENTITY_DOCUMENT_RATIO)
+  )
+
+  for (const { chunk, entityNames } of chunkEntitiesList) {
+    for (const name of entityNames) {
       const normalized = normalizeName(name)
       const existing = entities.get(normalized)
 
@@ -167,13 +232,33 @@ export function buildKnowledgeGraph(chunks: Chunk[]): KnowledgeGraph {
         entities.set(normalized, entity)
       }
     }
+  }
 
-    // 共现关系：同一 chunk 中的实体两两建立关系
-    // 使用 Map 索引替代 Array.find()，从 O(n²×m) 降低到 O(n²)
-    for (let i = 0; i < chunkEntities.length; i++) {
-      for (let j = i + 1; j < chunkEntities.length; j++) {
-        const a = normalizeName(chunkEntities[i])
-        const b = normalizeName(chunkEntities[j])
+  // 剔除"超级节点"：出现在文档数超过阈值的实体，对图谱扩展没有区分度，
+  // 反而会在查询阶段把几乎全部文档拉入结果
+  const hubEntityIds = new Set<string>()
+  for (const [id, entity] of entities) {
+    if (entity.documents.length > hubThreshold) {
+      hubEntityIds.add(id)
+      entities.delete(id)
+    }
+  }
+  if (hubEntityIds.size > 0) {
+    console.log(
+      `[graph-store] 剔除 ${hubEntityIds.size} 个超级节点实体（文档覆盖率过高，阈值 > ${hubThreshold} 篇）`
+    )
+  }
+
+  // 第二遍：只用保留下来的实体构建共现关系
+  for (const { entityNames } of chunkEntitiesList) {
+    const validEntities = entityNames.filter(
+      (name) => !hubEntityIds.has(normalizeName(name))
+    )
+
+    for (let i = 0; i < validEntities.length; i++) {
+      for (let j = i + 1; j < validEntities.length; j++) {
+        const a = normalizeName(validEntities[i])
+        const b = normalizeName(validEntities[j])
         if (a === b) continue
 
         const key = makeRelationKey(a, b)
@@ -241,16 +326,24 @@ export function expandWithGraph(
     return { results: [], entities: [] }
   }
 
-  // 2. 在图谱中查找相邻实体（1-hop expansion）
-  const neighborEntities = new Set<string>()
+  // 2. 在图谱中查找相邻实体（1-hop expansion），按共现权重排序后只取权重最高的若干个，
+  //    避免命中多个查询实体时关系边数量叠加、间接引入过多文档
+  const MAX_NEIGHBOR_ENTITIES = 20
+  const neighborWeights = new Map<string, number>()
   for (const relation of graph.relations) {
     if (queryEntities.has(relation.source) && !queryEntities.has(relation.target)) {
-      neighborEntities.add(relation.target)
+      neighborWeights.set(relation.target, (neighborWeights.get(relation.target) || 0) + relation.weight)
     }
     if (queryEntities.has(relation.target) && !queryEntities.has(relation.source)) {
-      neighborEntities.add(relation.source)
+      neighborWeights.set(relation.source, (neighborWeights.get(relation.source) || 0) + relation.weight)
     }
   }
+  const neighborEntities = new Set(
+    Array.from(neighborWeights.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_NEIGHBOR_ENTITIES)
+      .map(([id]) => id)
+  )
 
   // 3. 找到相邻实体所在的文档
   const expansionDocuments = new Set<string>()

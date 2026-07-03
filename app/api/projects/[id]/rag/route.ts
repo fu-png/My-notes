@@ -47,7 +47,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
           embeddingModel: embeddingModel || "text-embedding-3-small",
-          maxContextTokens: maxContextTokens || 6000,
+          maxContextTokens: maxContextTokens || 12000,
         }
 
         // 流式模式：通过 SSE 实时推送进度
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
           embeddingModel: embeddingModel || "text-embedding-3-small",
-          maxContextTokens: maxContextTokens || 6000,
+          maxContextTokens: maxContextTokens || 12000,
         }
 
         const context = await queryProject(projectId, question, config, activeFile)

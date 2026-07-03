@@ -8,7 +8,7 @@
 
 import { chunkDocuments } from "./chunker"
 import { embedBatch } from "./embedding"
-import { addChunks, searchByVector, deleteIndex, saveChunksData, loadChunksData } from "./vector-store"
+import { addChunks, searchByVector, deleteIndex, loadChunksData } from "./vector-store"
 import { createBm25Index, searchByBm25 } from "./bm25-store"
 import { decomposeQuery } from "./query-decomposer"
 import { buildContext } from "./context-builder"
@@ -83,15 +83,21 @@ export async function ingestProject(
   // 4. Embedding
   log("正在生成 Embedding（这可能需要几分钟）...")
   const contents = chunks.map((c) => c.content)
-  const embeddings = await embedBatch(contents, config)
+  let lastReportedPercent = -1
+  const embeddings = await embedBatch(contents, config, (done, total) => {
+    // 按 10% 的粒度上报进度，避免批次很多时刷屏
+    const percent = Math.floor((done / total) * 100)
+    if (percent >= lastReportedPercent + 10 || done === total) {
+      lastReportedPercent = percent
+      log(`Embedding 进度：${done}/${total}（${percent}%）`)
+    }
+  })
   log(`生成了 ${embeddings.length} 个 Embedding 向量`)
 
-  // 5. 先清空旧索引，再存入 Vectra
+  // 5. 先清空旧索引，再存入向量存储（chunks + 向量一起持久化到 OSS）
   log("正在存入向量索引...")
   await deleteIndex(projectId)
   await addChunks(projectId, chunks, embeddings)
-  // 保存 chunks 元数据
-  await saveChunksData(projectId, chunks)
   log("向量索引创建完成")
 
   // 6. 创建 BM25 索引
@@ -159,19 +165,20 @@ export async function queryProject(
   const perQueryResults = await Promise.all(
     subQueries.map(async (subQuery, i) => {
       const [vectorResults, bm25Results] = await Promise.all([
-        searchByVector(projectId, queryEmbeddings[i], 15),
-        searchByBm25(projectId, subQuery, 15),
+        searchByVector(projectId, queryEmbeddings[i], 30),
+        searchByBm25(projectId, subQuery, 30),
       ])
-      return simpleRRFFuse([vectorResults, bm25Results], subQueries.length > 1 ? 15 : 10)
+      return simpleRRFFuse([vectorResults, bm25Results], subQueries.length > 1 ? 25 : 20)
     })
   )
 
   const results = subQueries.length === 1
     ? perQueryResults[0]
-    : simpleRRFFuse(perQueryResults, 10)
+    : simpleRRFFuse(perQueryResults, 25)
 
-  // 3. Score 阈值过滤：去除得分低于最高分 15% 的结果
-  const filtered = filterByScoreThreshold(results, 0.15)
+  // 3. Score 阈值过滤：去除得分低于最高分 8% 的结果（更宽容，避免长尾相关结果被过早砍掉，
+  //    交给下游 reranker 做精细区分）
+  const filtered = filterByScoreThreshold(results, 0.08)
 
   // 4. 当前打开文件加权提升（×1.3）
   const boosted = activeFile
@@ -182,8 +189,8 @@ export async function queryProject(
       ).sort((a, b) => b.score - a.score)
     : filtered
 
-  // 5. LLM 重排序：候选 ≤ 5 条时跳过（简单查询快速路径），否则精排
-  const reranked = boosted.length <= 5
+  // 5. 重排序：候选 ≤ 3 条时跳过（样本太少无需精排），否则调用 reranker 精排
+  const reranked = boosted.length <= 3
     ? boosted
     : await rerankResults(question, boosted, config)
 
@@ -194,7 +201,7 @@ export async function queryProject(
     const graph = await loadKnowledgeGraph(projectId)
     if (graph && graph.entities.size > 0) {
       const allChunks = await loadChunksData(projectId)
-      const expansion = expandWithGraph(reranked, graph, allChunks, 5)
+      const expansion = expandWithGraph(reranked, graph, allChunks, 8)
       if (expansion.results.length > 0) {
         console.log(`[pipeline] Graph RAG 扩展：${expansion.results.length} 个补充块，${expansion.entities.length} 个相关实体`)
         withGraphExpansion = [...reranked, ...expansion.results]
@@ -205,7 +212,7 @@ export async function queryProject(
   }
 
   // 6. 组装上下文
-  const context = buildContext(withGraphExpansion, config.maxContextTokens || 6000)
+  const context = buildContext(withGraphExpansion, config.maxContextTokens || 12000)
   console.log(`[pipeline] 组装上下文: ${context.sources.length} 个来源, ${context.totalTokens} tokens`)
 
   return context

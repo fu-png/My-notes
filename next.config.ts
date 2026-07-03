@@ -9,17 +9,8 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["@tabler/icons-react", "three", "postprocessing", "recharts"],
   },
-  // Vectra 动态 require @huggingface/transformers（可选依赖，我们用自己的 embedding API）
   // 通过 serverExternalPackages 让 bundler 不打包这些模块
-  serverExternalPackages: ["vectra", "@huggingface/transformers", "ali-oss"],
-  outputFileTracingIncludes: {
-    "/api/projects": ["./content/**/*"],
-    "/api/projects/[id]": ["./content/**/*"],
-    "/api/projects/[id]/files": ["./content/**/*"],
-    "/api/projects/[id]/files/[[...pathname]]": ["./content/**/*"],
-    "/api/uploads": ["./content/**/*"],
-    "/api/uploads/[filename]": ["./content/**/*"],
-  },
+  serverExternalPackages: ["ali-oss"],
 }
 
 export default nextConfig

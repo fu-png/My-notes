@@ -2,7 +2,8 @@
  * BM25 全文搜索层（MiniSearch 封装）
  *
  * 使用 MiniSearch 构建内存中的 BM25 倒排索引
- * 索引序列化为 JSON 文件持久化到 .rag/bm25.json
+ * 索引序列化为 JSON，通过 lib/storage.ts 持久化到 .rag/bm25.json
+ * （本地开发落本地文件系统，生产环境走阿里云 OSS，兼容 Vercel 无持久磁盘的运行环境）
  *
  * 自定义 tokenizer 支持中英文混合文本：
  * - 英文按空格/标点分词（默认行为）
@@ -10,15 +11,11 @@
  */
 
 import MiniSearch from "minisearch"
-import fs from "fs"
-import path from "path"
 import type { Chunk, SearchResult } from "./types"
-
-const CONTENT_DIR = path.join(process.cwd(), "content")
+import { readFile, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
 
 // ─── 中英文混合分词器 ───
 
-const CJK_REGEX = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/
 const CJK_RANGE = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/g
 const NON_CJK_WORD = /[a-zA-Z0-9_]+/g
 
@@ -78,13 +75,7 @@ type MiniSearchDoc = {
 }
 
 function getBm25Path(projectId: string): string {
-  return path.join(
-    CONTENT_DIR,
-    "projects",
-    projectId,
-    ".rag",
-    "bm25.json"
-  )
+  return `projects/${projectId}/.rag/bm25.json`
 }
 
 /** 从 chunks 构建 MiniSearch 索引 */
@@ -109,22 +100,19 @@ export async function createBm25Index(
   chunks: Chunk[]
 ): Promise<void> {
   const ms = buildIndex(chunks)
-  const filePath = getBm25Path(projectId)
-  const dir = path.dirname(filePath)
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-  fs.writeFileSync(filePath, JSON.stringify(ms), "utf-8")
+  await storageWrite(getBm25Path(projectId), JSON.stringify(ms), {
+    contentType: "application/json",
+  })
 }
 
 /** 加载持久化的 BM25 索引 */
-function loadIndex(projectId: string): MiniSearch<MiniSearchDoc> | null {
-  const filePath = getBm25Path(projectId)
-  if (!fs.existsSync(filePath)) return null
+async function loadIndex(projectId: string): Promise<MiniSearch<MiniSearchDoc> | null> {
+  const json = await readFile(getBm25Path(projectId))
+  if (!json) return null
   try {
-    const json = fs.readFileSync(filePath, "utf-8")
     return MiniSearch.loadJSON<MiniSearchDoc>(json, MINISEARCH_OPTIONS)
-  } catch {
+  } catch (err) {
+    console.error("[bm25-store] Failed to parse bm25.json:", err)
     return null
   }
 }
@@ -136,7 +124,7 @@ export async function searchByBm25(
   topK: number = 10,
   chunksData?: Chunk[]
 ): Promise<SearchResult[]> {
-  const ms = loadIndex(projectId)
+  const ms = await loadIndex(projectId)
   if (!ms) return []
 
   const results = ms.search(query, {
@@ -167,10 +155,7 @@ export async function searchByBm25(
 
 /** 删除 BM25 索引 */
 export async function deleteBm25Index(projectId: string): Promise<void> {
-  const filePath = getBm25Path(projectId)
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath)
-  }
+  await storageDelete(getBm25Path(projectId))
 }
 
 // 辅助：从 vector-store 模块加载 chunks 数据
