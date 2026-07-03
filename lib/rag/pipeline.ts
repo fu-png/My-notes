@@ -18,6 +18,9 @@ import { buildKnowledgeGraph, saveKnowledgeGraph, loadKnowledgeGraph, expandWith
 import type { RAGConfig, AssembledContext, IndexStatus, SearchResult } from "./types"
 import { readFile, listFiles, writeFile as storageWrite } from "../storage"
 
+// 索引并发锁：防止同一项目的多个索引请求同时执行
+const indexingLocks = new Map<string, Promise<void>>()
+
 /**
  * 索引整个项目
  *
@@ -28,6 +31,16 @@ export async function ingestProject(
   config: RAGConfig,
   onProgress?: (msg: string) => void
 ): Promise<{ totalChunks: number; totalFiles: number }> {
+  // 等待同一项目的先前索引完成
+  const existingLock = indexingLocks.get(projectId)
+  if (existingLock) {
+    await existingLock
+  }
+  // 创建新锁
+  let resolveLock: () => void
+  const lock = new Promise<void>((resolve) => { resolveLock = resolve })
+  indexingLocks.set(projectId, lock)
+  try {
   const log = onProgress || console.log
 
   log("正在读取项目文件...")
@@ -124,6 +137,10 @@ export async function ingestProject(
 
   log(`索引完成：${documents.length} 个文件，${chunks.length} 个文本块`)
   return { totalChunks: chunks.length, totalFiles: documents.length }
+  } finally {
+    resolveLock!()
+    indexingLocks.delete(projectId)
+  }
 }
 
 /**
@@ -157,7 +174,19 @@ export async function queryProject(
   if (subQueries.length === 1 && subQueries[0] === question) {
     queryEmbeddings = directEmbedding
   } else {
-    queryEmbeddings = await embedBatch(subQueries, config)
+    // 复用原始问题的 embedding：若原始问题在子查询中，直接使用已生成的 embedding
+    const originalIdx = subQueries.indexOf(question)
+    if (originalIdx >= 0) {
+      const others = subQueries.filter((_, i) => i !== originalIdx)
+      const otherEmbeddings = others.length > 0 ? await embedBatch(others, config) : []
+      queryEmbeddings = []
+      let otherI = 0
+      for (let i = 0; i < subQueries.length; i++) {
+        queryEmbeddings.push(i === originalIdx ? directEmbedding[0] : otherEmbeddings[otherI++])
+      }
+    } else {
+      queryEmbeddings = await embedBatch(subQueries, config)
+    }
   }
 
   const perQueryResults = await Promise.all(

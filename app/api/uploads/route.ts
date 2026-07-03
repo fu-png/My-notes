@@ -15,7 +15,8 @@ export async function GET() {
       })
 
     return NextResponse.json({ files })
-  } catch {
+  } catch (error) {
+    console.error("[uploads]", error)
     return NextResponse.json({ files: [] })
   }
 }

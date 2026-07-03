@@ -111,59 +111,13 @@ export async function searchByVector(
   }))
 }
 
-/** 删除某个文件的所有 chunk 向量 */
-export async function deleteFileChunks(
-  projectId: string,
-  filename: string
-): Promise<void> {
-  const data = await loadVectorStore(projectId)
-  if (!data) return
-
-  const keepIndices: number[] = []
-  data.chunks.forEach((chunk, i) => {
-    if (chunk.filename !== filename) keepIndices.push(i)
-  })
-
-  if (keepIndices.length === data.chunks.length) return // 没有需要删除的
-
-  const filtered: VectorStoreData = {
-    chunks: keepIndices.map((i) => data.chunks[i]),
-    vectors: keepIndices.map((i) => data.vectors[i]),
-  }
-  await saveVectorStore(projectId, filtered)
-}
-
 /** 删除整个项目的向量索引 */
 export async function deleteIndex(projectId: string): Promise<void> {
   invalidateCache(projectId)
   await storageDelete(getVectorsPath(projectId))
 }
 
-/** 获取索引统计信息 */
-export async function getIndexStats(
-  projectId: string
-): Promise<{ items: number } | null> {
-  const data = await loadVectorStore(projectId)
-  if (!data) return null
-  return { items: data.chunks.length }
-}
-
 // ─── chunks.json 持久化（复用 vectors.json 中的 chunks 部分，避免数据重复） ───
-
-/** 保存 chunks 元数据。若对应的向量数据已存在，则原地更新 chunks 部分，保留向量。 */
-export async function saveChunksData(
-  projectId: string,
-  chunks: Chunk[]
-): Promise<void> {
-  const existing = await loadVectorStore(projectId)
-  if (existing && existing.chunks.length === existing.vectors.length) {
-    await saveVectorStore(projectId, { ...existing, chunks })
-    return
-  }
-  // 没有已存在的向量数据（理论上不应发生，addChunks 总是先于/随后调用），
-  // 退化为只存 chunks、向量置空，避免抛错影响调用方
-  await saveVectorStore(projectId, { chunks, vectors: chunks.map(() => []) })
-}
 
 /** 加载 chunks 元数据 */
 export async function loadChunksData(projectId: string): Promise<Chunk[]> {

@@ -52,11 +52,15 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { MarkdownRenderer } from "@/components/markdown-renderer"
+import dynamic from "next/dynamic"
 import { Switch } from "@/components/ui/switch"
 import type { ProviderInfo } from "@/components/settings-dialog"
 import type { ChatMessage, Conversation, DocFile, PptOutline } from "./types"
 import { GENERATE_TEMPLATES, PPT_STYLE_PRESETS } from "./types"
+
+const MarkdownRenderer = dynamic(() => import("@/components/markdown-renderer").then(mod => ({ default: mod.MarkdownRenderer })), {
+  loading: () => <div className="animate-pulse h-4 w-full bg-muted rounded" />,
+})
 
 // ─── Props ───
 
@@ -253,7 +257,7 @@ export const ChatPanel = React.memo(function ChatPanel({
         <div className="flex items-center gap-2">
           {showHistory ? (
             <>
-              <Button variant="ghost" size="icon" className="size-7" onClick={() => onSetShowHistory(false)}>
+              <Button variant="ghost" size="icon" className="size-7" onClick={() => onSetShowHistory(false)} aria-label="返回">
                 <IconArrowLeft className="size-4" />
               </Button>
               <span className="text-sm font-medium">历史对话</span>
@@ -280,6 +284,7 @@ export const ChatPanel = React.memo(function ChatPanel({
                         if (!showSources && !sourcesData) onFetchSourcesData()
                         onSetShowSources((v: boolean) => !v)
                       }}
+                      aria-label="来源管理"
                     >
                       <IconDatabase className="size-4" />
                     </Button>
@@ -289,7 +294,7 @@ export const ChatPanel = React.memo(function ChatPanel({
               )}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="size-7" onClick={onStartNewConversation}>
+                  <Button variant="ghost" size="icon" className="size-7" onClick={onStartNewConversation} aria-label="新对话">
                     <IconPlus className="size-4" />
                   </Button>
                 </TooltipTrigger>
@@ -297,7 +302,7 @@ export const ChatPanel = React.memo(function ChatPanel({
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="size-7" onClick={() => onSetShowHistory(true)}>
+                  <Button variant="ghost" size="icon" className="size-7" onClick={() => onSetShowHistory(true)} aria-label="历史对话">
                     <IconHistory className="size-4" />
                   </Button>
                 </TooltipTrigger>
@@ -307,7 +312,7 @@ export const ChatPanel = React.memo(function ChatPanel({
           )}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-7" onClick={() => onSetShowAI(false)}>
+              <Button variant="ghost" size="icon" className="size-7" onClick={() => onSetShowAI(false)} aria-label="收起">
                 <IconLayoutSidebarRightCollapse className="size-4" />
               </Button>
             </TooltipTrigger>
@@ -853,7 +858,7 @@ const SourcesPanel = React.memo(function SourcesPanel({
       <div className="p-3">
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-medium">来源管理</h4>
-          <Button variant="ghost" size="icon" className="size-6" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="size-6" onClick={onClose} aria-label="关闭来源管理">
             <IconX className="size-3.5" />
           </Button>
         </div>
@@ -1007,6 +1012,7 @@ const HistoryPanel = React.memo(function HistoryPanel({
             placeholder="搜索历史对话..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="搜索历史对话"
             className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
@@ -1019,7 +1025,7 @@ const HistoryPanel = React.memo(function HistoryPanel({
           </div>
         ) : filteredConversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <IconSearch className="mb-2 size-8 text-muted-foreground/40" />
+            <IconSearch className="mb-2 size-8 text-muted-foreground/70" />
             <p className="text-sm text-muted-foreground">没有找到匹配的历史对话</p>
           </div>
         ) : (
@@ -1036,7 +1042,7 @@ const HistoryPanel = React.memo(function HistoryPanel({
                   >
                     <IconChevronDown className={`size-3 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
                     <span>{groupName}</span>
-                    <span className="text-muted-foreground/60">({groupConvs.length})</span>
+                    <span className="text-muted-foreground">({groupConvs.length})</span>
                   </button>
                   {!isCollapsed && (
                     <div className="space-y-1.5">
@@ -1048,6 +1054,7 @@ const HistoryPanel = React.memo(function HistoryPanel({
                           <button
                             className="flex min-w-0 flex-1 items-center gap-2 text-left"
                             onClick={() => onLoad(conv)}
+                            aria-label={`打开对话「${conv.title}」`}
                           >
                             <IconMessage className="size-3.5 shrink-0 text-muted-foreground" />
                             <div className="min-w-0 flex-1">
@@ -1472,7 +1479,11 @@ function PptFlowControls({
                 <span className="shrink-0 bg-muted px-1.5 py-0.5 text-[10px] font-mono">{i + 1}</span>
                 <span className="shrink-0 bg-primary/10 px-1 py-0.5 text-[10px] text-primary">{slide.layout}</span>
               </div>
-              <button onClick={() => deleteSlide(i)} className="p-0.5 text-destructive/60 hover:text-destructive">
+              <button
+                onClick={() => deleteSlide(i)}
+                aria-label={`删除第 ${i + 1} 页幻灯片`}
+                className="p-0.5 text-destructive/60 hover:text-destructive"
+              >
                 <IconTrash className="size-3" />
               </button>
             </div>
@@ -1684,7 +1695,14 @@ function PptFlowControls({
           const doneImages = meta.slideImages!.filter((img) => img.status === "done" && img.url)
           if (doneImages.length === 0) return null
           return (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewMode("none")}>
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+              onClick={() => setPreviewMode("none")}
+              onKeyDown={(e) => e.key === "Escape" && setPreviewMode("none")}
+              role="dialog"
+              aria-modal="true"
+              aria-label="幻灯片预览"
+            >
               <div className="relative flex h-[90vh] w-[90vw] max-w-5xl flex-col bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">

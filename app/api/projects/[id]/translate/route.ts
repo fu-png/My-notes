@@ -87,7 +87,6 @@ export async function POST(
             const modelsData = await modelsRes.json()
             const availableModel = modelsData?.data?.[0]?.id
             if (availableModel && availableModel !== translateModel) {
-              console.log("Retrying translation with model:", availableModel)
               const retryRes = await fetch(`${baseUrl}/chat/completions`, {
                 method: "POST",
                 headers: {

@@ -373,6 +373,8 @@ interface ThreeState {
   touch: ReturnType<typeof createTouchTexture> | null
   liquidEffect: Effect | null
   noiseEffect: Effect | null
+  onPointerDown?: (e: PointerEvent) => void
+  onPointerMove?: (e: PointerEvent) => void
 }
 
 export default function PixelBlast({
@@ -436,6 +438,9 @@ export default function PixelBlast({
         t.quad?.geometry.dispose()
         t.material.dispose()
         t.composer?.dispose()
+        // 移除 pointer 事件监听器
+        if (t.onPointerDown) t.renderer.domElement.removeEventListener("pointerdown", t.onPointerDown)
+        if (t.onPointerMove) t.renderer.domElement.removeEventListener("pointermove", t.onPointerMove)
         t.renderer.dispose()
         t.renderer.forceContextLoss()
         if (t.renderer.domElement.parentElement === container)
@@ -646,6 +651,8 @@ export default function PixelBlast({
         touch,
         liquidEffect,
         noiseEffect,
+        onPointerDown,
+        onPointerMove,
       }
     } else {
       // Hot-update uniforms without reinitializing
@@ -684,6 +691,9 @@ export default function PixelBlast({
       t.quad?.geometry.dispose()
       t.material.dispose()
       t.composer?.dispose()
+      // 移除 pointer 事件监听器
+      if (t.onPointerDown) t.renderer.domElement.removeEventListener("pointerdown", t.onPointerDown)
+      if (t.onPointerMove) t.renderer.domElement.removeEventListener("pointermove", t.onPointerMove)
       t.renderer.dispose()
       t.renderer.forceContextLoss()
       if (t.renderer.domElement.parentElement === container)

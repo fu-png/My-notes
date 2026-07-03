@@ -60,6 +60,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
 
   const [pptSession, setPptSession] = React.useState<PptSession | null>(null)
   const pptAbortRef = React.useRef<AbortController | null>(null)
+  const scrollTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 组件卸载时中止进行中的 PPT 生成请求
   React.useEffect(() => {
@@ -68,6 +69,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
         pptAbortRef.current.abort()
         pptAbortRef.current = null
       }
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current)
     }
   }, [])
 
@@ -122,7 +124,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
       outlineMsgId: null,
       imagesMsgId: null,
     })
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
+    scrollTimerRef.current = setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
   }
 
   /** Cancel PPT generation */
@@ -154,7 +156,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     }
     setChatMessages((prev) => [...prev, aiMsg])
     updatePptSession({ step: "slide-count", stylePreset: styleId })
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
+    scrollTimerRef.current = setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
   }
 
   /** User selected slide count → ask for custom prompt (optional) */
@@ -175,7 +177,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     }
     setChatMessages((prev) => [...prev, aiMsg])
     updatePptSession({ step: "custom-prompt", slideCount: count })
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
+    scrollTimerRef.current = setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
   }
 
   /** User provided custom prompt (or skipped) → start generating outline */
@@ -430,7 +432,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     }
     setChatMessages((prev) => [...prev, aiMsg])
     updatePptSession({ step: "generating-images", imagesMsgId })
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
+    scrollTimerRef.current = setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
 
     const preset = PPT_STYLE_PRESETS.find((p) => p.id === (editedOutline.style || pptSession.stylePreset))
     const total = editedOutline.slides.length
@@ -483,6 +485,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/generate-slide-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: pptAbortRef.current?.signal,
         body: JSON.stringify({
           imageApiKey: imageConfig.apiKey,
           imageApiBase: imageConfig.apiBase,

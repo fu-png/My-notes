@@ -175,6 +175,7 @@ export function ReadingModePanel({
   const [manualNote, setManualNote] = React.useState(false)
   const sectionNoteRef = React.useRef<HTMLTextAreaElement>(null)
   const animRef = React.useRef<number | null>(null)
+  const resumeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollingRef = React.useRef(false)
   const scrollPosRef = React.useRef(0)
   // For articles without headings — track pause points by scroll position
@@ -410,6 +411,7 @@ export function ReadingModePanel({
     return () => {
       scrollingRef.current = false
       if (animRef.current) cancelAnimationFrame(animRef.current)
+      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)
     }
   }, [])
 
@@ -461,7 +463,7 @@ export function ReadingModePanel({
     } else {
       // Auto-paused — auto-resume scrolling
       setPausedForNote(false)
-      setTimeout(() => startScrolling(), 300)
+      resumeTimerRef.current = setTimeout(() => startScrolling(), 300)
     }
   }
 

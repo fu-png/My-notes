@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { readFile, deleteFile, fileExists } from "@/lib/storage"
+import { sanitizeFilename } from "@/lib/validation"
 
 export async function GET(
   _request: NextRequest,
@@ -7,7 +8,13 @@ export async function GET(
 ) {
   const { filename } = await params
   const decodedFilename = decodeURIComponent(filename)
-  const pathname = `uploads/${decodedFilename}`
+
+  // 路径遍历防护
+  if (decodedFilename.includes('..') || decodedFilename.includes('/') || decodedFilename.includes('\\')) {
+    return NextResponse.json({ error: "非法文件名" }, { status: 400 })
+  }
+  const safeFilename = sanitizeFilename(decodedFilename)
+  const pathname = `uploads/${safeFilename}`
 
   try {
     const content = await readFile(pathname)
@@ -16,11 +23,12 @@ export async function GET(
     }
 
     return NextResponse.json({
-      filename: decodedFilename,
-      title: decodedFilename.replace(/\.md$/, ""),
+      filename: safeFilename,
+      title: safeFilename.replace(/\.md$/, ""),
       content,
     })
-  } catch {
+  } catch (error) {
+    console.error("[uploads/[filename]]", error)
     return NextResponse.json({ error: "读取失败" }, { status: 500 })
   }
 }
@@ -31,7 +39,13 @@ export async function DELETE(
 ) {
   const { filename } = await params
   const decodedFilename = decodeURIComponent(filename)
-  const pathname = `uploads/${decodedFilename}`
+
+  // 路径遍历防护
+  if (decodedFilename.includes('..') || decodedFilename.includes('/') || decodedFilename.includes('\\')) {
+    return NextResponse.json({ error: "非法文件名" }, { status: 400 })
+  }
+  const safeFilename = sanitizeFilename(decodedFilename)
+  const pathname = `uploads/${safeFilename}`
 
   const exists = await fileExists(pathname)
   if (!exists) {
@@ -41,7 +55,8 @@ export async function DELETE(
   try {
     await deleteFile(pathname)
     return NextResponse.json({ success: true })
-  } catch {
+  } catch (error) {
+    console.error("[uploads/[filename]]", error)
     return NextResponse.json({ error: "删除失败" }, { status: 500 })
   }
 }

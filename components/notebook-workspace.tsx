@@ -362,8 +362,12 @@ loadConversationSummaries(projectId).then(async (summaries) => {
   // Toast (professional queue system with animations) — 前置声明以供 fetchIndexStatus/fetchSourcesData 使用
   const { toasts, showToast, removeToast } = useToast()
 
+  // chatModel 由 useChatFlow 提供，但声明晚于 handleBuildIndex；
+  // 用 ref 提前占位，避免 handleBuildIndex 的 useCallback 依赖数组访问 TDZ 变量
+  const chatModelRef = React.useRef<string>("")
+
   // Fetch RAG index status
-  const fetchIndexStatus = async () => {
+  const fetchIndexStatus = React.useCallback(async () => {
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
         method: "POST",
@@ -379,7 +383,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
       console.warn("[fetchIndexStatus]", err)
       // 索引状态查询为后台操作，仅记录日志不打扰用户
     }
-  }
+  }, [projectId])
 
   // Fetch RAG index status on mount
   React.useEffect(() => {
@@ -387,7 +391,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
-  const fetchSourcesData = async () => {
+  const fetchSourcesData = React.useCallback(async () => {
     setSourcesLoading(true)
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
@@ -405,9 +409,9 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     } finally {
       setSourcesLoading(false)
     }
-  }
+  }, [projectId, showToast])
 
-  const handleBuildIndex = async () => {
+  const handleBuildIndex = React.useCallback(async () => {
     const config = getAIConfig()
     if (!config) {
       showToast("error", "请先配置 API Key")
@@ -423,7 +427,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
           action: "index",
           apiKey: config.apiKey,
           apiBase: config.apiBase,
-          model: chatModel,
+          model: chatModelRef.current,
           stream: true,
         }),
       })
@@ -465,7 +469,8 @@ loadConversationSummaries(projectId).then(async (summaries) => {
       setIndexing(false)
       setIndexProgress("")
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, showToast])
 
   // Auto-index on file changes
   const autoIndexTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -566,6 +571,11 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     handleCopyGenerated, handleRegenerateGuide, handleRegenerateChat,
   } = chatFlow
 
+  // 同步最新 chatModel 到 ref，供声明顺序更早的 handleBuildIndex 使用
+  React.useEffect(() => {
+    chatModelRef.current = chatModel
+  }, [chatModel])
+
   // ─── PPT Generation (via hook) ───
   const pptFlow = usePptFlow({
     projectId,
@@ -643,30 +653,30 @@ loadConversationSummaries(projectId).then(async (summaries) => {
 
   // ─── Conversation Management (must be after hook destructuring) ───
 
-  const startNewConversation = () => {
+  const startNewConversation = React.useCallback(() => {
     handleStopGeneration()
     setPptSession(null)
     setActiveConversationId(null)
     setChatMessages([WELCOME_MESSAGE])
     setShowHistory(false)
-  }
+  }, [handleStopGeneration])
 
-const loadConversation = (conv: Conversation) => {
-if (pptAbortRef.current) {
-pptAbortRef.current.abort()
-pptAbortRef.current = null
-}
-// If the conversation has no messages (summary-only), try to load full data
-let fullConv = conv
-if ((!conv.messages || conv.messages.length === 0) && conv.id) {
-  const cached = loadConversationFromCache(projectId, conv.id)
-  if (cached) fullConv = cached
-}
-setActiveConversationId(fullConv.id)
-setChatMessages(fullConv.messages?.length > 0 ? fullConv.messages : [WELCOME_MESSAGE])
-setShowHistory(false)
-// Restore PPT session from last PPT message
-const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMeta)
+  const loadConversation = React.useCallback((conv: Conversation) => {
+    if (pptAbortRef.current) {
+      pptAbortRef.current.abort()
+      pptAbortRef.current = null
+    }
+    // If the conversation has no messages (summary-only), try to load full data
+    let fullConv = conv
+    if ((!conv.messages || conv.messages.length === 0) && conv.id) {
+      const cached = loadConversationFromCache(projectId, conv.id)
+      if (cached) fullConv = cached
+    }
+    setActiveConversationId(fullConv.id)
+    setChatMessages(fullConv.messages?.length > 0 ? fullConv.messages : [WELCOME_MESSAGE])
+    setShowHistory(false)
+    // Restore PPT session from last PPT message
+    const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMeta)
     if (lastPptMsg?.pptMeta && lastPptMsg.pptMeta.step !== "done" && lastPptMsg.pptMeta.step !== "error") {
       const pm = lastPptMsg.pptMeta
       setPptSession({
@@ -682,9 +692,10 @@ const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMet
     } else {
       setPptSession(null)
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
 
-  const deleteConversation = (convId: string) => {
+  const deleteConversation = React.useCallback((convId: string) => {
     setConversations((prev) => {
       const updated = prev.filter((c) => c.id !== convId)
       saveConversations(projectId, updated)
@@ -693,7 +704,7 @@ const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMet
     if (activeConversationId === convId) {
       startNewConversation()
     }
-  }
+  }, [projectId, activeConversationId, startNewConversation])
 
   // Track whether editor has unsaved changes (用于退出编辑模式时判断是否需要确认)
   const [cancelEditConfirm, setCancelEditConfirm] = React.useState(false)
@@ -976,7 +987,7 @@ queueMicrotask(() => selectFile(target))
 
   // ─── Doc Update Actions ───
 
-  const handleApplyDocUpdate = async (msgId: string) => {
+  const handleApplyDocUpdate = React.useCallback(async (msgId: string) => {
     const msg = chatMessages.find((m) => m.id === msgId)
     if (!msg?.docUpdate || !activeFile) return
 
@@ -1017,16 +1028,16 @@ queueMicrotask(() => selectFile(target))
     showToast("success", "文档已更新")
     await fetchFiles()
     triggerAutoIndex()
-  }
+  }, [chatMessages, activeFile, projectId, showToast, fileCache, fetchFiles, triggerAutoIndex])
 
-  const handleRejectDocUpdate = (msgId: string) => {
+  const handleRejectDocUpdate = React.useCallback((msgId: string) => {
     setChatMessages((prev) =>
       prev.map((m) =>
         m.id === msgId ? { ...m, docUpdate: { ...m.docUpdate!, status: "rejected" } } : m
       )
     )
     showToast("success", "已退回修改")
-  }
+  }, [showToast])
 
   // ─── Active file title ───
 

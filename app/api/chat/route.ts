@@ -62,9 +62,6 @@ export async function POST(request: NextRequest) {
     // 在流结束时清除超时
     const stream = createSSERelay(response, {
       transform: (event) => {
-        if (event.finish_reason) {
-          console.log(`[Chat API] Stream finish_reason: ${event.finish_reason}`)
-        }
         return Object.keys(event).length > 0 ? event : null
       },
     })

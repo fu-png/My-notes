@@ -16,6 +16,13 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
   IconBold,
   IconItalic,
   IconStrikethrough,
@@ -232,6 +239,12 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
   const initialHtml = markdownToHtml(content)
   const isInternalUpdate = React.useRef(false)
 
+  // 链接 / 图片插入对话框状态（替代 window.prompt）
+  const [linkDialogOpen, setLinkDialogOpen] = React.useState(false)
+  const [linkUrl, setLinkUrl] = React.useState("")
+  const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
+  const [imageUrl, setImageUrl] = React.useState("")
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -292,17 +305,25 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
   }
 
   const addLink = () => {
-    const url = window.prompt("输入链接 URL：")
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run()
+    setLinkUrl("")
+    setLinkDialogOpen(true)
+  }
+  const confirmLink = () => {
+    if (linkUrl.trim()) {
+      editor.chain().focus().setLink({ href: linkUrl.trim() }).run()
     }
+    setLinkDialogOpen(false)
   }
 
   const addImage = () => {
-    const url = window.prompt("输入图片 URL：")
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run()
+    setImageUrl("")
+    setImageDialogOpen(true)
+  }
+  const confirmImage = () => {
+    if (imageUrl.trim()) {
+      editor.chain().focus().setImage({ src: imageUrl.trim() }).run()
     }
+    setImageDialogOpen(false)
   }
 
   const addTable = () => {
@@ -461,6 +482,46 @@ export function RichTextEditor({ content, onChange, placeholder = "开始编辑.
       <div className="min-h-0 flex-1 overflow-y-auto">
         <EditorContent editor={editor} className="h-full" />
       </div>
+
+      {/* 插入链接对话框 */}
+      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>插入链接</DialogTitle></DialogHeader>
+          <input
+            type="url"
+            placeholder="https://example.com"
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && confirmLink()}
+            className="h-9 w-full rounded-md border px-3 text-sm"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setLinkDialogOpen(false)}>取消</Button>
+            <Button size="sm" onClick={confirmLink}>确认</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 插入图片对话框 */}
+      <Dialog open={imageDialogOpen} onOpenChange={setImageDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>插入图片</DialogTitle></DialogHeader>
+          <input
+            type="url"
+            placeholder="https://example.com/image.png"
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && confirmImage()}
+            className="h-9 w-full rounded-md border px-3 text-sm"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setImageDialogOpen(false)}>取消</Button>
+            <Button size="sm" onClick={confirmImage}>确认</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

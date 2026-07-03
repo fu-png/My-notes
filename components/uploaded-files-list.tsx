@@ -14,6 +14,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
+import { ToastContainer } from "@/components/toast-container"
 
 interface UploadedFile {
   filename: string
@@ -22,6 +24,7 @@ interface UploadedFile {
 
 export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: string }) {
   const router = useRouter()
+  const { toasts, showToast, removeToast } = useToast()
   const [files, setFiles] = React.useState<UploadedFile[]>([])
   const [loading, setLoading] = React.useState(true)
   const [deleting, setDeleting] = React.useState<string | null>(null)
@@ -57,10 +60,10 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
         setFiles((prev) => prev.filter((f) => f.filename !== filename))
         router.refresh()
       } else {
-        alert("删除失败，请重试")
+        showToast("error", "删除失败，请重试")
       }
     } catch {
-      alert("网络错误，删除失败")
+      showToast("error", "网络错误，删除失败")
     } finally {
       setDeleting(null)
     }
@@ -129,6 +132,8 @@ export function UploadedFilesList({ basePath = "/docs/uploads" }: { basePath?: s
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   )
 }

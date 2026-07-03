@@ -9,7 +9,7 @@
 // Intent types
 // ---------------------------------------------------------------------------
 
-export type IntentType = "chat" | "ppt" | "audio" | "generate" | "web_search" | "translate"
+export type IntentType = "chat" | "ppt" | "web_search" | "translate"
 
 export interface ChatIntent {
   type: "chat"
@@ -27,15 +27,6 @@ export interface WebSearchIntent {
   url?: string
 }
 
-export interface AudioIntent {
-  type: "audio"
-}
-
-export interface GenerateIntent {
-  type: "generate"
-  templateType: string
-}
-
 export interface TranslateIntent {
   type: "translate"
 }
@@ -44,8 +35,6 @@ export type DetectedIntent =
   | ChatIntent
   | PptIntent
   | WebSearchIntent
-  | AudioIntent
-  | GenerateIntent
   | TranslateIntent
 
 // ---------------------------------------------------------------------------

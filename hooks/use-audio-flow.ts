@@ -360,6 +360,8 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
         abortRef.current = null
       }
       if (audioRef.current) {
+        audioRef.current.onended = null
+        audioRef.current.onerror = null
         audioRef.current.pause()
         audioRef.current = null
       }

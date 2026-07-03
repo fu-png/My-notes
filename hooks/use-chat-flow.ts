@@ -171,6 +171,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(intent),
+        signal: abortControllerRef.current?.signal,
       })
 
       if (!res.ok) {
@@ -304,6 +305,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
             const ragRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
+              signal: abortControllerRef.current?.signal,
               body: JSON.stringify({
                 action: "query",
                 question: contextQuery,
@@ -565,6 +567,9 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     setGenerating(true)
     isStreamingRef.current = true
 
+    // 创建 AbortController 用于取消生成请求
+    abortControllerRef.current = new AbortController()
+
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
         method: "POST",
@@ -576,6 +581,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
           model: chatModel,
           deepThink: deepThinkMode,
         }),
+        signal: abortControllerRef.current.signal,
       })
 
       if (!res.ok) {

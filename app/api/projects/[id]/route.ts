@@ -23,7 +23,8 @@ export async function GET(
     }
 
     return NextResponse.json({ project: result.meta, files: result.files })
-  } catch {
+  } catch (error) {
+    console.error("[projects/[id]]", error)
     return NextResponse.json({ error: "读取项目失败" }, { status: 500 })
   }
 }
@@ -65,7 +66,8 @@ export async function PATCH(
     revalidatePath("/docs/projects")
 
     return NextResponse.json({ success: true, project: meta })
-  } catch {
+  } catch (error) {
+    console.error("[projects/[id]]", error)
     return NextResponse.json({ error: "更新项目失败" }, { status: 500 })
   }
 }
@@ -87,7 +89,8 @@ export async function DELETE(
       return NextResponse.json({ error: "项目不存在" }, { status: 404 })
     }
     return NextResponse.json({ success: true })
-  } catch {
+  } catch (error) {
+    console.error("[projects/[id]]", error)
     return NextResponse.json({ error: "删除项目失败" }, { status: 500 })
   }
 }

@@ -22,6 +22,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
+import { ToastContainer } from "@/components/toast-container"
 
 interface DocFile {
   filename: string
@@ -36,6 +38,7 @@ interface ProjectDetailProps {
 export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
   const router = useRouter()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const { toasts, showToast, removeToast } = useToast()
 
   const [files, setFiles] = React.useState<DocFile[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -123,7 +126,7 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
         router.refresh()
       }
     } catch {
-      alert("删除失败，请重试")
+      showToast("error", "删除失败，请重试")
     } finally {
       setDeleting(null)
     }
@@ -320,6 +323,9 @@ export function ProjectDetail({ projectId, projectName }: ProjectDetailProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Toast Queue */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   )
 }

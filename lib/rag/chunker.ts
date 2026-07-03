@@ -173,7 +173,16 @@ function splitBySentences(text: string, maxTokens: number): string[] {
       current = combined
     } else {
       if (current) chunks.push(current)
-      current = sent
+      // 如果单个句子超过 maxTokens，按字符硬切分
+      if (estimateTokens(sent) > maxTokens) {
+        const maxChars = maxTokens * 3 // 粗略按 1 token ≈ 3 字符（兼顾中英文）
+        for (let i = 0; i < sent.length; i += maxChars) {
+          chunks.push(sent.slice(i, i + maxChars))
+        }
+        current = ""
+      } else {
+        current = sent
+      }
     }
   }
   if (current) chunks.push(current)

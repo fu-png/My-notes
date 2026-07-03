@@ -144,11 +144,13 @@ const DirItem = React.memo(function DirItem({
     <div>
       <button
         onClick={() => onToggleDir(node.path)}
+        aria-label={`${isExpanded ? "折叠" : "展开"}文件夹 ${node.name}`}
+        aria-expanded={isExpanded}
         className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
         style={{ paddingLeft: `${12 + level * 12}px` }}
       >
         <span className="text-[10px]">{isExpanded ? "▼" : "▶"}</span>
-        <IconFolder className="size-3.5 shrink-0 text-muted-foreground/70" />
+        <IconFolder className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate">{node.name}</span>
       </button>
       {isExpanded && (
@@ -216,13 +218,14 @@ const FileItem = React.memo(function FileItem({
     >
       <button
         onClick={() => onSelect(file.filename)}
+        aria-label={`打开文件 ${file.title}`}
         className="flex min-w-0 flex-1 items-center gap-2"
       >
         {getFileIcon(file.filename)}
         <div className="flex min-w-0 flex-col text-left">
           <span className="truncate">{file.title}</span>
           {file.lastModified ? (
-            <p className="text-[10px] text-muted-foreground/60">
+            <p className="text-[10px] text-muted-foreground">
               {formatRelativeTime(file.lastModified)}
             </p>
           ) : null}
@@ -234,6 +237,7 @@ const FileItem = React.memo(function FileItem({
             <button
               onClick={(e) => e.stopPropagation()}
               disabled={isDeleting}
+              aria-label={`${file.title} 的更多操作`}
               className="p-1 text-muted-foreground hover:text-foreground"
             >
               {isDeleting ? (

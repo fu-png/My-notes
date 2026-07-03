@@ -2,6 +2,10 @@ import { NextResponse } from "next/server"
 import { listFiles } from "@/lib/storage"
 
 export async function GET() {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Debug endpoint disabled in production" }, { status: 403 })
+  }
+
   const info = {
     deployVersion: "v5-oss-migration",
     deployTime: "2026-07-01T00:00:00Z",

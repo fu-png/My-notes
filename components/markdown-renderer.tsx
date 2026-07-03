@@ -134,7 +134,9 @@ function MermaidBlock({ code }: { code: string }) {
     <div
       ref={containerRef}
       className="my-4 flex justify-center overflow-x-auto rounded-md border bg-background p-4 [&_svg]:max-w-full"
-      dangerouslySetInnerHTML={{ __html: svg }}
+      dangerouslySetInnerHTML={{ __html: svg
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '') }}
     />
   )
 }

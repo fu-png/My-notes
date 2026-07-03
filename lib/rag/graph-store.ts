@@ -37,8 +37,6 @@ export interface GraphRelation {
 export interface KnowledgeGraph {
   entities: Map<string, GraphEntity>
   relations: GraphRelation[]
-  /** 实体名 → 实体 ID 的映射（支持模糊查找） */
-  nameIndex: Map<string, string[]>
 }
 
 export interface GraphSearchResult {
@@ -279,11 +277,7 @@ export function buildKnowledgeGraph(chunks: Chunk[]): KnowledgeGraph {
     }
   }
 
-  // nameIndex 不再构建（原实现构建了但从未被查询使用，属于死代码）
-  // expandWithGraph 使用 entities.get(normalized) 直接精确查找
-  const nameIndex = new Map<string, string[]>()
-
-  return { entities, relations, nameIndex }
+  return { entities, relations }
 }
 
 // ─── 图谱查询 ───
@@ -408,7 +402,6 @@ export async function saveKnowledgeGraph(
   const serializable = {
     entities: Array.from(graph.entities.values()),
     relations: graph.relations,
-    nameIndex: Array.from(graph.nameIndex.entries()),
   }
   await storageWrite(
     `projects/${projectId}/.rag/${GRAPH_FILE}`,
@@ -427,7 +420,6 @@ export async function loadKnowledgeGraph(
     const data = JSON.parse(content) as {
       entities: GraphEntity[]
       relations: GraphRelation[]
-      nameIndex: [string, string[]][]
     }
 
     const entities = new Map<string, GraphEntity>()
@@ -435,15 +427,9 @@ export async function loadKnowledgeGraph(
       entities.set(e.id, e)
     }
 
-    const nameIndex = new Map<string, string[]>()
-    for (const [key, value] of data.nameIndex) {
-      nameIndex.set(key, value)
-    }
-
     return {
       entities,
       relations: data.relations || [],
-      nameIndex,
     }
   } catch {
     return null
