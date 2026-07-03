@@ -132,6 +132,7 @@ export interface ChatPanelProps {
   onDeleteConversation: (convId: string) => void
   onFetchSourcesData: () => void
   onChatScroll: () => void
+  onBuildIndex: () => void
 
   // Generation handlers
   onGenerate: (type: string) => void
@@ -218,6 +219,7 @@ export const ChatPanel = React.memo(function ChatPanel({
   onDeleteConversation,
   onFetchSourcesData,
   onChatScroll,
+  onBuildIndex,
   onGenerate,
   onSaveGenerated,
   onCopyGenerated,
@@ -349,6 +351,28 @@ export const ChatPanel = React.memo(function ChatPanel({
                   {projectName}
                 </p>
               </div>
+
+              {/* RAG index status hint */}
+              {files.length > 0 && !indexStatus?.indexed && !indexing && (
+                <div className="mb-3 flex items-center justify-between rounded-md border border-amber-500/20 bg-amber-50/50 px-3 py-2 dark:bg-amber-950/20">
+                  <div className="flex min-w-0 items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
+                    <IconAlertCircle className="size-3.5 shrink-0" />
+                    <span className="truncate">未建立知识索引，AI 仅基于当前文件回答</span>
+                  </div>
+                  <button
+                    onClick={onBuildIndex}
+                    className="shrink-0 text-[11px] font-medium text-amber-700 underline-offset-2 hover:underline dark:text-amber-400"
+                  >
+                    建索引
+                  </button>
+                </div>
+              )}
+              {indexing && (
+                <div className="mb-3 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-primary/80">
+                  <IconLoader2 className="size-3.5 shrink-0 animate-spin" />
+                  <span className="truncate">{indexProgress || "正在构建知识索引..."}</span>
+                </div>
+              )}
 
               {/* 笔记本指南 — AI 生成模板 */}
               {files.length > 0 && (

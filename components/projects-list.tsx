@@ -55,6 +55,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { ToastContainer } from "@/components/toast-container"
 import { IconSearch } from "@tabler/icons-react"
@@ -305,9 +306,23 @@ export function ProjectsList() {
 
       {/* Notes content */}
       {loading ? (
-        <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
-          <IconLoader2 className="size-4 animate-spin" />
-          加载中...
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i} className="border-l-2 border-l-transparent">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                  <Skeleton className="size-7 shrink-0" />
+                  <Skeleton className="h-4 w-2/3" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-5 w-16" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : filteredProjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">

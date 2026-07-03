@@ -47,6 +47,7 @@ import { getAIConfig, isAIConfigured, getConfiguredModel } from "@/lib/ai-config
 import { useToast } from "@/hooks/use-toast"
 import { ToastContainer } from "@/components/toast-container"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { Skeleton } from "@/components/ui/skeleton"
 import dynamic from "next/dynamic"
 
 // ─── Lazy-loaded heavy sub-components ───
@@ -1243,8 +1244,24 @@ selectFile(target)
             )}
             <div id="doc-content-scroll" ref={docContentRef} className={`min-w-0 flex-1 overflow-y-auto ${readingMode && !editMode ? "reading-mode-active" : ""}`}>
               {loadingContent ? (
-                <div className="flex items-center justify-center py-20">
-                  <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+                <div className="mx-auto max-w-5xl p-6">
+                  <Skeleton className="mb-4 h-7 w-2/3" />
+                  <Skeleton className="mb-6 h-px w-full" />
+                  <div className="space-y-3">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="space-y-2">
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-[85%]" />
+                        <Skeleton className="h-4 w-[70%]" />
+                      </div>
+                    ))}
+                  </div>
+                  <Skeleton className="mt-6 mb-3 h-5 w-1/3" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-[90%]" />
+                    <Skeleton className="h-4 w-[60%]" />
+                  </div>
                 </div>
               ) : !activeFile ? (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
@@ -1337,6 +1354,7 @@ selectFile(target)
           onDeleteConversation={deleteConversation}
           onFetchSourcesData={fetchSourcesData}
           onChatScroll={handleChatScroll}
+          onBuildIndex={handleBuildIndex}
           onGenerate={handleGenerate}
           onSaveGenerated={handleSaveGenerated}
           onCopyGenerated={handleCopyGenerated}

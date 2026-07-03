@@ -10,7 +10,10 @@ import {
   IconDotsVertical,
   IconFileText,
   IconFolder,
+  IconSearch,
+  IconX,
 } from "@tabler/icons-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -299,8 +302,34 @@ export const FileExplorer = React.memo(function FileExplorer({
   onDrop,
 }: FileExplorerProps) {
   const [expandedDirs, setExpandedDirs] = React.useState<Set<string>>(() => new Set())
+  const [searchQuery, setSearchQuery] = React.useState("")
 
-  const tree = React.useMemo(() => buildFileTree(files), [files])
+  const filteredFiles = React.useMemo(() => {
+    if (!searchQuery.trim()) return files
+    const q = searchQuery.trim().toLowerCase()
+    return files.filter(
+      (f) =>
+        f.title.toLowerCase().includes(q) ||
+        f.filename.toLowerCase().includes(q)
+    )
+  }, [files, searchQuery])
+
+  const tree = React.useMemo(() => buildFileTree(filteredFiles), [filteredFiles])
+  const isSearching = searchQuery.trim().length > 0
+
+  // When searching, auto-expand all directories so matching files in subdirs are visible
+  const allDirPaths = React.useMemo(() => {
+    if (!isSearching) return new Set<string>()
+    const paths = new Set<string>()
+    function collect(node: TreeNode) {
+      if (node.isDir && node.path) {
+        paths.add(node.path)
+        node.children.forEach(collect)
+      }
+    }
+    tree.children.forEach(collect)
+    return paths
+  }, [isSearching, tree])
 
   const toggleDir = React.useCallback((path: string) => {
     setExpandedDirs((prev) => {
@@ -367,10 +396,66 @@ export const FileExplorer = React.memo(function FileExplorer({
         </div>
       </div>
 
+      {/* Quick search */}
+      {!loadingFiles && files.length > 3 && (
+        <div className="border-b px-2.5 py-1.5">
+          <div className="relative">
+            <IconSearch className="absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/50" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索文件..."
+              aria-label="搜索文件"
+              className="w-full rounded-none border-none bg-muted/50 py-1 pl-7 pr-6 text-[12px] outline-none placeholder:text-muted-foreground/50 focus:bg-muted"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground"
+                aria-label="清除搜索"
+              >
+                <IconX className="size-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* File list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="py-1">
-          {recentFiles && recentFiles.length > 0 && (
+          {loadingFiles ? (
+            <div className="space-y-1 px-3 py-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-2 py-2">
+                  <Skeleton className="size-3.5 shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-2 w-1/3" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : isSearching && filteredFiles.length === 0 ? (
+            <div className="px-3 py-12 text-center text-sm text-muted-foreground">
+              <p>未找到匹配的文件</p>
+              <p className="mt-1 text-xs">试试其他关键词</p>
+            </div>
+          ) : files.length === 0 ? (
+            <div className="px-3 py-12 text-center text-sm text-muted-foreground">
+              {isDragging ? (
+                <p className="font-medium text-primary">松开以上传文件</p>
+              ) : (
+                <>
+                  <p>暂无文件</p>
+                  <p className="mt-1 text-xs">新建或拖拽文件到此处</p>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+            {recentFiles && recentFiles.length > 0 && !isSearching && (
             <div className="mb-3">
               <p className="mb-1.5 px-1 text-[11px] font-medium tracking-wider text-muted-foreground/60">
                 最近打开
@@ -397,23 +482,12 @@ export const FileExplorer = React.memo(function FileExplorer({
               </div>
             </div>
           )}
-          {loadingFiles ? (
-            <div className="flex items-center justify-center py-12">
-              <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : files.length === 0 ? (
-            <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-              {isDragging ? (
-                <p className="font-medium text-primary">松开以上传文件</p>
-              ) : (
-                <>
-                  <p>暂无文件</p>
-                  <p className="mt-1 text-xs">新建或拖拽文件到此处</p>
-                </>
-              )}
-            </div>
-          ) : (
-            tree.children.map((node) =>
+            {isSearching && (
+              <p className="mb-1 px-3 text-[11px] text-muted-foreground/60">
+                找到 {filteredFiles.length} 个结果
+              </p>
+            )}
+            {tree.children.map((node) =>
               node.isDir ? (
                 <DirItem
                   key={node.path}
@@ -421,7 +495,7 @@ export const FileExplorer = React.memo(function FileExplorer({
                   level={0}
                   activeFile={activeFile}
                   deleting={deleting}
-                  expandedDirs={expandedDirs}
+                  expandedDirs={isSearching ? allDirPaths : expandedDirs}
                   onToggleDir={toggleDir}
                   onSelectFile={onSelectFile}
                   onDeleteRequest={onDeleteRequest}
@@ -437,7 +511,8 @@ export const FileExplorer = React.memo(function FileExplorer({
                   level={0}
                 />
               ) : null
-            )
+            )}
+            </>
           )}
         </div>
       </div>
