@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { readFile, writeFile } from "@/lib/storage"
+import { isValidProjectId, sanitizeFilename } from "@/lib/validation"
 
 export async function POST(
   request: NextRequest,
@@ -7,11 +8,20 @@ export async function POST(
 ) {
   try {
     const { id: projectId } = await params
-    const { filename, apiKey, apiBase, model } = await request.json()
 
-    if (!filename) {
+    // 校验 projectId 格式
+    if (!isValidProjectId(projectId)) {
+      return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
+    }
+
+    const { filename: rawFilename, apiKey, apiBase, model } = await request.json()
+
+    if (!rawFilename) {
       return NextResponse.json({ error: "Missing filename" }, { status: 400 })
     }
+
+    // 过滤文件名中的危险字符
+    const filename = sanitizeFilename(rawFilename)
 
     if (!apiKey || !apiBase) {
       return NextResponse.json(

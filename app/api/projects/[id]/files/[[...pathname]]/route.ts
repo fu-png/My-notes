@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { readFile, deleteFile, fileExists, renameFile, writeFile, getFileMeta, uploadFileToProject } from "@/lib/storage"
+import { isValidProjectId, sanitizeFilename } from "@/lib/validation"
 import path from "path"
 
 // Supported file extensions for upload
@@ -36,6 +37,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string; pathname?: string[] }> }
 ) {
   const { id } = await params
+
+  // 校验 projectId 格式
+  if (!isValidProjectId(id)) {
+    return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
+  }
 
   // 验证项目是否存在
   const projectExists = await fileExists(`projects/${id}/meta.json`)
@@ -93,6 +99,12 @@ export async function GET(
 ) {
   const { id, pathname: pathnameSegments } = await params
   const decodedPathname = pathnameSegments ? pathnameSegments.join("/") : ""
+
+  // 校验 projectId 格式
+  if (!isValidProjectId(id)) {
+    return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
+  }
+
   const pathname = `projects/${id}/${decodedPathname}`
 
   // 二进制资源（如 .audio 目录下的 TTS 音频）不应作为文本内容返回，
@@ -131,6 +143,12 @@ export async function PUT(
 ) {
   const { id, pathname: pathnameSegments } = await params
   const decodedPathname = pathnameSegments ? pathnameSegments.join("/") : ""
+
+  // 校验 projectId 格式
+  if (!isValidProjectId(id)) {
+    return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
+  }
+
   const pathname = `projects/${id}/${decodedPathname}`
 
   try {
@@ -160,6 +178,12 @@ export async function PATCH(
 ) {
   const { id, pathname: pathnameSegments } = await params
   const decodedPathname = pathnameSegments ? pathnameSegments.join("/") : ""
+
+  // 校验 projectId 格式
+  if (!isValidProjectId(id)) {
+    return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
+  }
+
   const oldPathname = `projects/${id}/${decodedPathname}`
 
   try {
@@ -169,7 +193,8 @@ export async function PATCH(
       return NextResponse.json({ error: "新文件名不能为空" }, { status: 400 })
     }
 
-    const trimmed = newFilename.trim()
+    // 过滤危险字符
+    const trimmed = sanitizeFilename(newFilename)
     const newPathname = `projects/${id}/${trimmed}`
 
     if (oldPathname === newPathname) {
@@ -199,6 +224,12 @@ export async function DELETE(
 ) {
   const { id, pathname: pathnameSegments } = await params
   const decodedPathname = pathnameSegments ? pathnameSegments.join("/") : ""
+
+  // 校验 projectId 格式
+  if (!isValidProjectId(id)) {
+    return NextResponse.json({ error: "无效的项目 ID" }, { status: 400 })
+  }
+
   const pathname = `projects/${id}/${decodedPathname}`
 
   const exists = await fileExists(pathname)

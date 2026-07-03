@@ -7,7 +7,6 @@ import {
   IconLoader2,
   IconCheck,
   IconX,
-  IconEye,
   IconEdit,
   IconLayoutSidebarRightExpand,
   IconLink,

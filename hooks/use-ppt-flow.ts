@@ -61,6 +61,16 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
   const [pptSession, setPptSession] = React.useState<PptSession | null>(null)
   const pptAbortRef = React.useRef<AbortController | null>(null)
 
+  // 组件卸载时中止进行中的 PPT 生成请求
+  React.useEffect(() => {
+    return () => {
+      if (pptAbortRef.current) {
+        pptAbortRef.current.abort()
+        pptAbortRef.current = null
+      }
+    }
+  }, [])
+
   // ─── Internal Helpers ───────────────────────────────────────────────────────
 
   /** Update PPT session with partial state merge */

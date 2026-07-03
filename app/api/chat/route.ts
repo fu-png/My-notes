@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const baseUrl = (apiBase || "https://api.openai.com/v1").replace(/\/+$/, "")
     const chatModel = model || "gpt-4o-mini"
 
-    // Use AbortController with generous timeout for reasoning models
+    // 使用 AbortController 设置超时，防止上游 LLM API 无响应时请求挂起
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 300000) // 5 min timeout
 
@@ -46,9 +46,8 @@ export async function POST(request: NextRequest) {
       signal: controller.signal,
     })
 
-    clearTimeout(timeout)
-
     if (!response.ok) {
+      clearTimeout(timeout)
       const errorData = await response.json().catch(() => ({}))
       const errorMessage =
         errorData?.error?.message ||
@@ -59,7 +58,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Stream the response through — relay upstream SSE with finish_reason logging
+    // 流式响应中持续重置超时，防止长流式输出被误杀
+    // 在流结束时清除超时
     const stream = createSSERelay(response, {
       transform: (event) => {
         if (event.finish_reason) {
@@ -69,7 +69,25 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return new Response(stream, { headers: SSE_HEADERS })
+    // 包装流以在流结束时清除超时
+    const wrappedStream = new ReadableStream({
+      async start(wrappedController) {
+        const reader = stream.getReader()
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            wrappedController.enqueue(value)
+          }
+        } finally {
+          clearTimeout(timeout)
+          wrappedController.close()
+        }
+      },
+    })
+
+    return new Response(wrappedStream, { headers: SSE_HEADERS })
+
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "未知错误"
     return new Response(

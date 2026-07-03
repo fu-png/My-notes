@@ -94,16 +94,14 @@ export async function ingestProject(
   })
   log(`生成了 ${embeddings.length} 个 Embedding 向量`)
 
-  // 5. 先清空旧索引，再存入向量存储（chunks + 向量一起持久化到 OSS）
-  log("正在存入向量索引...")
+  // 5. 先清空旧索引，再并行存入向量索引和创建 BM25 索引（两者互不依赖）
+  log("正在存入向量索引和全文搜索索引...")
   await deleteIndex(projectId)
-  await addChunks(projectId, chunks, embeddings)
-  log("向量索引创建完成")
-
-  // 6. 创建 BM25 索引
-  log("正在创建全文搜索索引...")
-  await createBm25Index(projectId, chunks)
-  log("全文搜索索引创建完成")
+  await Promise.all([
+    addChunks(projectId, chunks, embeddings),
+    createBm25Index(projectId, chunks),
+  ])
+  log("索引创建完成")
 
   // 7. 保存索引状态
   await saveIndexStatus(projectId, {
@@ -198,9 +196,12 @@ export async function queryProject(
   //     拉取相关文档块作为补充上下文（解决跨文档多跳推理）
   let withGraphExpansion = reranked
   try {
-    const graph = await loadKnowledgeGraph(projectId)
+    // 并行加载知识图谱和块数据（两者互不依赖）
+    const [graph, allChunks] = await Promise.all([
+      loadKnowledgeGraph(projectId),
+      loadChunksData(projectId),
+    ])
     if (graph && graph.entities.size > 0) {
-      const allChunks = await loadChunksData(projectId)
       const expansion = expandWithGraph(reranked, graph, allChunks, 8)
       if (expansion.results.length > 0) {
         console.log(`[pipeline] Graph RAG 扩展：${expansion.results.length} 个补充块，${expansion.entities.length} 个相关实体`)

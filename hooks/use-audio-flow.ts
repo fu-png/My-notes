@@ -32,6 +32,7 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
   const [audioPlaying, setAudioPlaying] = React.useState(false)
   const [audioCurrentLine, setAudioCurrentLine] = React.useState(-1)
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
+  const abortRef = React.useRef<AbortController | null>(null)
 
   const handleAudioGenerate = async () => {
     const config = getAIConfig()
@@ -59,6 +60,11 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
     setChatLoading(true)
     setAudioGenerating(true)
 
+    // 中止前一个请求
+    if (abortRef.current) abortRef.current.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/audio`, {
         method: "POST",
@@ -69,6 +75,7 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
           apiBase: config.apiBase,
           model: chatModel,
         }),
+        signal: ctrl.signal,
       })
 
       if (!res.ok) {
@@ -172,6 +179,11 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
     setChatLoading(true)
     setAudioGenerating(true)
 
+    // 中止前一个请求
+    if (abortRef.current) abortRef.current.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/audio`, {
         method: "POST",
@@ -186,6 +198,7 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
           voiceExpert: ttsConfig?.voiceExpert || "苏打",
           script: msg.audioMeta.script,
         }),
+        signal: ctrl.signal,
       })
 
       if (!res.ok) {
@@ -335,6 +348,10 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
   // Cleanup on unmount
   React.useEffect(() => {
     return () => {
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
       if (audioRef.current) {
         audioRef.current.pause()
         audioRef.current = null

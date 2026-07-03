@@ -11,7 +11,7 @@ export default function UploadsPage() {
       <div className="mb-8">
         <h1 className="mb-2 text-2xl font-bold tracking-tight">上传文档</h1>
         <p className="text-sm text-muted-foreground">
-          上传你的 Markdown 文件，上传后可在侧边栏"我的文档"中查看和阅读。
+          上传你的 Markdown 文件，上传后可在侧边栏&quot;我的文档&quot;中查看和阅读。
         </p>
       </div>
 

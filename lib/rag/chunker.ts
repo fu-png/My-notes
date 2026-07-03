@@ -246,7 +246,6 @@ export function chunkDocument(
       const withOverlap = addOverlap(subTexts, overlapRatio)
 
       // 估算每个子块的行号范围
-      const lines = section.content.split("\n")
       let lineOffset = 0
       for (const subText of withOverlap) {
         const subLineCount = subText.split("\n").length

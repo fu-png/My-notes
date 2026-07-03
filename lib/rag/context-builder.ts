@@ -66,7 +66,7 @@ export function buildContext(
   const sources: ContextSource[] = []
   let sourceIndex = 1
 
-  for (const [filename, fileResults] of grouped) {
+  for (const [, fileResults] of grouped) {
     // 同一文件内的块按行号排序
     fileResults.sort((a, b) => a.chunk.startLine - b.chunk.startLine)
 

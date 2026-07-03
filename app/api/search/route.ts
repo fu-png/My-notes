@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getProjects, listFiles, readFile } from "@/lib/storage"
+import { getProjects, listFiles } from "@/lib/storage"
 import { searchByBm25 } from "@/lib/rag/bm25-store"
 import { getIndexStatus } from "@/lib/rag/pipeline"
 

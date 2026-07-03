@@ -128,7 +128,7 @@ function htmlToMarkdown(
     : ""
 
   // 移除 script, style, nav, header, footer 等非内容标签
-  let cleaned = html
+  const cleaned = html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<nav[\s\S]*?<\/nav>/gi, "")

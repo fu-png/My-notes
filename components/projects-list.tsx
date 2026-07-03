@@ -20,12 +20,10 @@ import {
   IconCheck,
   IconX,
   IconClock,
-  IconArrowRight,
 } from "@tabler/icons-react"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"

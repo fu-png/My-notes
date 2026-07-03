@@ -55,6 +55,16 @@ export function useFileCache({
     cacheRef.current.clear()
   }, [projectId])
 
+  // 组件卸载时中止进行中的文件加载请求
+  React.useEffect(() => {
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
+    }
+  }, [])
+
   const evictIfNeeded = React.useCallback(() => {
     const cache = cacheRef.current
     if (cache.size <= maxEntries) return

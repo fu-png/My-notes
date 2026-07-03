@@ -114,6 +114,17 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     return () => window.removeEventListener("ai-config-changed", handler)
   }, [])
 
+  // 组件卸载时中止所有进行中的请求，防止在已卸载组件上更新状态
+  React.useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
+      isStreamingRef.current = false
+    }
+  }, [])
+
   const handleSwitchProvider = React.useCallback((providerId: string) => {
     const newModel = switchActiveProvider(providerId)
     if (newModel) {

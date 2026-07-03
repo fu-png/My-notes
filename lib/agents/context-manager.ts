@@ -111,8 +111,6 @@ export function buildSystemPrompt(inputs: ContextInputs): string {
     selectedText,
   } = inputs
 
-  const webContextBlock = buildWebContextBlock(inputs)
-
   let systemPrompt: string
 
   // ----- Branch 1: RAG context available -----

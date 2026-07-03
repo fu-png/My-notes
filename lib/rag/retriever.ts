@@ -8,7 +8,7 @@
 import { searchByVector } from "./vector-store"
 import { searchByBm25 } from "./bm25-store"
 import { embed } from "./embedding"
-import type { RAGConfig, SearchResult, Chunk } from "./types"
+import type { RAGConfig, SearchResult } from "./types"
 
 // RRF 参数，k=30 增大头部结果区分度
 const RRF_K = 30
