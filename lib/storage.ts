@@ -41,6 +41,35 @@ function getOSSClient(): OSS {
 
 const LOCAL_CONTENT_DIR = path.join(process.cwd(), "content")
 
+/**
+ * 安全解析本地文件路径，防止目录遍历攻击
+ * 拒绝包含 `..` 段或绝对路径的输入，并验证解析后的路径在内容目录内
+ */
+function resolveLocalPath(pathname: string): string {
+  if (!pathname || typeof pathname !== "string") {
+    throw new Error("[storage] 无效的文件路径")
+  }
+
+  // 拒绝包含 `..` 段的路径（防止目录遍历）
+  const segments = pathname.split("/")
+  if (segments.includes("..")) {
+    throw new Error(`[storage] 路径包含非法的目录遍历序列: ${pathname}`)
+  }
+
+  // 拒绝绝对路径（path.join 会忽略 base 目录）
+  if (path.isAbsolute(pathname)) {
+    throw new Error(`[storage] 不允许绝对路径: ${pathname}`)
+  }
+
+  // 解析并验证路径在内容目录内
+  const resolved = path.resolve(LOCAL_CONTENT_DIR, pathname)
+  if (resolved !== LOCAL_CONTENT_DIR && !resolved.startsWith(LOCAL_CONTENT_DIR + path.sep)) {
+    throw new Error(`[storage] 路径逃逸出内容目录: ${pathname}`)
+  }
+
+  return resolved
+}
+
 // ============================================================
 // 接口定义
 // ============================================================
@@ -104,7 +133,7 @@ export async function writeFile(
     throw new Error("Vercel 生产环境文件系统只读，无法写入文件。请配置阿里云 OSS 环境变量。")
   }
 
-  const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
+  const filePath = resolveLocalPath(pathname)
   const dir = path.dirname(filePath)
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
@@ -148,7 +177,7 @@ export async function readFile(pathname: string): Promise<string | null> {
   }
 
   // 本地文件系统
-  const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
+  const filePath = resolveLocalPath(pathname)
   if (!fs.existsSync(filePath)) return null
   return fs.readFileSync(filePath, "utf-8")
 }
@@ -172,7 +201,7 @@ export async function readFileBuffer(pathname: string): Promise<Buffer | null> {
     }
   }
 
-  const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
+  const filePath = resolveLocalPath(pathname)
   if (!fs.existsSync(filePath)) return null
   return fs.readFileSync(filePath)
 }
@@ -191,7 +220,7 @@ export async function fileExists(pathname: string): Promise<boolean> {
     }
   }
 
-  const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
+  const filePath = resolveLocalPath(pathname)
   return fs.existsSync(filePath)
 }
 
@@ -212,7 +241,7 @@ export async function deleteFile(pathname: string): Promise<boolean> {
     throw new Error("Vercel 生产环境文件系统只读，无法删除文件。请配置阿里云 OSS 环境变量。")
   }
 
-  const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
+  const filePath = resolveLocalPath(pathname)
   if (!fs.existsSync(filePath)) return false
   fs.unlinkSync(filePath)
   return true
@@ -244,8 +273,8 @@ export async function renameFile(oldPathname: string, newPathname: string): Prom
     throw new Error("Vercel 生产环境文件系统只读，无法重命名文件。请配置阿里云 OSS 环境变量。")
   }
 
-  const oldPath = path.join(LOCAL_CONTENT_DIR, oldPathname)
-  const newPath = path.join(LOCAL_CONTENT_DIR, newPathname)
+  const oldPath = resolveLocalPath(oldPathname)
+  const newPath = resolveLocalPath(newPathname)
   const dir = path.dirname(newPath)
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
@@ -292,7 +321,7 @@ export async function deletePrefix(prefix: string): Promise<boolean> {
     throw new Error("Vercel 生产环境文件系统只读，无法删除目录。请配置阿里云 OSS 环境变量。")
   }
 
-  const dirPath = path.join(LOCAL_CONTENT_DIR, prefix)
+  const dirPath = resolveLocalPath(prefix)
   if (!fs.existsSync(dirPath)) return false
   fs.rmSync(dirPath, { recursive: true, force: true })
   return true
@@ -329,7 +358,7 @@ export async function listFiles(prefix: string, recursive: boolean = false): Pro
   }
 
   // 本地文件系统
-  const dirPath = path.join(LOCAL_CONTENT_DIR, prefix)
+  const dirPath = resolveLocalPath(prefix)
   if (!fs.existsSync(dirPath)) return []
 
   const results: { pathname: string; url: string; size: number; lastModified: number }[] = []
@@ -372,7 +401,7 @@ export async function listDirectories(prefix: string): Promise<string[]> {
     return (result.prefixes || []).map((p: string) => p)
   }
 
-  const dirPath = path.join(LOCAL_CONTENT_DIR, prefix)
+  const dirPath = resolveLocalPath(prefix)
   if (!fs.existsSync(dirPath)) return []
 
   return fs.readdirSync(dirPath, { withFileTypes: true })
@@ -595,7 +624,7 @@ export async function getFileMeta(pathname: string): Promise<{ lastModified: num
       return null
     }
   } else {
-    const filePath = path.join(LOCAL_CONTENT_DIR, pathname)
+    const filePath = resolveLocalPath(pathname)
     try {
       const stat = fs.statSync(filePath)
       return { lastModified: stat.mtime.getTime(), size: stat.size }
