@@ -108,26 +108,36 @@ export function TableOfContents({ content }: { content: string }) {
     const scrollContainer = document.getElementById("doc-content-scroll")
     if (!scrollContainer) return
 
-    const handleScroll = () => {
-      const headingElements = headings
-        .filter((h) => h.id) // 过滤掉没有 id 的 heading，避免 querySelector('#') 报错
-        .map((h) => ({ id: h.id, el: scrollContainer.querySelector(`#${CSS.escape(h.id)}`) }))
-        .filter((h) => h.el !== null)
+    // 缓存 heading DOM 元素引用，避免每次滚动都重新 querySelector
+    const cachedHeadings = headings
+      .filter((h) => h.id)
+      .map((h) => ({ id: h.id, el: scrollContainer.querySelector(`#${CSS.escape(h.id)}`) as HTMLElement | null }))
+      .filter((h): h is { id: string; el: HTMLElement } => h.el !== null)
 
-      let current = ""
-      for (const { id, el } of headingElements) {
-        const rect = el!.getBoundingClientRect()
+    let rafId: number | null = null
+
+    const handleScroll = () => {
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
         const containerRect = scrollContainer.getBoundingClientRect()
-        if (rect.top - containerRect.top <= 80) {
-          current = id
+        let current = ""
+        for (const { id, el } of cachedHeadings) {
+          const rect = el.getBoundingClientRect()
+          if (rect.top - containerRect.top <= 80) {
+            current = id
+          }
         }
-      }
-      setActiveId(current)
+        setActiveId(current)
+      })
     }
 
     scrollContainer.addEventListener("scroll", handleScroll, { passive: true })
     handleScroll()
-    return () => scrollContainer.removeEventListener("scroll", handleScroll)
+    return () => {
+      scrollContainer.removeEventListener("scroll", handleScroll)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
   }, [headings])
 
   if (headings.length < 2) return null

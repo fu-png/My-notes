@@ -33,8 +33,9 @@ export async function POST(request: NextRequest) {
     const chatModel = model || "gpt-4o-mini"
 
     // 使用 AbortController 设置超时，防止上游 LLM API 无响应时请求挂起
+    // [P2 FIX] 超时在流式阶段会随活动数据重置，确保长回答不被误杀
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 300000) // 5 min timeout
+    let timeout = setTimeout(() => controller.abort(), 300000) // 5 min initial timeout
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -64,15 +65,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 流式响应中持续重置超时，防止长流式输出被误杀
-    // 在流结束时清除超时
+    // 流式代理：透传上游 SSE 并在流活动时重置超时
     const stream = createSSERelay(response, {
       transform: (event) => {
         return Object.keys(event).length > 0 ? event : null
       },
     })
 
-    // 包装流以在流结束时清除超时
+    // [P2 FIX] 包装流以在收到数据时重置超时（防止长回答被误杀），流结束时清除
     const wrappedStream = new ReadableStream({
       async start(wrappedController) {
         const reader = stream.getReader()
@@ -80,6 +80,9 @@ export async function POST(request: NextRequest) {
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
+            // Reset timeout on each chunk — keeps long streaming alive
+            clearTimeout(timeout)
+            timeout = setTimeout(() => controller.abort(), 300000)
             wrappedController.enqueue(value)
           }
         } finally {

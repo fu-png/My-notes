@@ -165,6 +165,78 @@ export async function streamLLMResponse(
   return { content, reasoning }
 }
 
+// ─── streamIntoMessage ──────────────────────────────────────────────────────
+
+/**
+ * Unified SSE stream consumer that feeds parsed events into a React chat message.
+ *
+ * Encapsulates the rAF-throttled update loop, reasoning parsing, and content
+ * accumulation that was previously duplicated across `streamAI` and `handleGenerate`.
+ */
+export interface StreamIntoMessageOptions {
+  reader: ReadableStreamDefaultReader<Uint8Array>
+  msgId: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setChatMessages: (updater: (prev: any[]) => any[]) => void
+  parseReasoningFromContent: (content: string, existingReasoning: string) => { content: string; reasoning: string }
+  rafIdsRef: React.MutableRefObject<Set<number>>
+}
+
+export interface StreamIntoMessageResult {
+  content: string
+  reasoning: string
+  finishReason: string
+}
+
+// We need the React namespace for the types above; use a type-only import to
+// avoid adding a runtime dependency (this file runs on both client and server).
+import type React from "react"
+
+export async function streamIntoMessage(opts: StreamIntoMessageOptions): Promise<StreamIntoMessageResult> {
+  const { reader, msgId, setChatMessages, parseReasoningFromContent, rafIdsRef } = opts
+
+  let fullContent = ""
+  let fullReasoning = ""
+  let finishReason = ""
+  let rafScheduled = false
+
+  for await (const event of parseSSEStream(reader)) {
+    if (typeof event.error === "string") {
+      fullContent += `\n⚠️ ${event.error}`
+    } else if (typeof event.content === "string") {
+      fullContent += event.content
+    }
+    if (typeof event.reasoning === "string") {
+      fullReasoning += event.reasoning
+    }
+    if (typeof event.finish_reason === "string") {
+      finishReason = event.finish_reason as string
+    }
+
+    // rAF throttle: limit UI updates to one per animation frame
+    if (!rafScheduled) {
+      rafScheduled = true
+      const snapshot = fullContent
+      const reasoningSnapshot = fullReasoning
+      const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
+      const rafId = requestAnimationFrame(() => {
+        setChatMessages((prev: Array<{ id: string; content: string; reasoning?: string }>) =>
+          prev.map((m) =>
+            m.id === msgId
+              ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined }
+              : m
+          )
+        )
+        rafScheduled = false
+        rafIdsRef.current.delete(rafId)
+      })
+      rafIdsRef.current.add(rafId)
+    }
+  }
+
+  return { content: fullContent, reasoning: fullReasoning, finishReason }
+}
+
 // ─── Internal Helpers ────────────────────────────────────────────────────────
 
 /**
@@ -181,6 +253,10 @@ function parseLine(line: string): SSEEvent | null {
   try {
     return JSON.parse(data) as SSEEvent
   } catch {
+    // Log malformed JSON in dev for easier debugging
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[SSE] Malformed JSON skipped:", data.slice(0, 200))
+    }
     return null
   }
 }
@@ -323,7 +399,10 @@ export function createSSERelay(
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
           }
         } catch {
-          // Skip malformed JSON
+          // Log malformed JSON from upstream for debugging
+          if (process.env.NODE_ENV !== "production") {
+            console.debug("[SSE Relay] Malformed upstream JSON skipped:", data.slice(0, 200))
+          }
         }
       }
 

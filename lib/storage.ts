@@ -185,6 +185,45 @@ export async function readFile(pathname: string): Promise<string | null> {
   return fs.readFileSync(filePath, "utf-8")
 }
 
+/**
+ * 仅读取文件头部指定字节数（文本），用于提取标题等元信息
+ * OSS 环境使用 HTTP Range 请求避免下载完整文件
+ * 本地环境使用 fs.open + fs.read 精准读取
+ */
+export async function readFileHead(pathname: string, maxBytes: number = 1024): Promise<string | null> {
+  if (USE_OSS) {
+    try {
+      const client = getOSSClient()
+      const result = await client.get(pathname, {
+        headers: { Range: `bytes=0-${maxBytes - 1}` },
+      })
+      if (result.content) {
+        const buf = Buffer.isBuffer(result.content)
+          ? result.content
+          : Buffer.from(result.content as ArrayBuffer)
+        return buf.toString("utf-8")
+      }
+      return null
+    } catch (err: unknown) {
+      if (isOSSNotFound(err)) return null
+      console.error("[storage] readFileHead error:", err)
+      return null
+    }
+  }
+
+  // 本地文件系统 — 只读取前 maxBytes 字节
+  const filePath = resolveLocalPath(pathname)
+  if (!fs.existsSync(filePath)) return null
+  const fd = fs.openSync(filePath, "r")
+  try {
+    const buf = Buffer.alloc(maxBytes)
+    const bytesRead = fs.readSync(fd, buf, 0, maxBytes, 0)
+    return buf.subarray(0, bytesRead).toString("utf-8")
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 /** 读取文件为 Buffer（二进制） */
 export async function readFileBuffer(pathname: string): Promise<Buffer | null> {
   if (USE_OSS) {
@@ -525,7 +564,8 @@ export async function getProject(id: string): Promise<{ meta: ProjectMeta; files
         const isText = /\.(md|txt|json|ya?ml|csv|tsv|xml|html?|js|ts|jsx|tsx|css|py|go|java|rs|sh|toml|ini|env|log)$/i.test(filename)
         let content: string | null = null
         if (isText) {
-          content = await readFile(f.pathname)
+          // 只读取文件头部 1KB 用于提取标题，避免下载完整文件内容
+          content = await readFileHead(f.pathname, 1024)
         }
         return {
           filename,

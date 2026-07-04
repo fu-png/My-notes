@@ -67,11 +67,17 @@ export function isPptIntent(text: string): boolean {
     "整理成演示",
     "做成可以讲的",
   ]
-  const actions = ["生成", "做", "制作", "创建", "帮我", "整理", "搞个", "来个", "弄个"]
+  // [P1 FIX] 收紧动词列表，只保留明确表达“创建/生成”意图的动词
+  const actions = ["生成", "做", "制作", "创建", "整理", "搞个", "来个", "弄个"]
+  // 排除词：当这些词出现时，通常是在提问而非要求生成
+  const queryIndicators = /(什么是|怎么|如何|查看|打开|第.{0,3}页|内容是|语法|错误|最新|趋势|工具)/
   const hasKeyword = keywords.some((kw) => lower.includes(kw))
   const hasAction = actions.some((a) => lower.includes(a))
   const hasPattern = /把.{0,20}(做成|转为|转成|变成).{0,10}(ppt|幻灯片|演示|slides)/.test(lower)
-  return (hasKeyword && hasAction) || hasPattern || (hasKeyword && lower.length < 50)
+  const isQuery = queryIndicators.test(lower)
+  // [P1 FIX] 不再仅凭“hasKeyword && 短文本”就判定为 PPT 意图，必须同时有生成类动词
+  if (isQuery) return false
+  return (hasKeyword && hasAction) || hasPattern
 }
 
 /**
@@ -82,7 +88,8 @@ export function detectWebSearchIntent(text: string): WebSearchIntent | null {
   const trimmed = text.trim()
 
   // 1. URL detection (highest priority)
-  const urlMatch = trimmed.match(/https?:\/\/[^\s]+/)
+  // [P1 FIX] Exclude trailing CJK/common punctuation from URL capture
+  const urlMatch = trimmed.match(/https?:\/\/[^\s,，。！？;;；)\]】》]+/)
   if (urlMatch) {
     const url = urlMatch[0]
     if (/youtube\.com|youtu\.be/i.test(url)) {

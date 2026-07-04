@@ -26,6 +26,10 @@ export interface ContextInputs {
     url?: string
   }>
   webSearchTriggered?: boolean
+  /** Web search was attempted but failed (network error or API error) */
+  webFetchError?: boolean
+  /** RAG query was attempted but failed */
+  ragFetchError?: boolean
 
   // Active document
   activeFile?: string | null
@@ -39,6 +43,14 @@ export interface ContextInputs {
   personaPrompt?: string
   userName?: string
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Maximum characters of active file content to include in system prompt */
+const MAX_FILE_CONTENT_CHARS_RAG = 6000
+const MAX_FILE_CONTENT_CHARS_PLAIN = 16000
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -105,11 +117,24 @@ export function buildSystemPrompt(inputs: ContextInputs): string {
     ragSources,
     webContextText,
     webSearchTriggered,
+    webFetchError,
+    ragFetchError,
     activeFile,
     activeFileName,
-    fileContent,
+    fileContent: rawFileContent,
     selectedText,
   } = inputs
+
+  // [P0 FIX] Truncate fileContent to prevent oversized system prompts
+  const isRagMode = !!(ragContextText && ragSources && ragSources.length > 0)
+  const maxChars = isRagMode ? MAX_FILE_CONTENT_CHARS_RAG : MAX_FILE_CONTENT_CHARS_PLAIN
+  let fileContent = rawFileContent || ""
+  let fileContentTruncated = false
+  if (fileContent.length > maxChars) {
+    fileContent = fileContent.slice(0, maxChars)
+    fileContentTruncated = true
+  }
+  const truncationNote = fileContentTruncated ? "\n（注：文档内容较长，已截取前部分用于分析。如需查看特定部分，请告知。）" : ""
 
   let systemPrompt: string
 
@@ -135,7 +160,7 @@ ${ragContextText}
 ## 来源清单
 ${sourceList}
 
-${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}」，文档内容：\n${fileContent}` : ""}${webBlock}
+${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}」，文档内容：\n${fileContent}${truncationNote}` : ""}${webBlock}
 
 ## 回答规范
 1. **优先使用检索到的参考资料**回答问题。引用具体内容时，使用 [来源 N] 标注出处（笔记本和互联网来源使用统一编号）。
@@ -153,12 +178,16 @@ ${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}
 
   // ----- Branch 3: Web search triggered but empty result -----
   else if (webSearchTriggered && !webContextText) {
-    systemPrompt = `你是一个笔记 AI 助手。${activeFile ? `用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}\n\n` : ""}用户的问题可能涉及实时信息，但互联网搜索未能获取到结果。请基于你自己的知识尽力回答，并在回答末尾说明「注：联网搜索未返回结果，以上内容基于模型知识，可能不是最新信息。」\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
+    const failReason = webFetchError
+      ? "注：联网搜索请求失败（网络错误或服务不可用），以上内容基于模型知识，可能不是最新信息。"
+      : "注：联网搜索未返回结果，以上内容基于模型知识，可能不是最新信息。"
+    systemPrompt = `你是一个笔记 AI 助手。${activeFile ? `用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}${truncationNote}\n\n` : ""}用户的问题可能涉及实时信息，但互联网搜索未能获取到结果。请基于你自己的知识尽力回答，并在回答末尾说明「${failReason}」\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
   }
 
   // ----- Branch 4: Active file open (no RAG, no web) -----
   else if (activeFile) {
-    systemPrompt = `你是一个笔记 AI 助手。用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
+    const ragFailNote = ragFetchError ? "\n\n注意：知识库检索失败，以下回答仅基于当前文档内容。" : ""
+    systemPrompt = `你是一个笔记 AI 助手。用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}${truncationNote}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。${ragFailNote}\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
   }
 
   // ----- Branch 5: No file selected (default) -----

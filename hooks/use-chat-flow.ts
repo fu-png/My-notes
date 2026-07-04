@@ -7,7 +7,7 @@ import { getAIConfig, getConfiguredModel, getProviderList, switchActiveProvider,
 import type { ProviderInfo } from "@/components/settings-dialog"
 import { detectIntent } from "@/lib/agents/supervisor"
 import { buildSystemPrompt, trimConversationHistory } from "@/lib/agents/context-manager"
-import { parseSSEStream } from "@/lib/infra/stream-utils"
+import { parseSSEStream, streamIntoMessage } from "@/lib/infra/stream-utils"
 
 // ─── Hook Options & Return Types ────────────────────────────────────────────
 
@@ -97,6 +97,12 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
   const abortControllerRef = React.useRef<AbortController | null>(null)
   const rafIdsRef = React.useRef<Set<number>>(new Set())
 
+  /** Generate a unique message ID (crypto.randomUUID avoids Date.now() collisions) */
+  const genId = (prefix: string) =>
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? `${prefix}-${crypto.randomUUID().slice(0, 8)}`
+      : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
   // ─── DeepThink persistence ───
 
   React.useEffect(() => {
@@ -146,8 +152,9 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
   /** 调用 Agent Reach 获取互联网内容 */
   const fetchWebContent = async (
     intent: { action: string; query?: string; url?: string },
-    aiMsgId: string
-  ): Promise<{ content: string; sources: ChatMessage["webSources"] } | null> => {
+    aiMsgId: string,
+    signal?: AbortSignal
+  ): Promise<{ content: string; sources: ChatMessage["webSources"]; error?: boolean } | null> => {
     // 更新 AI 消息显示搜索状态
     const statusText = intent.action === "search"
       ? `🔍 正在搜索「${intent.query}」...`
@@ -172,14 +179,14 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(intent),
-        signal: abortControllerRef.current?.signal,
+        signal,
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         console.warn("[Agent Reach] 调用失败:", data.error)
-        // 降级：不阻断对话，返回错误提示让 AI 基于自身知识回答
-        return { content: "", sources: [] }
+        // 降级：不阻断对话，标记 error 以便上层展示降级提示
+        return { content: "", sources: [], error: true }
       }
 
       const data = await res.json()
@@ -225,9 +232,10 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
       return { content: data.content, sources }
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return null
       console.warn("[Agent Reach] 网络错误:", err)
-      // 网络失败时降级而非完全中断
-      return { content: "", sources: [] }
+      // 网络失败时降级而非完全中断，标记 error
+      return { content: "", sources: [], error: true }
     }
   }
 
@@ -261,10 +269,16 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       return
     }
 
+    // [P0 FIX] 在预取阶段就创建 AbortController，确保整个请求链路都可取消
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     let ragSources: ChatMessage["ragSources"] | undefined
     let ragContextText = ""
     let webSources: ChatMessage["webSources"] | undefined
     let webContextText = ""
+    let webFetchError = false
+    let ragFetchError = false
     const lastUserMsg = userMessages[userMessages.length - 1]
 
     // ── Agent Reach + RAG: 并行预取（性能优化） ──
@@ -287,9 +301,9 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       }
     }
 
-    // 构造并行任务数组
+    // 构造并行任务数组 — 使用统一的 AbortController signal
     const webSearchPromise = webIntent
-      ? fetchWebContent(webIntent, aiMsgId)
+      ? fetchWebContent(webIntent, aiMsgId, controller.signal)
       : Promise.resolve(null)
 
     const ragQueryPromise = (ragEnabled && indexStatus?.indexed && lastUserMsg)
@@ -306,7 +320,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
             const ragRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              signal: abortControllerRef.current?.signal,
+              signal: controller.signal,
               body: JSON.stringify({
                 action: "query",
                 question: contextQuery,
@@ -321,7 +335,9 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
               return { sources: ragData.context.sources, text: ragData.context.text }
             }
           } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") return null
             console.warn("[RAG] Query failed, falling back to plain mode:", err)
+            return { sources: undefined, text: "", error: true }
           }
           return null
         })()
@@ -330,13 +346,18 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     // 并行执行 Web 搜索和 RAG 查询
     const [webResult, ragResult] = await Promise.all([webSearchPromise, ragQueryPromise])
 
+    // 用户在预取阶段就点了停止 — 早退出
+    if (controller.signal.aborted) return
+
     if (webResult) {
       webSources = webResult.sources && webResult.sources.length > 0 ? webResult.sources : undefined
       webContextText = webResult.content
+      if (webResult.error) webFetchError = true
     }
     if (ragResult) {
-      ragSources = ragResult.sources
+      ragSources = (ragResult as { sources?: ChatMessage["ragSources"]; text: string; error?: boolean }).sources
       ragContextText = ragResult.text
+      if ((ragResult as { error?: boolean }).error) ragFetchError = true
     }
 
     const activeFileName = activeFile ? (files.find((f) => f.filename === activeFile)?.title || activeFile) : undefined
@@ -348,6 +369,8 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       webContextText: webContextText || undefined,
       webSources,
       webSearchTriggered,
+      webFetchError,
+      ragFetchError,
       activeFile,
       activeFileName,
       fileContent,
@@ -369,9 +392,6 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     const apiMessages = trimConversationHistory(allApiMessages)
 
     try {
-      const controller = new AbortController()
-      abortControllerRef.current = controller
-
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -404,48 +424,23 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
         return
       }
 
-      // 使用统一的 SSE 流解析工具（静态导入，避免每次调用动态 import 开销）
+      // 使用统一的流式消费 helper（消除与 handleGenerate 的重复代码）
       const reader = res.body.getReader()
-      let fullContent = ""
-      let fullReasoning = ""
-      let finishReason = ""
-      let rafScheduled = false
+      const result = await streamIntoMessage({
+        reader,
+        msgId: aiMsgId,
+        setChatMessages,
+        parseReasoningFromContent,
+        rafIdsRef,
+      })
 
-      for await (const event of parseSSEStream(reader)) {
-        // 提取内容增量
-        if (typeof event.error === "string") {
-          fullContent += `\n⚠️ ${event.error}`
-        } else if (typeof event.content === "string") {
-          fullContent += event.content
-        }
-        if (typeof event.reasoning === "string") {
-          fullReasoning += event.reasoning
-        }
-        if (typeof event.finish_reason === "string") {
-          finishReason = event.finish_reason
-        }
-
-        // rAF 节流：限制 UI 更新频率，避免高频流式输出时过度重渲染
-        if (!rafScheduled) {
-          rafScheduled = true
-          const snapshot = fullContent
-          const reasoningSnapshot = fullReasoning
-          const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
-          const rafId = requestAnimationFrame(() => {
-            setChatMessages((prev) =>
-              prev.map((m) => (m.id === aiMsgId ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined } : m))
-            )
-            rafScheduled = false
-            rafIdsRef.current.delete(rafId)
-          })
-          rafIdsRef.current.add(rafId)
-        }
-      }
+      let fullContent = result.content
+      let fullReasoning = result.reasoning
 
       if (!fullContent) fullContent = "抱歉，未能获取到回复。"
 
       // 检测是否因 token 上限导致截断
-      if (finishReason === "length") {
+      if (result.finishReason === "length") {
         fullContent += "\n\n---\n⚠️ **回答被截断**：已达到模型最大输出长度限制。你可以发送「继续」来获取剩余内容。"
       }
 
@@ -467,16 +462,21 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     } catch (err: unknown) {
       // 用户中断（新建对话等）时不显示错误
       if (err instanceof DOMException && err.name === "AbortError") return
+      // [P1 FIX] 流中断时保留已生成的内容，而非整体替换为错误消息
       const msg = err instanceof Error ? err.message : "网络错误"
       setChatMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, content: `⚠️ 请求异常: ${msg}，请检查网络连接和 API 配置。` }
-            : m
-        )
+        prev.map((m) => {
+          if (m.id !== aiMsgId) return m
+          const existing = m.content || ""
+          const errorSuffix = `\n\n⚠️ 连接中断: ${msg}，请检查网络连接和 API 配置。`
+          return { ...m, content: existing ? existing + errorSuffix : `⚠️ 请求异常: ${msg}，请检查网络连接和 API 配置。` }
+        })
       )
     } finally {
-      abortControllerRef.current = null
+      // [P0 FIX] 只清空自己创建的 controller，防止并发请求互相覆盖
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
     }
   }
 
@@ -494,13 +494,13 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
     const textSnapshot = selectedText
     const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: genId("user"),
       role: "user",
       content: text,
       timestamp: new Date(),
       ...(textSnapshot ? { quotedText: textSnapshot } : {}),
     }
-    const aiMsgId = `ai-${Date.now()}`
+    const aiMsgId = genId("ai")
     const aiMsg: ChatMessage = {
       id: aiMsgId,
       role: "assistant",
@@ -547,10 +547,10 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
     const { GENERATE_TEMPLATES } = await import("@/components/notebook/types")
     const templateLabel = GENERATE_TEMPLATES.find((t) => t.type === type)?.label || "AI 生成"
-    const aiMsgId = `gen-${Date.now()}`
+    const aiMsgId = genId("gen")
 
     const userMsg: ChatMessage = {
-      id: `user-gen-${Date.now()}`,
+      id: genId("user-gen"),
       role: "user",
       content: `生成${templateLabel}`,
       timestamp: new Date(),
@@ -608,46 +608,22 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
         return
       }
 
-      // 使用统一的 SSE 流解析工具（与 streamAI 保持一致）
-      let fullContent = ""
-      let fullReasoning = ""
-      let finishReason = ""
-      let rafScheduled = false
+      // 使用统一的流式消费 helper（与 streamAI 保持一致，消除重复代码）
+      const result = await streamIntoMessage({
+        reader,
+        msgId: aiMsgId,
+        setChatMessages,
+        parseReasoningFromContent,
+        rafIdsRef,
+      })
 
-      for await (const event of parseSSEStream(reader)) {
-        if (typeof event.error === "string") {
-          fullContent += `\n⚠️ ${event.error}`
-        } else if (typeof event.content === "string") {
-          fullContent += event.content
-        }
-        if (typeof event.reasoning === "string") {
-          fullReasoning += event.reasoning
-        }
-        if (typeof event.finish_reason === "string") {
-          finishReason = event.finish_reason
-        }
-
-        // rAF 节流：限制 UI 更新频率
-        if (!rafScheduled) {
-          rafScheduled = true
-          const snapshot = fullContent
-          const reasoningSnapshot = fullReasoning
-          const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
-          const rafId = requestAnimationFrame(() => {
-            setChatMessages((prev) =>
-              prev.map((m) => (m.id === aiMsgId ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined } : m))
-            )
-            rafScheduled = false
-            rafIdsRef.current.delete(rafId)
-          })
-          rafIdsRef.current.add(rafId)
-        }
-      }
+      let fullContent = result.content
+      let fullReasoning = result.reasoning
 
       if (!fullContent) fullContent = "未能生成内容，请重试。"
 
       // 检测是否因 token 上限导致截断（与 streamAI 对齐）
-      if (finishReason === "length") {
+      if (result.finishReason === "length") {
         fullContent += "\n\n---\n⚠️ **内容被截断**：已达到模型最大输出长度限制。"
       }
 
@@ -727,7 +703,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     if (msgIndex < 0) return
 
     const preceding = chatMessages.slice(0, msgIndex)
-    const newAiMsgId = `ai-${Date.now()}`
+    const newAiMsgId = genId("ai")
     const newAiMsg: ChatMessage = {
       id: newAiMsgId,
       role: "assistant",
