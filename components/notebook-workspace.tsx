@@ -408,8 +408,8 @@ scheduleOSSFetch(() => {
   // Toast (professional queue system with animations) — 前置声明以供 fetchIndexStatus/fetchSourcesData 使用
   const { toasts, showToast, removeToast } = useToast()
 
-  // Fetch RAG index status
-  const fetchIndexStatus = React.useCallback(async () => {
+  // Fetch RAG index status，返回 indexed 状态以供调用方判断
+  const fetchIndexStatus = React.useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
         method: "POST",
@@ -419,11 +419,15 @@ scheduleOSSFetch(() => {
       const data = await res.json()
       if (data.status) {
         setIndexStatus(data.status)
-        if (data.status.indexed) setRagEnabled(true)
+        if (data.status.indexed) {
+          setRagEnabled(true)
+          return true
+        }
       }
+      return false
     } catch (err) {
       console.warn("[fetchIndexStatus]", err)
-      // 索引状态查询为后台操作，仅记录日志不打扰用户
+      return false
     }
   }, [projectId])
 
@@ -547,17 +551,24 @@ scheduleOSSFetch(() => {
     triggerAutoIndexRef.current = triggerAutoIndex
   }, [triggerAutoIndex])
 
-  // 页面加载时：如果 API 已配置、但索引未建立，自动触发索引
-  // 解决"先配置 API、后上传文件"等时序问题
+  // 页面加载时：先等 fetchIndexStatus 完成，再判断是否需要触发自动索引
+  // 修复：之前用 setTimeout(3000) + ragEnabled state 判断，由于 ragEnabled 初始为 false
+  // 且 fetchIndexStatus 是 idle/延迟执行，导致每次进入页面都误触发索引
   React.useEffect(() => {
-    // 延迟执行，等 fetchIndexStatus 完成
-    const timer = setTimeout(() => {
-      if (isAIConfigured() && !ragEnabled) {
+    let cancelled = false
+    const checkAndIndex = async () => {
+      // 等待索引状态查询完成，拿到确切结果再决定
+      const alreadyIndexed = await fetchIndexStatus()
+      if (cancelled) return
+      // 只有 API 已配置、embedding 已配置、且索引尚未建立时才自动触发
+      if (isAIConfigured() && isEmbeddingConfigured() && !alreadyIndexed) {
         triggerAutoIndex()
       }
-    }, 3000)
-    return () => clearTimeout(timer)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    }
+    // 延迟 300ms 避免阻塞首屏渲染
+    const timer = setTimeout(checkAndIndex, 300)
+    return () => { cancelled = true; clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
   React.useEffect(() => {
