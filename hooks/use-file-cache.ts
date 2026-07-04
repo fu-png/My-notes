@@ -16,6 +16,10 @@ interface UseFileCacheParams {
   maxAge?: number
   /** Max number of files to cache in memory (default: 20) */
   maxEntries?: number
+  /** Initial active file (from server prefetch) */
+  initialFile?: string | null
+  /** Initial content for the initialFile (from server prefetch) */
+  initialContent?: string
 }
 
 interface UseFileCacheReturn {
@@ -45,13 +49,28 @@ export function useFileCache({
   projectId,
   maxAge = 60_000,
   maxEntries = 20,
+  initialFile = null,
+  initialContent = "",
 }: UseFileCacheParams): UseFileCacheReturn {
   const cacheRef = React.useRef<Map<string, CachedFile>>(new Map())
-  const [fileContent, setFileContentState] = React.useState("")
-  const [editContent, setEditContent] = React.useState("")
-  const [loadingContent, setLoadingContent] = React.useState(false)
+  const [fileContent, setFileContentState] = React.useState(initialContent)
+  const [editContent, setEditContent] = React.useState(initialContent)
+  const [loadingContent, setLoadingContent] = React.useState(!initialFile)
   const abortRef = React.useRef<AbortController | null>(null)
-  const activeFileRef = React.useRef<string | null>(null)
+  const activeFileRef = React.useRef<string | null>(initialFile)
+
+  // Pre-populate cache with server-prefetched content
+  React.useEffect(() => {
+    if (initialFile && initialContent) {
+      cacheRef.current.set(initialFile, {
+        content: initialContent,
+        editContent: initialContent,
+        fetchedAt: Date.now(),
+        lastModified: Date.now(),
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Clear cache when projectId changes
   React.useEffect(() => {

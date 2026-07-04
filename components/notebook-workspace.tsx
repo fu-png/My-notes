@@ -99,9 +99,21 @@ const ChatPanel = dynamic(
 interface NotebookWorkspaceProps {
   projectId: string
   projectName: string
+  /** 服务端预取的文件列表（避免客户端首次 API 请求） */
+  initialFiles?: { filename: string; title: string; lastModified: number }[]
+  /** 服务端预取的初始文件名 */
+  initialFile?: string | null
+  /** 服务端预取的初始文件内容 */
+  initialFileContent?: string
 }
 
-export function NotebookWorkspace({ projectId, projectName }: NotebookWorkspaceProps) {
+export function NotebookWorkspace({
+  projectId,
+  projectName,
+  initialFiles,
+  initialFile = null,
+  initialFileContent = "",
+}: NotebookWorkspaceProps) {
 const router = useRouter()
 const searchParams = useSearchParams()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -115,11 +127,13 @@ const searchParams = useSearchParams()
   const [currentProjectName, setCurrentProjectName] = React.useState(projectName)
 
   // File state
-  const [files, setFiles] = React.useState<DocFile[]>([])
-  const [loadingFiles, setLoadingFiles] = React.useState(true)
-  const [activeFile, setActiveFile] = React.useState<string | null>(null)
+  const [files, setFiles] = React.useState<DocFile[]>(
+    initialFiles ? initialFiles.map(f => ({ filename: f.filename, title: f.title, lastModified: f.lastModified })) : []
+  )
+  const [loadingFiles, setLoadingFiles] = React.useState(!initialFiles)
+  const [activeFile, setActiveFile] = React.useState<string | null>(initialFile)
   const [recentFiles, setRecentFiles] = React.useState<string[]>([])
-  const fileCache = useFileCache({ projectId })
+  const fileCache = useFileCache({ projectId, initialFile, initialContent: initialFileContent })
   const { fileContent, editContent, setEditContent, loadingContent } = fileCache
   const [uploading, setUploading] = React.useState(false)
   const [isDragging, setIsDragging] = React.useState(false)
@@ -531,8 +545,10 @@ loadConversationSummaries(projectId).then(async (summaries) => {
   }, [projectId, showToast])
 
   React.useEffect(() => {
+    // 有服务端预取数据时跳过首次 fetch
+    if (initialFiles) return
     queueMicrotask(() => fetchFiles())
-  }, [fetchFiles])
+  }, [fetchFiles]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Refs to break circular dependency between useChatFlow ↔ usePptFlow ───
   const pptSessionRef = React.useRef<{ active: boolean } | null>(null)
@@ -721,13 +737,14 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     })
   }, [fileCache, editMode, editContent, fileContent])
 
-React.useEffect(() => {
+  React.useEffect(() => {
 if (!loadingFiles && files.length > 0 && !activeFile) {
 const fileParam = searchParams.get("file")
 const target = fileParam && files.some(f => f.filename === fileParam) ? fileParam : files[0].filename
 queueMicrotask(() => selectFile(target))
 }
 }, [loadingFiles, files]) // eslint-disable-line react-hooks/exhaustive-deps
+  // initialFile 已由服务端预取设置，activeFile 初始值非 null，此 effect 不会重复触发
 
   // ─── File Operations ───
 

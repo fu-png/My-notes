@@ -1,6 +1,6 @@
 import { NotebookWorkspace } from "@/components/notebook-workspace"
 import { notFound } from "next/navigation"
-import { readFile } from "@/lib/storage"
+import { readFile, getProject } from "@/lib/storage"
 
 // 禁止缓存，确保每次进入都读取最新的项目名称
 export const dynamic = "force-dynamic"
@@ -28,15 +28,26 @@ export default async function ProjectDetailPage({
 }) {
   const { id } = await params
 
-  const metaContent = await readFile(`projects/${id}/meta.json`)
-  if (!metaContent) notFound()
+  // 服务端一次性获取 meta + 文件列表，避免客户端二次请求
+  const projectData = await getProject(id)
+  if (!projectData) notFound()
 
-  let meta: { id: string; name: string; createdAt: string }
-  try {
-    meta = JSON.parse(metaContent)
-  } catch {
-    notFound()
+  const { meta, files: initialFiles } = projectData
+
+  // 预取第一个文件内容，消除客户端串行瀑布流
+  const initialFile = initialFiles[0]?.filename ?? null
+  let initialFileContent = ""
+  if (initialFile) {
+    initialFileContent = await readFile(`projects/${id}/${initialFile}`) ?? ""
   }
 
-  return <NotebookWorkspace projectId={id} projectName={meta.name} />
+  return (
+    <NotebookWorkspace
+      projectId={id}
+      projectName={meta.name}
+      initialFiles={initialFiles}
+      initialFile={initialFile}
+      initialFileContent={initialFileContent}
+    />
+  )
 }

@@ -56,7 +56,6 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { ToastContainer } from "@/components/toast-container"
-import { IconSearch } from "@tabler/icons-react"
 import { formatRelativeTime } from "@/lib/utils"
 
 interface Project {
@@ -87,8 +86,7 @@ export function ProjectsList() {
   const [editName, setEditName] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
-  // 搜索、排序、视图状态
-  const [search, setSearch] = React.useState("")
+  // 排序、视图状态
   const [sortField, setSortField] = React.useState<SortField>("createdAt")
   const [sortOrder, setSortOrder] = React.useState<SortOrder>("desc")
   const [viewMode, setViewMode] = React.useState<ViewMode>("grid")
@@ -176,12 +174,6 @@ export function ProjectsList() {
   const filteredProjects = React.useMemo(() => {
     let result = projects
 
-    // 搜索过滤
-    if (search.trim()) {
-      const keyword = search.trim().toLowerCase()
-      result = result.filter((p) => p.name.toLowerCase().includes(keyword))
-    }
-
     // 排序
     result = [...result].sort((a, b) => {
       let cmp = 0
@@ -196,7 +188,7 @@ export function ProjectsList() {
     })
 
     return result
-  }, [projects, search, sortField, sortOrder])
+  }, [projects, sortField, sortOrder])
 
   const currentSortOption = SORT_OPTIONS.find((o) => o.field === sortField)
 
@@ -211,17 +203,6 @@ export function ProjectsList() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Search input */}
-          <div className="relative">
-            <IconSearch className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索笔记..."
-              className="h-9 w-40 pl-8 text-sm sm:w-52"
-              aria-label="搜索笔记"
-            />
-          </div>
           {/* Sort dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -310,10 +291,10 @@ export function ProjectsList() {
             <IconNotebook className="size-8 text-muted-foreground/70" />
           </div>
           <p className="mb-1 text-sm font-medium text-muted-foreground">
-            {search.trim() ? "没有找到匹配的笔记" : "开始记录你的想法"}
+            开始记录你的想法
           </p>
           <p className="text-xs text-muted-foreground/80">
-            {search.trim() ? "试试其他关键词" : "点击右上角按钮创建第一本笔记"}
+            点击右上角按钮创建第一本笔记
           </p>
         </div>
       ) : viewMode === "grid" ? (
@@ -525,11 +506,7 @@ export function ProjectsList() {
       {/* Results count */}
       {!loading && projects.length > 0 && (
         <div className="mt-6 flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            {search.trim()
-              ? `找到 ${filteredProjects.length} / ${projects.length} 个笔记`
-              : `共 ${projects.length} 个笔记`}
-          </span>
+          <span>共 {projects.length} 个笔记</span>
         </div>
       )}
 
