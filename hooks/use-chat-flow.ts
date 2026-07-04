@@ -3,7 +3,7 @@
 import * as React from "react"
 import type { DocFile, ChatMessage } from "@/components/notebook/types"
 import { WELCOME_MESSAGE } from "@/components/notebook/types"
-import { getAIConfig, getConfiguredModel, getConfiguredEmbeddingModel, getProviderList, switchActiveProvider, getPersonaPrompt, getUserName } from "@/components/settings-dialog"
+import { getAIConfig, getConfiguredModel, getConfiguredEmbeddingModel, getEmbeddingConfig, getProviderList, switchActiveProvider, getPersonaPrompt, getUserName } from "@/components/settings-dialog"
 import type { ProviderInfo } from "@/components/settings-dialog"
 import { detectIntent } from "@/lib/agents/supervisor"
 import { buildSystemPrompt, trimConversationHistory } from "@/lib/agents/context-manager"
@@ -327,7 +327,9 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
                 apiKey: config.apiKey,
                 apiBase: config.apiBase,
                 model: chatModel,
-                embeddingModel: getConfiguredEmbeddingModel(),
+                embeddingModel: getEmbeddingConfig()?.embeddingModel || getConfiguredEmbeddingModel(),
+                embeddingApiKey: getEmbeddingConfig()?.apiKey,
+                embeddingApiBase: getEmbeddingConfig()?.apiBase,
                 activeFile: activeFile || undefined,
               }),
             })

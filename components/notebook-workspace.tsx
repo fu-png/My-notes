@@ -43,7 +43,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { getAIConfig, isAIConfigured, getConfiguredModel, getConfiguredEmbeddingModel } from "@/lib/ai-config"
+import { getAIConfig, isAIConfigured, getConfiguredModel, getConfiguredEmbeddingModel, getEmbeddingConfig } from "@/lib/ai-config"
 import { useToast } from "@/hooks/use-toast"
 import { ToastContainer } from "@/components/toast-container"
 import { ErrorBoundary } from "@/components/error-boundary"
@@ -425,6 +425,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     }
     setIndexing(true)
     setIndexProgress("准备中...")
+    const embConfig = getEmbeddingConfig()
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
         method: "POST",
@@ -434,7 +435,9 @@ loadConversationSummaries(projectId).then(async (summaries) => {
           apiKey: config.apiKey,
           apiBase: config.apiBase,
           model: chatModelRef.current,
-          embeddingModel: getConfiguredEmbeddingModel(),
+          embeddingModel: embConfig?.embeddingModel || getConfiguredEmbeddingModel(),
+          embeddingApiKey: embConfig?.apiKey,
+          embeddingApiBase: embConfig?.apiBase,
           stream: true,
         }),
       })
@@ -490,6 +493,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     autoIndexTimerRef.current = setTimeout(async () => {
       const config = getAIConfig()
       if (!config) return
+      const embConfig = getEmbeddingConfig()
 
       try {
         const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
@@ -500,7 +504,9 @@ loadConversationSummaries(projectId).then(async (summaries) => {
             apiKey: config.apiKey,
             apiBase: config.apiBase,
             model: getConfiguredModel(),
-            embeddingModel: getConfiguredEmbeddingModel(),
+            embeddingModel: embConfig?.embeddingModel || getConfiguredEmbeddingModel(),
+            embeddingApiKey: embConfig?.apiKey,
+            embeddingApiBase: embConfig?.apiBase,
             stream: true,
           }),
         })

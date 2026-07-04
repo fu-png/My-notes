@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const body = await request.json()
-    const { action, apiKey, apiBase, model, embeddingModel, question, maxContextTokens, stream, activeFile } = body
+    const { action, apiKey, apiBase, model, embeddingModel, embeddingApiKey, embeddingApiBase, question, maxContextTokens, stream, activeFile } = body
 
     if (!projectId) {
       return NextResponse.json({ error: "缺少项目 ID" }, { status: 400 })
@@ -53,6 +53,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
           embeddingModel: embeddingModel || "text-embedding-3-small",
+          embeddingApiKey: embeddingApiKey || undefined,
+          embeddingApiBase: embeddingApiBase || undefined,
           maxContextTokens: maxContextTokens || 12000,
         }
 
@@ -127,6 +129,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
           embeddingModel: embeddingModel || "text-embedding-3-small",
+          embeddingApiKey: embeddingApiKey || undefined,
+          embeddingApiBase: embeddingApiBase || undefined,
           maxContextTokens: maxContextTokens || 12000,
         }
 

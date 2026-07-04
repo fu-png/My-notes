@@ -67,6 +67,9 @@ import {
   STORAGE_KEY_API_BASE,
   STORAGE_KEY_MODEL,
   STORAGE_KEY_EMBEDDING_MODEL,
+  STORAGE_KEY_EMBEDDING_API_KEY,
+  STORAGE_KEY_EMBEDDING_API_BASE,
+  STORAGE_KEY_EMBEDDING_USE_SAME,
   STORAGE_KEY_TTS_API_KEY,
   STORAGE_KEY_TTS_API_BASE,
   STORAGE_KEY_TTS_MODEL,
@@ -106,6 +109,9 @@ export {
   STORAGE_KEY_API_BASE,
   STORAGE_KEY_MODEL,
   STORAGE_KEY_EMBEDDING_MODEL,
+  STORAGE_KEY_EMBEDDING_API_KEY,
+  STORAGE_KEY_EMBEDDING_API_BASE,
+  STORAGE_KEY_EMBEDDING_USE_SAME,
   STORAGE_KEY_TTS_API_KEY,
   STORAGE_KEY_TTS_API_BASE,
   STORAGE_KEY_TTS_MODEL,
@@ -118,8 +124,9 @@ export {
   STORAGE_KEY_USER_NAME,
 }
 
-import type { ProviderInfo } from "@/lib/ai-config"
-export type { ProviderInfo }
+import type { ProviderInfo, EmbeddingConfig } from "@/lib/ai-config"
+export type { ProviderInfo, EmbeddingConfig }
+export { getEmbeddingConfig } from "@/lib/ai-config"
 
 // ─── Component ───
 
@@ -150,6 +157,10 @@ export function SettingsDialog() {
   const [apiBase, setApiBase] = React.useState(DEFAULT_API_BASE)
   const [model, setModel] = React.useState(DEFAULT_MODEL)
   const [embeddingModel, setEmbeddingModel] = React.useState(DEFAULT_EMBEDDING_MODEL)
+  const [embUseSame, setEmbUseSame] = React.useState(true)
+  const [embApiKey, setEmbApiKey] = React.useState("")
+  const [embApiBase, setEmbApiBase] = React.useState(DEFAULT_API_BASE)
+  const [showEmbKey, setShowEmbKey] = React.useState(false)
   const [provider, setProvider] = React.useState("自定义")
 
   // TTS 配置
@@ -189,6 +200,9 @@ export function SettingsDialog() {
       setApiBase(savedBase)
       setModel(savedModel)
       setEmbeddingModel(localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL)
+      setEmbUseSame(localStorage.getItem(STORAGE_KEY_EMBEDDING_USE_SAME) !== "false")
+      setEmbApiKey(localStorage.getItem(STORAGE_KEY_EMBEDDING_API_KEY) || "")
+      setEmbApiBase(localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || DEFAULT_API_BASE)
       const detected = detectProvider(savedBase)
       setProvider(detected)
       const preset = PROVIDER_PRESETS.find((p) => p.name === detected)
@@ -267,6 +281,14 @@ export function SettingsDialog() {
     localStorage.setItem(STORAGE_KEY_API_BASE, apiBase.trim() || DEFAULT_API_BASE)
     localStorage.setItem(STORAGE_KEY_MODEL, model.trim() || DEFAULT_MODEL)
     localStorage.setItem(STORAGE_KEY_EMBEDDING_MODEL, embeddingModel.trim() || DEFAULT_EMBEDDING_MODEL)
+    localStorage.setItem(STORAGE_KEY_EMBEDDING_USE_SAME, embUseSame ? "true" : "false")
+    if (embUseSame) {
+      localStorage.removeItem(STORAGE_KEY_EMBEDDING_API_KEY)
+      localStorage.removeItem(STORAGE_KEY_EMBEDDING_API_BASE)
+    } else {
+      localStorage.setItem(STORAGE_KEY_EMBEDDING_API_KEY, embApiKey.trim())
+      localStorage.setItem(STORAGE_KEY_EMBEDDING_API_BASE, embApiBase.trim() || DEFAULT_API_BASE)
+    }
 
     if (useSameKey) {
       localStorage.removeItem(STORAGE_KEY_TTS_API_KEY)
@@ -452,8 +474,60 @@ export function SettingsDialog() {
               value={embeddingModel}
               onChange={(e) => setEmbeddingModel(e.target.value)}
             />
+
+            {/* 复用对话 API 开关 */}
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5 mt-2">
+              <Label htmlFor="emb-use-same" className="text-sm font-normal cursor-pointer">
+                使用与 AI 对话相同的 API Key 和地址
+              </Label>
+              <Switch
+                id="emb-use-same"
+                checked={embUseSame}
+                onCheckedChange={setEmbUseSame}
+              />
+            </div>
+
+            {/* 独立 Embedding API（仅在未勾选时展示） */}
+            {!embUseSame && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="emb-api-key">Embedding API Key</Label>
+                  <div className="relative">
+                    <Input
+                      id="emb-api-key"
+                      type={showEmbKey ? "text" : "password"}
+                      placeholder="sk-..."
+                      value={embApiKey}
+                      onChange={(e) => setEmbApiKey(e.target.value)}
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                      onClick={() => setShowEmbKey(!showEmbKey)}
+                      aria-label={showEmbKey ? "隐藏 Key" : "显示 Key"}
+                    >
+                      {showEmbKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="emb-api-base">Embedding API Base URL</Label>
+                  <Input
+                    id="emb-api-base"
+                    type="url"
+                    placeholder={DEFAULT_API_BASE}
+                    value={embApiBase}
+                    onChange={(e) => setEmbApiBase(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+
             <p className="text-xs text-muted-foreground">
-              用于知识库索引（RAG）。OpenAI 默认 text-embedding-3-small，硅基流动可用 BAAI/bge-m3 等。不支持 Embedding 的服务商将无法建索引。
+              用于知识库索引（RAG）。若对话服务商不支持 Embedding（如 DeepSeek、小米蜜馍），请关闭复用并配置支持 Embedding 的服务商（如硅基流动、OpenAI）。
             </p>
           </div>
         </div>

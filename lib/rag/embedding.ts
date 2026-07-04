@@ -123,8 +123,9 @@ async function embedBatchWithRetry(
   texts: string[],
   config: RAGConfig
 ): Promise<number[][]> {
-  const baseUrl = config.apiBase.replace(/\/+$/, "")
+  const baseUrl = (config.embeddingApiBase || config.apiBase).replace(/\/+$/, "")
   const model = config.embeddingModel || "text-embedding-3-small"
+  const embApiKey = config.embeddingApiKey || config.apiKey
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -132,7 +133,7 @@ async function embedBatchWithRetry(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`,
+          Authorization: `Bearer ${embApiKey}`,
         },
         body: JSON.stringify({
           model,

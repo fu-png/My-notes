@@ -32,9 +32,9 @@ export interface SearchResult {
 
 /** RAG 配置 */
 export interface RAGConfig {
-  /** OpenAI 兼容 API 的 base URL */
+  /** OpenAI 兼容 API 的 base URL（用于对话 / 查询分解 / 重排序） */
   apiBase: string
-  /** API Key */
+  /** API Key（用于对话 / 查询分解 / 重排序） */
   apiKey: string
   /** Embedding 模型名称 */
   embeddingModel: string
@@ -44,6 +44,9 @@ export interface RAGConfig {
   rerankModel?: string
   /** 上下文组装的最大 token 数 */
   maxContextTokens?: number
+  /** Embedding API 独立配置（若 Embedding 服务商与对话不同） */
+  embeddingApiKey?: string
+  embeddingApiBase?: string
 }
 
 /** 查询分解结果 */
