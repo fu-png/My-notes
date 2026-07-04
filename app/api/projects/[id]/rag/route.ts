@@ -43,14 +43,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       case "index": {
         // embedding 有内置默认 API Key（SiliconFlow + bge-large-zh-v1.5），
         // 不再强制要求用户提供 chat API key 即可构建索引
-        const effectiveApiKey = apiKey || embeddingApiKey || "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx"
+        const effectiveApiKey = apiKey || embeddingApiKey || "sk-nlhsijtvqicguodpqsdddlcbqejbebacvscozuoljqjsciua"
 
         const config: RAGConfig = {
           apiKey: effectiveApiKey,
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
           embeddingModel: embeddingModel || "BAAI/bge-large-zh-v1.5",
-          embeddingApiKey: embeddingApiKey || "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx",
+          embeddingApiKey: embeddingApiKey || "sk-nlhsijtvqicguodpqsdddlcbqejbebacvscozuoljqjsciua",
           embeddingApiBase: embeddingApiBase || "https://api.siliconflow.cn/v1/embeddings",
           maxContextTokens: maxContextTokens || 12000,
         }
@@ -115,13 +115,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
           )
         }
 
-        const queryApiKey = apiKey || embeddingApiKey || "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx"
+        const queryApiKey = apiKey || embeddingApiKey || "sk-nlhsijtvqicguodpqsdddlcbqejbebacvscozuoljqjsciua"
         const config: RAGConfig = {
           apiKey: queryApiKey,
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
           embeddingModel: embeddingModel || "BAAI/bge-large-zh-v1.5",
-          embeddingApiKey: embeddingApiKey || "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx",
+          embeddingApiKey: embeddingApiKey || "sk-nlhsijtvqicguodpqsdddlcbqejbebacvscozuoljqjsciua",
           embeddingApiBase: embeddingApiBase || "https://api.siliconflow.cn/v1/embeddings",
           maxContextTokens: maxContextTokens || 12000,
         }

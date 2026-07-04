@@ -1,0 +1,182 @@
+[
+  {
+    "id": "S01",
+    "category": "single_file",
+    "difficulty": "easy",
+    "question": "AutoCompact 触发的缓冲令牌数（AUTOCOMPACT_BUFFER_TOKENS）是多少？",
+    "expected_answer": "13000",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["AUTOCOMPACT_BUFFER_TOKENS", "13000", "13,000"]
+  },
+  {
+    "id": "S02",
+    "category": "single_file",
+    "difficulty": "easy",
+    "question": "Claude Code 的断路器连续失败几次后会熔断？",
+    "expected_answer": "3次。MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["3", "MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES", "熔断"]
+  },
+  {
+    "id": "S03",
+    "category": "single_file",
+    "difficulty": "easy",
+    "question": "Claude Code 使用什么运行时？终端 UI 使用什么技术栈？",
+    "expected_answer": "使用 Bun 运行时，终端 UI 使用 React + Ink",
+    "expected_sources": ["0前言_1782911281799.md"],
+    "keywords": ["Bun", "React", "Ink"]
+  },
+  {
+    "id": "S04",
+    "category": "single_file",
+    "difficulty": "easy",
+    "question": "Coordinator 模式的协调者拥有哪几个工具？",
+    "expected_answer": "协调者只有 4 个工具：Agent（创建工人）、TaskStop（停止工人）、SendMessage（向工人发消息）、Structured Output",
+    "expected_sources": ["10-协调器模式-多智能体编排.md"],
+    "keywords": ["Agent", "TaskStop", "SendMessage", "4"]
+  },
+  {
+    "id": "S05",
+    "category": "single_file",
+    "difficulty": "medium",
+    "question": "上下文窗口管理中的四个阈值区间分别是什么？各自的百分比范围是多少？",
+    "expected_answer": "安全区(0-85%)、警告区(85-90%)、危险/自动压缩区(90-95%)、阻塞区(95-100%)",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["安全", "警告", "危险", "阻塞", "85%", "90%", "95%"]
+  },
+  {
+    "id": "S06",
+    "category": "single_file",
+    "difficulty": "medium",
+    "question": "StreamingToolExecutor 的工具状态机有几种状态？分别是什么？",
+    "expected_answer": "4种状态：queued（排队）、executing（执行中）、completed（完成）、yielded（已交付）",
+    "expected_sources": ["13-流式架构与性能优化.md"],
+    "keywords": ["queued", "executing", "completed", "yielded", "4"]
+  },
+  {
+    "id": "S07",
+    "category": "single_file",
+    "difficulty": "medium",
+    "question": "Claude Code 的配置系统有几层优先级？从低到高的顺序是什么？",
+    "expected_answer": "六层优先级，从低到高：pluginSettings → userSettings → projectSettings → localSettings → flagSettings → policySettings",
+    "expected_sources": ["05-设置与配置-Agent的基因.md"],
+    "keywords": ["pluginSettings", "userSettings", "projectSettings", "localSettings", "flagSettings", "policySettings"]
+  },
+  {
+    "id": "S08",
+    "category": "single_file",
+    "difficulty": "hard",
+    "question": "引入断路器之前，最高连续压缩失败次数是多少？每天浪费多少 API 调用？",
+    "expected_answer": "最高连续失败 3272 次，每天约 25 万次 API 调用被浪费",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["3272", "25万", "250K", "1279"]
+  },
+  {
+    "id": "S09",
+    "category": "single_file",
+    "difficulty": "hard",
+    "question": "Snip 压缩替换旧工具结果时使用的标记文本是什么？",
+    "expected_answer": "[Old tool result content cleared]",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["Old tool result content cleared"]
+  },
+  {
+    "id": "S10",
+    "category": "single_file",
+    "difficulty": "hard",
+    "question": "200K token 模型窗口、16384 max_output_tokens 时，有效上下文窗口大小是多少 tokens？",
+    "expected_answer": "183,616 tokens",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["183616", "183,616"]
+  },
+  {
+    "id": "C01",
+    "category": "cross_file",
+    "difficulty": "medium",
+    "question": "buildTool 工厂函数中 isConcurrencySafe 的默认值是什么？这个默认值如何影响 StreamingToolExecutor 的并发调度？",
+    "expected_answer": "isConcurrencySafe 默认为 false（fail-closed 安全策略）。在 StreamingToolExecutor 中，标记为 concurrency-unsafe 的工具必须独占执行，不能与其他工具并行。",
+    "expected_sources": ["03-工具系统-Agent的双手.md", "13-流式架构与性能优化.md"],
+    "keywords": ["false", "fail-closed", "独占", "并行", "concurrencySafe"]
+  },
+  {
+    "id": "C02",
+    "category": "cross_file",
+    "difficulty": "medium",
+    "question": "前言提到的五大设计原则中，'缓存感知设计'在上下文管理系统中是如何具体体现的？",
+    "expected_answer": "缓存感知设计在上下文管理中体现为 MicroCompact（第二级压缩）基于缓存过期触发——当 API 缓存即将到期时才执行压缩。",
+    "expected_sources": ["0前言_1782911281799.md", "07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["缓存感知", "cache-aware", "MicroCompact", "缓存过期"]
+  },
+  {
+    "id": "C03",
+    "category": "cross_file",
+    "difficulty": "hard",
+    "question": "工具系统中的死代码消除和配置系统中的功能开关，各自在编译阶段起什么作用？",
+    "expected_answer": "工具系统的死代码消除通过条件导入实现编译时 tree-shaking，防止内部工具代码泄露到外部构建。配置系统的功能开关（feature gates）控制工具和功能的可用性。",
+    "expected_sources": ["03-工具系统-Agent的双手.md", "05-设置与配置-Agent的基因.md"],
+    "keywords": ["tree-shaking", "条件导入", "feature gate", "功能开关", "编译"]
+  },
+  {
+    "id": "C04",
+    "category": "cross_file",
+    "difficulty": "hard",
+    "question": "压缩系统中的 forked agent 和子智能体 Fork 模式，虽然都用了 fork 概念，但设计目标有何不同？",
+    "expected_answer": "AutoCompact 的 forked agent 目的是隔离压缩任务（最多 1 轮、不允许工具调用）。Fork 模式的子智能体目的是并行处理多个独立子任务，每个 fork 拥有完整工具集和独立上下文。",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md", "09-子智能体与Fork模式.md"],
+    "keywords": ["forked agent", "隔离", "并行", "独立上下文"]
+  },
+  {
+    "id": "CP01",
+    "category": "comparison",
+    "difficulty": "medium",
+    "question": "Coordinator 模式和 Fork 模式的核心区别是什么？",
+    "expected_answer": "Coordinator 是中心化编排（协调者控制），Fork 是对等并行（子智能体平等）。两者互斥，同时激活时 Coordinator 优先。",
+    "expected_sources": ["09-子智能体与Fork模式.md", "10-协调器模式-多智能体编排.md"],
+    "keywords": ["中心化", "对等", "互斥", "编排", "并行"]
+  },
+  {
+    "id": "CP02",
+    "category": "comparison",
+    "difficulty": "medium",
+    "question": "四级上下文压缩策略中，哪些需要调用 LLM，哪些不需要？",
+    "expected_answer": "Snip 不需要 LLM，MicroCompact 不需要 LLM，Collapse 可能需要 LLM，AutoCompact 需要完整的 LLM 调用。",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["Snip", "MicroCompact", "Collapse", "AutoCompact", "不需要"]
+  },
+  {
+    "id": "CP03",
+    "category": "comparison",
+    "difficulty": "hard",
+    "question": "配置系统中数组类型为什么用拼接+去重而不是替换？和标量覆盖策略有何不同的设计考量？",
+    "expected_answer": "数组用拼接+去重是出于安全考虑——替换可能导致高优先级层遗漏某些权限/工具条目造成安全漏洞。标量用覆盖因为不存在遗漏风险。",
+    "expected_sources": ["05-设置与配置-Agent的基因.md"],
+    "keywords": ["拼接", "concat", "安全", "遗漏", "替换"]
+  },
+  {
+    "id": "D01",
+    "category": "detail",
+    "difficulty": "hard",
+    "question": "MicroCompact 可以压缩哪些类型的工具结果？",
+    "expected_answer": "Read、Bash、Grep、Glob、WebSearch、WebFetch、Edit、Write",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["Read", "Bash", "Grep", "Glob", "WebSearch", "WebFetch", "Edit", "Write"]
+  },
+  {
+    "id": "D02",
+    "category": "detail",
+    "difficulty": "hard",
+    "question": "Claude Code npm source map 事件发生在什么时候？是谁发现的？",
+    "expected_answer": "2026年3月31日，由 Chaofan Shou 发现",
+    "expected_sources": ["0前言_1782911281799.md"],
+    "keywords": ["2026", "3月", "31", "Chaofan Shou"]
+  },
+  {
+    "id": "D03",
+    "category": "detail",
+    "difficulty": "hard",
+    "question": "AutoCompact 在 prompt-too-long 时最多重试几次？",
+    "expected_answer": "最多重试 3 次",
+    "expected_sources": ["07-上下文管理-Agent的工作记忆.md"],
+    "keywords": ["3", "重试"]
+  }
+]

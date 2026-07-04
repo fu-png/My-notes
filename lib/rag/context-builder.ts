@@ -90,13 +90,15 @@ export function buildContext(
   }
 
   // 第二轮：剩余预算按分数贪心填充（跳过已选的）
-  // [优化] 限制单个文件最多占用 5 个 chunk，防止综合章节挤压其他文件
+  // [优化] 限制单个文件最多占用 2 个 chunk（从 5 降到 2）
+  // 评测发现综合章节（如"构建你自己的Agent-Harness"）被 reranker 打超高分，
+  // 轻松占满 5 个位置，导致 Precision@5 = 0%。降到 2 可以让更多专题章节出现
   const fileChunkCount = new Map<string, number>()
   for (const r of selected) {
     const fname = r.chunk.filename
     fileChunkCount.set(fname, (fileChunkCount.get(fname) || 0) + 1)
   }
-  const MAX_CHUNKS_PER_FILE = 5
+  const MAX_CHUNKS_PER_FILE = 2
 
   for (const result of dedupedSimilar) {
     if (selectedIds.has(result.chunk.id)) continue

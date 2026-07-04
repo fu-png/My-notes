@@ -1,0 +1,662 @@
+{
+  "timestamp": "2026-07-04T20:04:21.261Z",
+  "config": {
+    "projectId": "proj-1782444448684",
+    "embeddingModel": "BAAI/bge-large-zh-v1.5",
+    "chatModel": "mimo-v2.5-pro",
+    "baseUrl": "http://localhost:3000"
+  },
+  "overall": {
+    "totalTests": 20,
+    "successTests": 20,
+    "failedTests": 0,
+    "contextRecall": 0.975,
+    "contextPrecisionAt5": 0.45,
+    "contextPrecisionAt3": 0.6833333333333332,
+    "keywordHitRate": 0.7744047619047619,
+    "mrr": 0.9666666666666668,
+    "avgLatency": 4204.2,
+    "p50Latency": 723,
+    "p95Latency": 9414
+  },
+  "byCategory": {
+    "single_file": {
+      "count": 10,
+      "contextRecall": 1,
+      "contextPrecisionAt5": 0.39999999999999997,
+      "keywordHitRate": 0.7738095238095238,
+      "mrr": 0.9333333333333333,
+      "avgLatency": 2600.5
+    },
+    "cross_file": {
+      "count": 4,
+      "contextRecall": 0.875,
+      "contextPrecisionAt5": 0.6,
+      "keywordHitRate": 0.65,
+      "mrr": 1,
+      "avgLatency": 4879.75
+    },
+    "comparison": {
+      "count": 3,
+      "contextRecall": 1,
+      "contextPrecisionAt5": 0.5333333333333333,
+      "keywordHitRate": 0.8000000000000002,
+      "mrr": 1,
+      "avgLatency": 9416
+    },
+    "detail": {
+      "count": 3,
+      "contextRecall": 1,
+      "contextPrecisionAt5": 0.3333333333333333,
+      "keywordHitRate": 0.9166666666666666,
+      "mrr": 1,
+      "avgLatency": 3437.3333333333335
+    }
+  },
+  "byDifficulty": {
+    "easy": {
+      "count": 4,
+      "contextRecall": 1,
+      "contextPrecisionAt5": 0.4,
+      "keywordHitRate": 0.8541666666666666,
+      "mrr": 0.8333333333333334,
+      "avgLatency": 1333
+    },
+    "medium": {
+      "count": 7,
+      "contextRecall": 1,
+      "contextPrecisionAt5": 0.5142857142857143,
+      "keywordHitRate": 0.8173469387755101,
+      "mrr": 1,
+      "avgLatency": 5535.142857142857
+    },
+    "hard": {
+      "count": 9,
+      "contextRecall": 0.9444444444444444,
+      "contextPrecisionAt5": 0.4222222222222222,
+      "keywordHitRate": 0.7055555555555555,
+      "mrr": 1,
+      "avgLatency": 4445.111111111111
+    }
+  },
+  "details": [
+    {
+      "id": "S01",
+      "category": "single_file",
+      "difficulty": "easy",
+      "question": "AutoCompact 触发的缓冲令牌数（AUTOCOMPACT_BUFFER_TOKENS）是多少？",
+      "success": true,
+      "latency": 3643,
+      "totalSources": 15,
+      "totalTokens": 8779,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "07-上下文管理-Agent的工作记忆.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "13-流式架构与性能优化.md",
+        "13-流式架构与性能优化.md",
+        "09-子智能体与Fork模式.md",
+        "14-Plan模式与结构化工作流.md",
+        "14-Plan模式与结构化工作流.md",
+        "08-钩子系统-Agent的生命周期扩展点.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.6666666666666666,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "S02",
+      "category": "single_file",
+      "difficulty": "easy",
+      "question": "Claude Code 的断路器连续失败几次后会熔断？",
+      "success": true,
+      "latency": 723,
+      "totalSources": 18,
+      "totalTokens": 9367,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "07-上下文管理-Agent的工作记忆.md",
+        "04-权限管线-Agent的护栏.md",
+        "04-权限管线-Agent的护栏.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "12-MCP集成与外部协议.md",
+        "12-MCP集成与外部协议.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "S03",
+      "category": "single_file",
+      "difficulty": "easy",
+      "question": "Claude Code 使用什么运行时？终端 UI 使用什么技术栈？",
+      "success": true,
+      "latency": 596,
+      "totalSources": 18,
+      "totalTokens": 11044,
+      "retrievedFiles": [
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "0前言_1782911281799.md",
+        "0前言_1782911281799.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "05-设置与配置-Agent的基因.md",
+        "10-协调器模式-多智能体编排.md",
+        "12-MCP集成与外部协议.md",
+        "12-MCP集成与外部协议.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.3333333333333333,
+        "keywordHitRate": 1,
+        "mrr": 0.3333333333333333
+      }
+    },
+    {
+      "id": "S04",
+      "category": "single_file",
+      "difficulty": "easy",
+      "question": "Coordinator 模式的协调者拥有哪几个工具？",
+      "success": true,
+      "latency": 370,
+      "totalSources": 10,
+      "totalTokens": 4420,
+      "retrievedFiles": [
+        "10-协调器模式-多智能体编排.md",
+        "10-协调器模式-多智能体编排.md",
+        "09-子智能体与Fork模式.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md",
+        "02-对话循环-Agent的心跳.md",
+        "04-权限管线-Agent的护栏.md",
+        "04-权限管线-Agent的护栏.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.75,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "S05",
+      "category": "single_file",
+      "difficulty": "medium",
+      "question": "上下文窗口管理中的四个阈值区间分别是什么？各自的百分比范围是多少？",
+      "success": true,
+      "latency": 9252,
+      "totalSources": 14,
+      "totalTokens": 8104,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "07-上下文管理-Agent的工作记忆.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "04-权限管线-Agent的护栏.md",
+        "04-权限管线-Agent的护栏.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.5714285714285714,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "S06",
+      "category": "single_file",
+      "difficulty": "medium",
+      "question": "StreamingToolExecutor 的工具状态机有几种状态？分别是什么？",
+      "success": true,
+      "latency": 9216,
+      "totalSources": 17,
+      "totalTokens": 11163,
+      "retrievedFiles": [
+        "13-流式架构与性能优化.md",
+        "13-流式架构与性能优化.md",
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md",
+        "05-设置与配置-Agent的基因.md",
+        "05-设置与配置-Agent的基因.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "12-MCP集成与外部协议.md",
+        "15-构建你自己的Agent-Harness.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "S07",
+      "category": "single_file",
+      "difficulty": "medium",
+      "question": "Claude Code 的配置系统有几层优先级？从低到高的顺序是什么？",
+      "success": true,
+      "latency": 594,
+      "totalSources": 15,
+      "totalTokens": 8444,
+      "retrievedFiles": [
+        "05-设置与配置-Agent的基因.md",
+        "05-设置与配置-Agent的基因.md",
+        "08-钩子系统-Agent的生命周期扩展点.md",
+        "08-钩子系统-Agent的生命周期扩展点.md",
+        "04-权限管线-Agent的护栏.md",
+        "04-权限管线-Agent的护栏.md",
+        "06-记忆系统-Agent的长期记忆.md",
+        "06-记忆系统-Agent的长期记忆.md",
+        "0前言_1782911281799.md",
+        "11-技能系统与插件架构.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "S08",
+      "category": "single_file",
+      "difficulty": "hard",
+      "question": "引入断路器之前，最高连续压缩失败次数是多少？每天浪费多少 API 调用？",
+      "success": true,
+      "latency": 581,
+      "totalSources": 16,
+      "totalTokens": 10403,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "07-上下文管理-Agent的工作记忆.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "04-权限管线-Agent的护栏.md",
+        "13-流式架构与性能优化.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.25,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "S09",
+      "category": "single_file",
+      "difficulty": "hard",
+      "question": "Snip 压缩替换旧工具结果时使用的标记文本是什么？",
+      "success": true,
+      "latency": 572,
+      "totalSources": 17,
+      "totalTokens": 11138,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "07-上下文管理-Agent的工作记忆.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md",
+        "13-流式架构与性能优化.md",
+        "13-流式架构与性能优化.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "S10",
+      "category": "single_file",
+      "difficulty": "hard",
+      "question": "200K token 模型窗口、16384 max_output_tokens 时，有效上下文窗口大小是多少 tokens？",
+      "success": true,
+      "latency": 458,
+      "totalSources": 13,
+      "totalTokens": 7713,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "07-上下文管理-Agent的工作记忆.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "13-流式架构与性能优化.md",
+        "06-记忆系统-Agent的长期记忆.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "12-MCP集成与外部协议.md",
+        "08-钩子系统-Agent的生命周期扩展点.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.5,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "C01",
+      "category": "cross_file",
+      "difficulty": "medium",
+      "question": "buildTool 工厂函数中 isConcurrencySafe 的默认值是什么？这个默认值如何影响 StreamingToolExecutor 的并发调度？",
+      "success": true,
+      "latency": 538,
+      "totalSources": 17,
+      "totalTokens": 10673,
+      "retrievedFiles": [
+        "13-流式架构与性能优化.md",
+        "13-流式架构与性能优化.md",
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "12-MCP集成与外部协议.md",
+        "12-MCP集成与外部协议.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.8,
+        "contextPrecisionAt3": 1,
+        "keywordHitRate": 0.8,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "C02",
+      "category": "cross_file",
+      "difficulty": "medium",
+      "question": "前言提到的五大设计原则中，'缓存感知设计'在上下文管理系统中是如何具体体现的？",
+      "success": true,
+      "latency": 553,
+      "totalSources": 17,
+      "totalTokens": 10187,
+      "retrievedFiles": [
+        "0前言_1782911281799.md",
+        "0前言_1782911281799.md",
+        "04-权限管线-Agent的护栏.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "06-记忆系统-Agent的长期记忆.md",
+        "06-记忆系统-Agent的长期记忆.md",
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md",
+        "15-构建你自己的Agent-Harness.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.75,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "C03",
+      "category": "cross_file",
+      "difficulty": "hard",
+      "question": "工具系统中的死代码消除和配置系统中的功能开关，各自在编译阶段起什么作用？",
+      "success": true,
+      "latency": 9119,
+      "totalSources": 16,
+      "totalTokens": 8853,
+      "retrievedFiles": [
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md",
+        "05-设置与配置-Agent的基因.md",
+        "05-设置与配置-Agent的基因.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "13-流式架构与性能优化.md",
+        "12-MCP集成与外部协议.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.8,
+        "contextPrecisionAt3": 1,
+        "keywordHitRate": 0.8,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "C04",
+      "category": "cross_file",
+      "difficulty": "hard",
+      "question": "压缩系统中的 forked agent 和子智能体 Fork 模式，虽然都用了 fork 概念，但设计目标有何不同？",
+      "success": true,
+      "latency": 9309,
+      "totalSources": 7,
+      "totalTokens": 2808,
+      "retrievedFiles": [
+        "09-子智能体与Fork模式.md",
+        "09-子智能体与Fork模式.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "02-对话循环-Agent的心跳.md",
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md"
+      ],
+      "metrics": {
+        "contextRecall": 0.5,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.25,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "CP01",
+      "category": "comparison",
+      "difficulty": "medium",
+      "question": "Coordinator 模式和 Fork 模式的核心区别是什么？",
+      "success": true,
+      "latency": 9179,
+      "totalSources": 12,
+      "totalTokens": 6143,
+      "retrievedFiles": [
+        "10-协调器模式-多智能体编排.md",
+        "10-协调器模式-多智能体编排.md",
+        "09-子智能体与Fork模式.md",
+        "09-子智能体与Fork模式.md",
+        "06-记忆系统-Agent的长期记忆.md",
+        "14-Plan模式与结构化工作流.md",
+        "14-Plan模式与结构化工作流.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "02-对话循环-Agent的心跳.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.8,
+        "contextPrecisionAt3": 1,
+        "keywordHitRate": 0.6,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "CP02",
+      "category": "comparison",
+      "difficulty": "medium",
+      "question": "四级上下文压缩策略中，哪些需要调用 LLM，哪些不需要？",
+      "success": true,
+      "latency": 9414,
+      "totalSources": 12,
+      "totalTokens": 7281,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "07-上下文管理-Agent的工作记忆.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "13-流式架构与性能优化.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "08-钩子系统-Agent的生命周期扩展点.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "CP03",
+      "category": "comparison",
+      "difficulty": "hard",
+      "question": "配置系统中数组类型为什么用拼接+去重而不是替换？和标量覆盖策略有何不同的设计考量？",
+      "success": true,
+      "latency": 9655,
+      "totalSources": 18,
+      "totalTokens": 10514,
+      "retrievedFiles": [
+        "05-设置与配置-Agent的基因.md",
+        "05-设置与配置-Agent的基因.md",
+        "12-MCP集成与外部协议.md",
+        "12-MCP集成与外部协议.md",
+        "08-钩子系统-Agent的生命周期扩展点.md",
+        "08-钩子系统-Agent的生命周期扩展点.md",
+        "01-智能体编程的新范式.md",
+        "01-智能体编程的新范式.md",
+        "11-技能系统与插件架构.md",
+        "11-技能系统与插件架构.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.8,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "D01",
+      "category": "detail",
+      "difficulty": "hard",
+      "question": "MicroCompact 可以压缩哪些类型的工具结果？",
+      "success": true,
+      "latency": 8934,
+      "totalSources": 18,
+      "totalTokens": 11251,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "07-上下文管理-Agent的工作记忆.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "08-钩子系统-Agent的生命周期扩展点.md",
+        "08-钩子系统-Agent的生命周期扩展点.md",
+        "06-记忆系统-Agent的长期记忆.md",
+        "06-记忆系统-Agent的长期记忆.md",
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 1,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "D02",
+      "category": "detail",
+      "difficulty": "hard",
+      "question": "Claude Code npm source map 事件发生在什么时候？是谁发现的？",
+      "success": true,
+      "latency": 787,
+      "totalSources": 16,
+      "totalTokens": 11364,
+      "retrievedFiles": [
+        "0前言_1782911281799.md",
+        "0前言_1782911281799.md",
+        "15-构建你自己的Agent-Harness.md",
+        "15-构建你自己的Agent-Harness.md",
+        "11-技能系统与插件架构.md",
+        "13-流式架构与性能优化.md",
+        "12-MCP集成与外部协议.md",
+        "12-MCP集成与外部协议.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.4,
+        "contextPrecisionAt3": 0.6666666666666666,
+        "keywordHitRate": 0.75,
+        "mrr": 1
+      }
+    },
+    {
+      "id": "D03",
+      "category": "detail",
+      "difficulty": "hard",
+      "question": "AutoCompact 在 prompt-too-long 时最多重试几次？",
+      "success": true,
+      "latency": 591,
+      "totalSources": 14,
+      "totalTokens": 11296,
+      "retrievedFiles": [
+        "07-上下文管理-Agent的工作记忆.md",
+        "15-构建你自己的Agent-Harness.md",
+        "14-Plan模式与结构化工作流.md",
+        "02-对话循环-Agent的心跳.md",
+        "02-对话循环-Agent的心跳.md",
+        "08-钩子系统-Agent的生命周期扩展点.md",
+        "08-钩子系统-Agent的生命周期扩展点.md",
+        "03-工具系统-Agent的双手.md",
+        "03-工具系统-Agent的双手.md",
+        "13-流式架构与性能优化.md"
+      ],
+      "metrics": {
+        "contextRecall": 1,
+        "contextPrecisionAt5": 0.2,
+        "contextPrecisionAt3": 0.3333333333333333,
+        "keywordHitRate": 1,
+        "mrr": 1
+      }
+    }
+  ],
+  "failedCases": []
+}

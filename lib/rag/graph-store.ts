@@ -400,6 +400,10 @@ export function expandWithGraph(
         if (neighborEntities.has(entityId)) score += 0.15
       }
     }
+    // [修复] 封顶分数，防止综合章节因关联大量实体而得到超高分
+    // 例如总结章节关联 38+ 实体时，累加到 5.7+，碾压正常检索结果（0.03-0.04）
+    // 封顶 1.0 确保 graph expansion 结果不会喧宾夺主
+    score = Math.min(score, 1.0)
     return { chunk, score }
   })
 
@@ -410,7 +414,7 @@ export function expandWithGraph(
     .filter((s) => s.score > 0)
     .map((s) => ({
       chunk: s.chunk,
-      score: s.score * 0.5, // 扩展结果降权
+      score: s.score * 0.3, // 扩展结果降权（0.3×，确保不超过主检索结果）
       source: "hybrid" as const,
     }))
 

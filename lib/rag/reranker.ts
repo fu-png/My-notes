@@ -17,9 +17,10 @@
 
 import type { RAGConfig, SearchResult } from "./types"
 import { parseRobustJSON } from "./json-parser"
+import { tokenizeToSet } from "./tokenizer"
 
 const MAX_CANDIDATES = 30 // 最多送入 reranker 的候选数（扩大候选池，避免相关片段过早被截断）
-const MIN_RELEVANCE = 0.1 // 专用 rerank API 打分（0-1）低于此值的结果将被过滤
+const MIN_RELEVANCE = 0.2 // 专用 rerank API 打分（0-1）低于此值的结果将被过滤（从 0.1 提升到 0.2，更积极过滤低相关块）
 
 /** 从 chatModel 猜测对应的专用 rerank 模型名，若无法判断则使用通用默认值 */
 function resolveRerankModel(config: RAGConfig): string {
@@ -29,6 +30,11 @@ function resolveRerankModel(config: RAGConfig): string {
 
 interface SiliconFlowRerankResponse {
   results: { index: number; relevance_score: number }[]
+}
+
+/** Sigmoid 归一化：将无界 logit 分数压缩到 [0,1] */
+function sigmoid(x: number): number {
+  return 1 / (1 + Math.exp(-x))
 }
 
 /**
@@ -41,17 +47,23 @@ async function rerankViaAPI(
   config: RAGConfig
 ): Promise<RerankResult[] | null> {
   try {
-    const baseUrl = config.apiBase.replace(/\/+$/, "")
+    // [修复] Rerank API 通常部署在 Embedding 同一服务商（如 SiliconFlow），
+    // 优先使用 embeddingApiKey/embeddingApiBase，而非 chat 模型的 apiKey/apiBase
+    // 之前使用 config.apiKey 导致 401 认证失败，reranker 从未真正生效
+    const rerankApiKey = config.embeddingApiKey || config.apiKey
+    const rerankBaseUrl = (config.embeddingApiBase || config.apiBase)
+      .replace(/\/+$/, "")
+      .replace(/\/embeddings\/?$/, "") // 去掉 /embeddings 后缀
     const documents = candidates.map((r) => {
       const preview = r.chunk.content.slice(0, 1500)
       return `来源: ${r.chunk.fileTitle} > ${r.chunk.headingPath.join(" > ")}\n${preview}`
     })
 
-    const response = await fetch(`${baseUrl}/rerank`, {
+    const response = await fetch(`${rerankBaseUrl}/rerank`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
+        Authorization: `Bearer ${rerankApiKey}`,
       },
       body: JSON.stringify({
         model: resolveRerankModel(config),
@@ -73,9 +85,12 @@ async function rerankViaAPI(
       return null
     }
 
+    // bge-reranker-v2-m3 返回的是 logit 原始分（可超过 1），需要 sigmoid 归一化到 [0,1]
+    // 否则高分 chunk（如总结章节得分 5.7）会碾压专题章节（0.04），
+    // 导致 MMR 多样性惩罚完全失效
     return data.results.map((r) => ({
       id: candidates[r.index]?.chunk.id ?? "",
-      score: r.relevance_score, // API 路径返回 0-1 原始分
+      score: sigmoid(r.relevance_score),
     })).filter((r) => r.id)
   } catch (err) {
     console.warn("[reranker] Rerank API call failed, falling back:", err)
@@ -177,8 +192,10 @@ export async function rerankResults(
   }
 
   if (!scores || scores.length === 0) {
-    console.warn("[reranker] All rerank strategies failed, using original order")
-    return results
+    // 所有 API 方案都失败，使用本地关键词匹配 reranker
+    console.warn("[reranker] All API rerank strategies failed, using local keyword reranker")
+    scores = localKeywordRerank(question, candidates)
+    usedFallback = true
   }
 
   // 构建 ID → score 映射
@@ -218,7 +235,9 @@ export async function rerankResults(
   // [优化] lambda 从 0.7 降到 0.5，增强跨文件多样性
   // 综合总结类章节（如第15章）会匹配几乎所有查询关键词，
   // 需要更强的多样性惩罚才能让专门章节的内容浮上来
-  const finalResults = mmrDiversify(afterFilter, 0.5, afterFilter.length)
+  // [优化] lambda 从 0.5 → 0.4：更偏多样性
+  // 评测显示综合章节的 chunk 霸占 Top-5，需要更强的跨文件分散力
+  const finalResults = mmrDiversify(afterFilter, 0.4, afterFilter.length)
 
   // 追加未参与 rerank 的剩余结果（保持原序），避免丢失候选池外的长尾结果
   const rerankedIds = new Set(candidates.map((r) => r.chunk.id))
@@ -266,9 +285,9 @@ function mmrDiversify(
 
       // 多样性惩罚：同一文件已选中越多，惩罚越重
       const fileCount = fileSelectionCount.get(r.chunk.filename) || 0
-      // [优化] 加大惩罚力度：第1个不惩罚，第2个惩罚0.5，第3个惩罚0.7，
-      // 第4个及以后惩罚0.9，确保综合章节不会占据过多位置
-      const diversityPenalty = fileCount === 0 ? 0 : Math.min(0.5 + (fileCount - 1) * 0.2, 0.9)
+      // [优化] 加大惩罚力度：第1个不惩罚，第2个惩罚0.6，第3个惩罚0.8，
+      // 第4个及以后惩罚0.95，让每个文件的第一个 chunk 有更大优势
+      const diversityPenalty = fileCount === 0 ? 0 : Math.min(0.6 + (fileCount - 1) * 0.2, 0.95)
 
       const mmrScore = lambda * relevance - (1 - lambda) * diversityPenalty
 
@@ -287,6 +306,128 @@ function mmrDiversify(
   }
 
   return selected
+}
+
+/**
+ * 本地关键词匹配 reranker（零 API 调用）
+ *
+ * 当 rerank API 和 chat model 都不可用时的最终降级方案。
+ * 使用 query-chunk 的词汇重叠度来估算相关性，比简单保留 RRF 原始排序更准确。
+ *
+ * 打分策略：
+ * 1. 标题精确匹配（headingPath + fileTitle 包含查询词）→ 高权重
+ * 2. 内容词汇重叠（Jaccard-like）→ 基础分
+ * 3. 查询词在内容中的密度（TF）→ 区分泛泛提及 vs 深入讨论
+ * 4. 文件名匹配 → 辅助加分
+ *
+ * 返回 0-10 分（与 chat-model fallback 一致的量纲）
+ */
+function localKeywordRerank(question: string, candidates: SearchResult[]): RerankResult[] {
+  // 提取查询关键词
+  const queryTerms: string[] = []
+  // 中文词（2字以上）
+  const cjkMatches = question.match(/[\u4e00-\u9fff\u3400-\u4dbf]{2,}/g)
+  if (cjkMatches) queryTerms.push(...cjkMatches)
+  // 英文词（3字符以上）
+  const enMatches = question.match(/[a-zA-Z][a-zA-Z0-9_]{2,}/g)
+  if (enMatches) queryTerms.push(...enMatches.map(t => t.toLowerCase()))
+  // 数字（用于匹配具体数值）
+  const numMatches = question.match(/\d[\d,]+/g)
+  if (numMatches) queryTerms.push(...numMatches)
+
+  if (queryTerms.length === 0) {
+    // 无法提取关键词，返回基于 RRF 原始分的排序
+    return candidates.map(r => ({ id: r.chunk.id, score: r.score * 10 }))
+  }
+
+  // 使用分词器获取查询词集合
+  const queryTokens = tokenizeToSet(question)
+
+  const results = candidates.map(r => {
+    const chunk = r.chunk
+    const contentLower = chunk.content.toLowerCase()
+    const headingText = chunk.headingPath.join(" ").toLowerCase()
+    const titleText = (chunk.fileTitle || "").toLowerCase()
+    const metaText = headingText + " " + titleText
+
+    let score = 0
+
+    // 1. 标题/标题路径中的查询词匹配（高权重）
+    let titleMatches = 0
+    for (const term of queryTerms) {
+      if (metaText.includes(term.toLowerCase())) titleMatches++
+    }
+    // 标题匹配分：最多贡献 3 分
+    score += Math.min(titleMatches * 1.5, 3)
+
+    // 2. 内容中查询词的覆盖率
+    let contentHits = 0
+    for (const term of queryTerms) {
+      if (contentLower.includes(term.toLowerCase())) contentHits++
+    }
+    const coverage = contentHits / queryTerms.length
+    // 覆盖分：最多贡献 3 分
+    score += coverage * 3
+
+    // 3. 查询词在内容中的密度（区分深入讨论 vs 泛泛提及）
+    let totalOccurrences = 0
+    for (const term of queryTerms) {
+      const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi")
+      const matches = contentLower.match(regex)
+      if (matches) totalOccurrences += matches.length
+    }
+    // 密度分：按内容长度归一化，最多贡献 2 分
+    const density = totalOccurrences / Math.max(chunk.content.length / 100, 1)
+    score += Math.min(density * 2, 2)
+
+    // 4. 词集重叠度（Jaccard-like，利用分词器与 BM25 一致）
+    const chunkTokens = tokenizeToSet(chunk.content.slice(0, 2000))
+    let overlap = 0
+    for (const t of queryTokens) {
+      if (chunkTokens.has(t)) overlap++
+    }
+    const jaccardLike = queryTokens.size > 0 ? overlap / queryTokens.size : 0
+    // Jaccard 分：最多贡献 2 分
+    score += jaccardLike * 2
+
+    // 5. 原始 RRF 分作为微调（保留检索阶段信号）
+    // RRF 分通常在 0-0.04 范围，放大到 0-1 范围
+    score += Math.min(r.score * 25, 1)
+
+    return { id: chunk.id, score: Math.min(score, 10) }
+  })
+
+  // 综合章节惩罚：如果同一文件的多个 chunk 都获得高分，
+  // 说明该文件是"什么都沾一点"的总结性内容，而非深入讨论某个主题。
+  // 对这类文件降权，让专题章节有机会排上来。
+  const idToFilename = new Map<string, string>()
+  for (const c of candidates) idToFilename.set(c.chunk.id, c.chunk.filename)
+
+  const fileScores = new Map<string, number[]>()
+  for (const r of results) {
+    const fn = idToFilename.get(r.id) || ""
+    if (!fileScores.has(fn)) fileScores.set(fn, [])
+    fileScores.get(fn)!.push(r.score)
+  }
+  // 如果一个文件有超过 4 个 chunk 都高于中位数，认为是综合章节
+  const allScores = results.map(r => r.score).sort((a, b) => b - a)
+  const median = allScores[Math.floor(allScores.length / 2)] || 0
+  const overrepresentedFiles = new Set<string>()
+  for (const [fn, scores] of fileScores) {
+    const highScoreCount = scores.filter(s => s >= median).length
+    if (highScoreCount >= 4) overrepresentedFiles.add(fn)
+  }
+
+  if (overrepresentedFiles.size > 0) {
+    for (const r of results) {
+      const fn = idToFilename.get(r.id) || ""
+      if (overrepresentedFiles.has(fn)) {
+        r.score *= 0.7 // 综合章节降权 30%
+      }
+    }
+  }
+
+  return results
 }
 
 /** 解析 LLM 返回的 JSON 分数（仅用于 chat-model 降级路径，使用统一鲁棒 JSON 解析器） */

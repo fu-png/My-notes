@@ -367,10 +367,14 @@ export async function queryProject(
     ? perQueryResults[0]
     : simpleRRFFuse(perQueryResults, 25)
 
-  // 3. Score 阈值过滤：去除得分低于最高分 15% 的结果
-  const filtered = filterByScoreThreshold(results, 0.15)
+  // 3. 标题相关性加权：如果 chunk 的 heading 或 fileTitle 包含查询关键词，加权提升
+  //    利用文档结构信息——标题包含关键词的 chunk 通常是该主题的核心章节
+  const withTitleBoost = boostByTitleRelevance(results, question)
 
-  // 4. 当前打开文件加权提升（×1.3）
+  // 4. Score 阈值过滤：去除得分低于最高分 20% 的结果
+  const filtered = filterByScoreThreshold(withTitleBoost, 0.20)
+
+  // 5. 当前打开文件加权提升（×1.3）
   const boosted = activeFile
     ? filtered.map((r) =>
         r.chunk.filename === activeFile
@@ -459,15 +463,30 @@ async function saveIndexStatus(projectId: string, status: IndexStatus): Promise<
   )
 }
 
-/** 简单的 RRF 融合（内联在 pipeline 中，避免循环依赖） */
+/**
+ * RRF 融合 + 文件级去重
+ *
+ * 优化点：
+ * 1. BM25 结果加权 ×1.2（BM25 对精确术语匹配更准）
+ * 2. 融合后做文件级去重：同一文件最多保留 MAX_CHUNKS_PER_FILE 个 chunk
+ *    防止综合性章节（如总结章）的多个 chunk 霸占 Top-K，挤掉专题章节
+ */
+const MAX_CHUNKS_PER_FILE_IN_RRF = 3 // RRF 融合后每文件最多保留 3 个 chunk
+const BM25_WEIGHT = 1.2 // BM25 权重提升（精确术语匹配更可靠）
+
 function simpleRRFFuse(resultSets: SearchResult[][], topK: number): SearchResult[] {
-  const RRF_K = 30 // 降低 k 值增大头部结果的区分度
+  const RRF_K = 30
   const scoreMap = new Map<string, { score: number; result: SearchResult }>()
 
-  for (const results of resultSets) {
+  for (let setIdx = 0; setIdx < resultSets.length; setIdx++) {
+    const results = resultSets[setIdx]
+    // 判断是否为 BM25 结果集：BM25 结果的 source 字段为 "bm25"
+    const isBm25 = results.length > 0 && results[0].source === "bm25"
+    const weight = isBm25 ? BM25_WEIGHT : 1.0
+
     for (let rank = 0; rank < results.length; rank++) {
       const r = results[rank]
-      const rrfScore = 1 / (RRF_K + rank + 1)
+      const rrfScore = weight / (RRF_K + rank + 1)
 
       const existing = scoreMap.get(r.chunk.id)
       if (existing) {
@@ -483,10 +502,66 @@ function simpleRRFFuse(resultSets: SearchResult[][], topK: number): SearchResult
     }
   }
 
-  return Array.from(scoreMap.values())
+  // 按 RRF 分数排序
+  const sorted = Array.from(scoreMap.values())
     .sort((a, b) => b.score - a.score)
+
+  // 文件级去重：同一文件最多保留 MAX_CHUNKS_PER_FILE_IN_RRF 个 chunk
+  const fileCount = new Map<string, number>()
+  const deduped: typeof sorted = []
+  for (const item of sorted) {
+    const fn = item.result.chunk.filename
+    const count = fileCount.get(fn) || 0
+    if (count < MAX_CHUNKS_PER_FILE_IN_RRF) {
+      deduped.push(item)
+      fileCount.set(fn, count + 1)
+    }
+  }
+
+  return deduped
     .slice(0, topK)
     .map(({ score, result }) => ({ ...result, score }))
+}
+
+/**
+ * 标题相关性加权
+ *
+ * 利用文档结构信息提升排序质量：如果 chunk 的 heading 或 fileTitle 包含
+ * 查询中的关键词，说明这个 chunk 大概率来自该主题的核心章节。
+ * 对这类 chunk 加权 ×1.3，帮助它们在 reranker 之前排到更靠前的位置。
+ */
+function boostByTitleRelevance(results: SearchResult[], question: string): SearchResult[] {
+  // 提取查询中长度 ≥ 2 的中文/英文关键词
+  const queryTerms: string[] = []
+  // 中文关键词（2字及以上）
+  const cjkMatches = question.match(/[\u4e00-\u9fff\u3400-\u4dbf]{2,}/g)
+  if (cjkMatches) queryTerms.push(...cjkMatches)
+  // 英文关键词（3字母及以上）
+  const enMatches = question.match(/[a-zA-Z][a-zA-Z0-9_]{2,}/g)
+  if (enMatches) queryTerms.push(...enMatches.map((t) => t.toLowerCase()))
+
+  if (queryTerms.length === 0) return results
+
+  const boosted = results.map((r) => {
+    const headingText = r.chunk.headingPath.join(" ").toLowerCase()
+    const titleText = (r.chunk.fileTitle || "").toLowerCase()
+    const combinedMeta = headingText + " " + titleText
+
+    // 计算匹配的关键词数量
+    let matchCount = 0
+    for (const term of queryTerms) {
+      if (combinedMeta.includes(term.toLowerCase())) matchCount++
+    }
+
+    // 有关键词命中则加权
+    if (matchCount > 0) {
+      const boost = 1 + 0.15 * Math.min(matchCount, 3) // 最高 1.45 倍
+      return { ...r, score: r.score * boost }
+    }
+    return r
+  })
+
+  return boosted.sort((a, b) => b.score - a.score)
 }
 
 /**
