@@ -39,35 +39,65 @@ export function buildContext(
   // 2.5 近重复去重：去除内容高度相似的 chunk（Jaccard 相似度 > 0.6）
   const dedupedSimilar = removeNearDuplicates(deduped, 0.6)
 
-  // 3. 按 token 预算截断
+  // 3. 按 token 预算截断，同时保障文件多样性
+  //    策略：两轮选取
+  //    第一轮：每个文件优先选取1个最高分 chunk（round-robin），确保覆盖面
+  //    第二轮：剩余预算按分数贪心填充
   const selected: SearchResult[] = []
   let currentTokens = 0
   const headerOverhead = 50 // 每个块的标注文本估算 50 tokens
+  const safeMax = Math.floor(maxTokens * 0.95) // 5% 安全余量
 
+  // 按文件分组，每组内按分数降序
+  const fileGrouped = new Map<string, SearchResult[]>()
   for (const result of dedupedSimilar) {
-    const chunkTokens = result.chunk.tokenCount + headerOverhead
-    const safeMax = Math.floor(maxTokens * 0.95) // 5% 安全余量，防止估算误差导致上下文溢出
-    if (currentTokens + chunkTokens > safeMax) {
-      // 如果至少有一个块了，停止
-      if (selected.length > 0) break
-      // 如果第一个块就超预算，截断内容以适配 token 预算
-      // 使用 estimateTokens 函数进行更精确的截断
-      // 使用与 chunker 一致的比率估算（中文 ~1.5 字符/token，英文 ~4 字符/token）
-      // 取保守值 1.5 以避免超预算
+    const fname = result.chunk.filename
+    if (!fileGrouped.has(fname)) fileGrouped.set(fname, [])
+    fileGrouped.get(fname)!.push(result)
+  }
+
+  // 第一轮：每个文件取1个最高分 chunk（round-robin 保证公平）
+  const selectedIds = new Set<string>()
+  // 按每个文件的最高分排序，优先选高分文件
+  const fileEntries = Array.from(fileGrouped.entries())
+    .sort((a, b) => b[1][0].score - a[1][0].score)
+
+  for (const [, fileResults] of fileEntries) {
+    const best = fileResults[0]
+    const chunkTokens = best.chunk.tokenCount + headerOverhead
+    if (currentTokens + chunkTokens <= safeMax) {
+      selected.push(best)
+      selectedIds.add(best.chunk.id)
+      currentTokens += chunkTokens
+    } else if (selected.length === 0) {
+      // 第一个块就超预算，截断内容以适配 token 预算
       const maxChars = Math.max(200, Math.floor((maxTokens - headerOverhead) * 1.5))
       selected.push({
-        ...result,
+        ...best,
         chunk: {
-          ...result.chunk,
-          content: result.chunk.content.slice(0, maxChars) + "\n\n[... 内容因长度限制被截断]",
+          ...best.chunk,
+          content: best.chunk.content.slice(0, maxChars) + "\n\n[... 内容因长度限制被截断]",
           tokenCount: maxTokens - headerOverhead,
         },
       })
+      selectedIds.add(best.chunk.id)
       currentTokens = maxTokens
       break
     }
-    selected.push(result)
-    currentTokens += chunkTokens
+  }
+
+  // 第二轮：剩余预算按分数贪心填充（跳过已选的）
+  for (const result of dedupedSimilar) {
+    if (selectedIds.has(result.chunk.id)) continue
+    const chunkTokens = result.chunk.tokenCount + headerOverhead
+    if (currentTokens + chunkTokens > safeMax) {
+      if (selected.length > 0) continue // 跳过超预算的，尝试后面更小的块
+    }
+    if (currentTokens + chunkTokens <= safeMax) {
+      selected.push(result)
+      selectedIds.add(result.chunk.id)
+      currentTokens += chunkTokens
+    }
   }
 
   // 4. 按文件分组，同一文件的块保持原文顺序

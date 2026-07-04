@@ -59,6 +59,7 @@ export default function Home() {
           width={280}
           height={80}
           className="h-20 w-auto dark:invert sm:h-28"
+          style={{ mixBlendMode: isDark ? "screen" : undefined }}
           priority
         />
         <p className="max-w-md text-lg text-muted-foreground">

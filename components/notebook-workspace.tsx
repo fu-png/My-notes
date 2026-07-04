@@ -527,6 +527,10 @@ scheduleOSSFetch(() => {
       if (!config) return
       const embConfig = getEmbeddingConfig()
 
+      // 显示索引进度，让用户知道后台正在工作
+      setIndexing(true)
+      setIndexProgress("正在自动构建知识索引...")
+
       try {
         const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
           method: "POST",
@@ -556,6 +560,10 @@ scheduleOSSFetch(() => {
         let success = false
 
         for await (const event of parseSSEStream(reader)) {
+          // 实时更新进度显示
+          if (typeof event.progress === "string") {
+            setIndexProgress(event.progress)
+          }
           if (event.done === true) {
             if (event.success === true) {
               success = true
@@ -574,6 +582,9 @@ scheduleOSSFetch(() => {
         }
       } catch (err: unknown) {
         console.warn("[autoIndex]", err)
+      } finally {
+        setIndexing(false)
+        setIndexProgress("")
       }
     }, 2000)
   // eslint-disable-next-line react-hooks/exhaustive-deps

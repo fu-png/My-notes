@@ -206,12 +206,16 @@ export async function rerankResults(
     }))
 
   // 如果过滤后结果太少，放宽阈值，至少保留合理数量
-  const finalResults = kept.length >= 5
+  const afterFilter = kept.length >= 5
     ? kept
     : reranked.slice(0, Math.min(8, candidates.length)).map((r) => ({
         ...r.result,
         score: usedFallback ? r.llmScore / 10 : r.llmScore,
       }))
+
+  // MMR（最大边际相关性）多样性重排序：
+  // 避免同一文件的多个 chunk 占据所有 top 位置，确保跨文件信息覆盖
+  const finalResults = mmrDiversify(afterFilter, 0.7, afterFilter.length)
 
   // 追加未参与 rerank 的剩余结果（保持原序），避免丢失候选池外的长尾结果
   const rerankedIds = new Set(candidates.map((r) => r.chunk.id))
@@ -222,6 +226,63 @@ export async function rerankResults(
   )
 
   return [...finalResults, ...remaining]
+}
+
+/**
+ * MMR（Maximal Marginal Relevance）多样性重排序
+ *
+ * 在保留原始相关性排序的基础上，惩罚同一文件已被选中过多的情况，
+ * 确保跨文件的互补信息不被单一高分文件挤出候选池。
+ *
+ * @param results 按相关性排好序的候选列表
+ * @param lambda  相关性 vs 多样性的权衡系数（0-1，越大越偏重相关性）
+ * @param maxResults 最多保留的结果数
+ */
+function mmrDiversify(
+  results: SearchResult[],
+  lambda: number,
+  maxResults: number
+): SearchResult[] {
+  if (results.length <= 1) return results
+
+  const selected: SearchResult[] = []
+  const remaining = [...results]
+  // 记录每个文件已被选中的次数
+  const fileSelectionCount = new Map<string, number>()
+
+  // 归一化分数到 0-1（最高分=1）
+  const maxScore = remaining[0]?.score || 1
+
+  while (selected.length < maxResults && remaining.length > 0) {
+    let bestIdx = 0
+    let bestMmrScore = -Infinity
+
+    for (let i = 0; i < remaining.length; i++) {
+      const r = remaining[i]
+      const relevance = r.score / maxScore
+
+      // 多样性惩罚：同一文件已选中越多，惩罚越重
+      const fileCount = fileSelectionCount.get(r.chunk.filename) || 0
+      // 第1个不惩罚，第2个惩罚0.3，第3个惩罚0.5，以此类推
+      const diversityPenalty = fileCount === 0 ? 0 : Math.min(0.3 + (fileCount - 1) * 0.1, 0.7)
+
+      const mmrScore = lambda * relevance - (1 - lambda) * diversityPenalty
+
+      if (mmrScore > bestMmrScore) {
+        bestMmrScore = mmrScore
+        bestIdx = i
+      }
+    }
+
+    const chosen = remaining.splice(bestIdx, 1)[0]
+    selected.push(chosen)
+    fileSelectionCount.set(
+      chosen.chunk.filename,
+      (fileSelectionCount.get(chosen.chunk.filename) || 0) + 1
+    )
+  }
+
+  return selected
 }
 
 /** 解析 LLM 返回的 JSON 分数（仅用于 chat-model 降级路径，使用统一鲁棒 JSON 解析器） */

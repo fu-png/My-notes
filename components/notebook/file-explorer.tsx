@@ -35,7 +35,7 @@ interface TreeNode {
   lastModified?: number
 }
 
-function buildFileTree(files: DocFile[]): TreeNode {
+function buildFileTree(files: DocFile[], preserveOrder = false): TreeNode {
   const root: TreeNode = { name: "", path: "", isDir: true, children: [] }
 
   for (const file of files) {
@@ -79,16 +79,19 @@ function buildFileTree(files: DocFile[]): TreeNode {
     }
   }
 
-  // Sort: directories first, then by lastModified desc
-  function sortTree(node: TreeNode) {
-    node.children.sort((a, b) => {
-      if (a.isDir && !b.isDir) return -1
-      if (!a.isDir && b.isDir) return 1
-      return (b.lastModified || 0) - (a.lastModified || 0)
-    })
-    node.children.forEach(sortTree)
+  // 仅在有子目录时自动排序（目录优先 + 按时间降序）
+  // 纯文件列表（无子目录）时保持 files 数组传入顺序，支持用户拖拽排序
+  if (!preserveOrder) {
+    function sortTree(node: TreeNode) {
+      node.children.sort((a, b) => {
+        if (a.isDir && !b.isDir) return -1
+        if (!a.isDir && b.isDir) return 1
+        return (b.lastModified || 0) - (a.lastModified || 0)
+      })
+      node.children.forEach(sortTree)
+    }
+    sortTree(root)
   }
-  sortTree(root)
 
   return root
 }
@@ -212,7 +215,7 @@ const FileItem = React.memo(function FileItem({
       style={{ paddingLeft: `${12 + level * 12}px` }}
     >
       {draggable && (
-        <span className="-ml-1 mr-0.5 shrink-0 cursor-grab opacity-0 transition-opacity duration-150 group-hover:opacity-50 active:cursor-grabbing">
+        <span className="-ml-2.5 mr-0 shrink-0 cursor-grab opacity-0 transition-opacity duration-150 group-hover:opacity-40 active:cursor-grabbing">
           <IconGripVertical className="size-3" />
         </span>
       )}
@@ -286,15 +289,16 @@ export const FileExplorer = React.memo(function FileExplorer({
   onReorderFiles,
 }: FileExplorerProps) {
   const [expandedDirs, setExpandedDirs] = React.useState<Set<string>>(() => new Set())
-  const tree = React.useMemo(() => buildFileTree(files), [files])
+  // 检查是否有子目录
+  const hasSubdirs = React.useMemo(() => files.some(f => f.filename.includes("/")), [files])
+  // 有子目录时自动排序，纯文件时保持 files 数组顺序（支持拖拽排序）
+  const tree = React.useMemo(() => buildFileTree(files, !hasSubdirs), [files, hasSubdirs])
 
   // ─── Drag-to-reorder state ───
   const [dragSource, setDragSource] = React.useState<string | null>(null)
   const [dragOverTarget, setDragOverTarget] = React.useState<string | null>(null)
 
-  // 仅对根级别文件（无子目录）支持拖拽排序
   const rootFiles = React.useMemo(() => tree.children.filter(n => !n.isDir && n.file), [tree])
-  const hasSubdirs = React.useMemo(() => tree.children.some(n => n.isDir), [tree])
 
   const handleFileDragStart = React.useCallback((e: React.DragEvent, filename: string) => {
     setDragSource(filename)

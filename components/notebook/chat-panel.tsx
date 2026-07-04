@@ -1046,7 +1046,6 @@ const HistoryPanel = React.memo(function HistoryPanel({
   const filteredConversations = React.useMemo(() => {
     if (!searchQuery.trim()) return conversations
     if (remoteResults !== null) {
-      // 合并远端和本地结果（去重，以远端为准）
       const idSet = new Set(remoteResults.map(c => c.id))
       const merged = [...remoteResults]
       for (const c of localFiltered) {
@@ -1059,6 +1058,26 @@ const HistoryPanel = React.memo(function HistoryPanel({
     }
     return localFiltered
   }, [searchQuery, conversations, remoteResults, localFiltered])
+
+  // 为搜索结果提取匹配的消息片段
+  const matchSnippets = React.useMemo(() => {
+    if (!searchQuery.trim()) return new Map<string, string>()
+    const q = searchQuery.toLowerCase()
+    const map = new Map<string, string>()
+    for (const conv of filteredConversations) {
+      const matched = conv.messages?.find((m) => m.role === "user" && m.content.toLowerCase().includes(q))
+        || conv.messages?.find((m) => m.content.toLowerCase().includes(q))
+      if (matched) {
+        const content = matched.content
+        const idx = content.toLowerCase().indexOf(q)
+        const start = Math.max(0, idx - 15)
+        const end = Math.min(content.length, idx + q.length + 30)
+        const snippet = (start > 0 ? "..." : "") + content.slice(start, end) + (end < content.length ? "..." : "")
+        map.set(conv.id, snippet)
+      }
+    }
+    return map
+  }, [searchQuery, filteredConversations])
 
   const grouped = React.useMemo(() => {
     const groups: Record<string, Conversation[]> = {}
@@ -1154,9 +1173,15 @@ const HistoryPanel = React.memo(function HistoryPanel({
                               <p className="truncate font-medium">
                                 {conv.title}
                               </p>
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(conv.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                              </p>
+                              {searchQuery.trim() && matchSnippets.has(conv.id) ? (
+                                <p className="truncate text-xs text-muted-foreground">
+                                  💬 {matchSnippets.get(conv.id)}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(conv.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                              )}
                             </div>
                           </button>
                           <Button

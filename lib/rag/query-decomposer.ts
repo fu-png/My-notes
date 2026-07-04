@@ -129,12 +129,14 @@ const COMPLEX_INDICATOR_PATTERNS = [
 function isSimpleQuery(question: string): boolean {
   const trimmed = question.trim()
 
-  // 过短的问题（中文 15 字以上才需要判断，英文 30 字以上）
+  // 过短的问题（中文 8 字以上才需要判断，英文 20 字以上）
+  // 注意：中文表达简短，之前 15 字阈值会导致很多需要跨文件检索的问题
+  // （如"工具和权限的关系"只有7字）被误判为简单问题而跳过 LLM 分解
   const cjkCount = (trimmed.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length
   if (cjkCount > 0) {
-    if (trimmed.length < 15) return true // 放宽阈值：减少不必要的 LLM 分解调用
+    if (trimmed.length < 8) return true
   } else {
-    if (trimmed.length < 30) return true
+    if (trimmed.length < 20) return true
   }
 
   // 不包含对比、多概念标志词
