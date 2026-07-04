@@ -120,16 +120,12 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     return () => window.removeEventListener("ai-config-changed", handler)
   }, [])
 
-  // 组件卸载时中止所有进行中的请求和 rAF，防止在已卸载组件上更新状态
+  // 组件卸载时清理 rAF，但不中止进行中的请求
+  // 这样用户在对话/音频生成过程中切换页面，后台请求不会被中断
   React.useEffect(() => {
     const rafIds = rafIdsRef.current
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-        abortControllerRef.current = null
-      }
       isStreamingRef.current = false
-      // 取消所有未完成的 requestAnimationFrame
       rafIds.forEach((id) => cancelAnimationFrame(id))
       rafIds.clear()
     }
