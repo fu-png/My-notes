@@ -1152,7 +1152,7 @@ const HistoryPanel = React.memo(function HistoryPanel({
                             <IconMessage className="size-3.5 shrink-0 text-muted-foreground" />
                             <div className="min-w-0 flex-1">
                               <p className="truncate font-medium">
-                                <HighlightText text={conv.title} query={searchQuery} />
+                                {conv.title}
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 {new Date(conv.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}

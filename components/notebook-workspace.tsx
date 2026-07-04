@@ -1385,9 +1385,9 @@ queueMicrotask(() => selectFile(target))
             </div>
             {/* Reading progress bar */}
             {activeFile && !editMode && (
-              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-transparent">
+              <div className="absolute bottom-0 left-0 right-0 h-px bg-transparent">
                 <div
-                  className="h-full bg-primary/60 transition-[width] duration-150 ease-out"
+                  className="h-full bg-primary/30 transition-[width] duration-150 ease-out"
                   style={{ width: `${readingProgress * 100}%` }}
                 />
               </div>

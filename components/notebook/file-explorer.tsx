@@ -212,7 +212,7 @@ const FileItem = React.memo(function FileItem({
       style={{ paddingLeft: `${12 + level * 12}px` }}
     >
       {draggable && (
-        <span className="mr-1 shrink-0 cursor-grab opacity-0 transition-opacity duration-150 group-hover:opacity-50 active:cursor-grabbing">
+        <span className="-ml-1 mr-0.5 shrink-0 cursor-grab opacity-0 transition-opacity duration-150 group-hover:opacity-50 active:cursor-grabbing">
           <IconGripVertical className="size-3" />
         </span>
       )}
@@ -298,6 +298,7 @@ export const FileExplorer = React.memo(function FileExplorer({
 
   const handleFileDragStart = React.useCallback((e: React.DragEvent, filename: string) => {
     setDragSource(filename)
+    e.stopPropagation()
     e.dataTransfer.effectAllowed = "move"
     e.dataTransfer.setData("text/x-file-reorder", filename)
   }, [])
@@ -378,9 +379,19 @@ export const FileExplorer = React.memo(function FileExplorer({
   return (
     <div
       className={`relative hidden w-60 shrink-0 flex-col overflow-hidden border-r bg-muted/20 md:flex ${isDragging ? "ring-2 ring-inset ring-primary/50" : ""}`}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      onDragOver={(e) => {
+        // 仅处理外部文件拖入（上传），排除内部文件排序拖拽
+        if (e.dataTransfer.types.includes("text/x-file-reorder")) return
+        onDragOver(e)
+      }}
+      onDragLeave={(e) => {
+        if (e.dataTransfer.types.includes("text/x-file-reorder")) return
+        onDragLeave(e)
+      }}
+      onDrop={(e) => {
+        if (e.dataTransfer.types.includes("text/x-file-reorder")) return
+        onDrop(e)
+      }}
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 py-2">
