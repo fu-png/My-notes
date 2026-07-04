@@ -360,7 +360,6 @@ export const ChatPanel = React.memo(function ChatPanel({
 <HistoryPanel
 conversations={conversations}
 activeConversationId={activeConversationId}
-projectId={projectId}
 onLoad={onLoadConversation}
 onDelete={onDeleteConversation}
 />
@@ -972,22 +971,17 @@ function HighlightText({ text, query }: { text: string; query: string }) {
 const HistoryPanel = React.memo(function HistoryPanel({
   conversations,
   activeConversationId,
-  projectId,
   onLoad,
   onDelete,
 }: {
   conversations: Conversation[]
   activeConversationId: string | null
-  projectId: string
   onLoad: (conv: Conversation) => void
   onDelete: (convId: string) => void
 }) {
   const [searchQuery, setSearchQuery] = React.useState("")
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set())
   const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null)
-  const [remoteSearching, setRemoteSearching] = React.useState(false)
-  const [remoteResults, setRemoteResults] = React.useState<Conversation[] | null>(null)
-  const searchDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const toggleGroup = (group: string) => {
     setCollapsedGroups((prev) => {
@@ -998,86 +992,12 @@ const HistoryPanel = React.memo(function HistoryPanel({
     })
   }
 
-  // 本地过滤（即时响应）
-  const localFiltered = React.useMemo(() => {
-    if (!searchQuery.trim()) return conversations
-    const q = searchQuery.toLowerCase()
-    return conversations.filter((conv) => {
-      if (conv.title.toLowerCase().includes(q)) return true
-      return conv.messages?.some((m) => m.content.toLowerCase().includes(q))
-    })
-  }, [conversations, searchQuery])
-
-  // 远端搜索：防抖 400ms，拉取完整对话数据进行全文搜索
-  React.useEffect(() => {
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
-    const q = searchQuery.trim()
-    if (!q || q.length < 2) {
-      setRemoteResults(null)
-      setRemoteSearching(false)
-      return
-    }
-    setRemoteSearching(true)
-    searchDebounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/chat-history`)
-        if (!res.ok) throw new Error("fetch failed")
-        const data = await res.json()
-        const allConvs: Conversation[] = data.conversations || []
-        const ql = q.toLowerCase()
-        const matched = allConvs.filter((conv: Conversation) => {
-          if (conv.title.toLowerCase().includes(ql)) return true
-          return conv.messages?.some((m: ChatMessage) => m.content.toLowerCase().includes(ql))
-        })
-        setRemoteResults(matched)
-      } catch {
-        // 远端搜索失败时降级为本地搜索结果
-        setRemoteResults(null)
-      } finally {
-        setRemoteSearching(false)
-      }
-    }, 400)
-    return () => {
-      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
-    }
-  }, [searchQuery, projectId])
-
-  // 合并搜索结果：有远端结果时优先使用远端（更完整），否则用本地
+  // 按标题搜索
   const filteredConversations = React.useMemo(() => {
     if (!searchQuery.trim()) return conversations
-    if (remoteResults !== null) {
-      const idSet = new Set(remoteResults.map(c => c.id))
-      const merged = [...remoteResults]
-      for (const c of localFiltered) {
-        if (!idSet.has(c.id)) {
-          merged.push(c)
-          idSet.add(c.id)
-        }
-      }
-      return merged
-    }
-    return localFiltered
-  }, [searchQuery, conversations, remoteResults, localFiltered])
-
-  // 为搜索结果提取匹配的消息片段
-  const matchSnippets = React.useMemo(() => {
-    if (!searchQuery.trim()) return new Map<string, string>()
     const q = searchQuery.toLowerCase()
-    const map = new Map<string, string>()
-    for (const conv of filteredConversations) {
-      const matched = conv.messages?.find((m) => m.role === "user" && m.content.toLowerCase().includes(q))
-        || conv.messages?.find((m) => m.content.toLowerCase().includes(q))
-      if (matched) {
-        const content = matched.content
-        const idx = content.toLowerCase().indexOf(q)
-        const start = Math.max(0, idx - 15)
-        const end = Math.min(content.length, idx + q.length + 30)
-        const snippet = (start > 0 ? "..." : "") + content.slice(start, end) + (end < content.length ? "..." : "")
-        map.set(conv.id, snippet)
-      }
-    }
-    return map
-  }, [searchQuery, filteredConversations])
+    return conversations.filter((conv) => conv.title.toLowerCase().includes(q))
+  }, [conversations, searchQuery])
 
   const grouped = React.useMemo(() => {
     const groups: Record<string, Conversation[]> = {}
@@ -1096,11 +1016,7 @@ const HistoryPanel = React.memo(function HistoryPanel({
       {/* Search box */}
       <div className="border-b px-3 pb-2 pt-3">
         <div className="relative">
-          {remoteSearching ? (
-            <IconLoader2 className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
-          ) : (
-            <IconSearch className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          )}
+          <IconSearch className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="搜索历史对话..."
@@ -1111,7 +1027,7 @@ const HistoryPanel = React.memo(function HistoryPanel({
           />
           {searchQuery && (
             <button
-              onClick={() => { setSearchQuery(""); setRemoteResults(null) }}
+              onClick={() => setSearchQuery("")}
               aria-label="清除搜索"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
@@ -1128,17 +1044,8 @@ const HistoryPanel = React.memo(function HistoryPanel({
           </div>
         ) : filteredConversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            {remoteSearching ? (
-              <>
-                <IconLoader2 className="mb-2 size-8 animate-spin text-muted-foreground/70" />
-                <p className="text-sm text-muted-foreground">正在搜索全部对话内容...</p>
-              </>
-            ) : (
-              <>
-                <IconSearch className="mb-2 size-8 text-muted-foreground/70" />
-                <p className="text-sm text-muted-foreground">没有找到匹配的历史对话</p>
-              </>
-            )}
+            <IconSearch className="mb-2 size-8 text-muted-foreground/70" />
+            <p className="text-sm text-muted-foreground">没有找到匹配的历史对话</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -1173,15 +1080,9 @@ const HistoryPanel = React.memo(function HistoryPanel({
                               <p className="truncate font-medium">
                                 {conv.title}
                               </p>
-                              {searchQuery.trim() && matchSnippets.has(conv.id) ? (
-                                <p className="truncate text-xs text-muted-foreground">
-                                  💬 {matchSnippets.get(conv.id)}
-                                </p>
-                              ) : (
-                                <p className="text-xs text-muted-foreground">
-                                  {new Date(conv.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                                </p>
-                              )}
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(conv.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </p>
                             </div>
                           </button>
                           <Button
