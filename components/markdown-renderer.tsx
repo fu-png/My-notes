@@ -84,21 +84,51 @@ function MermaidBlock({ code }: { code: string }) {
                 nodeTextColor: "#111827",
               },
         })
-        // Strip inline classDef / style assignment / class assignment lines
-        // so the global theme controls all colors.
-        // We only strip "class X,Y,Z className" (style assignment) not "class Foo {" (classDiagram definition)
-        const cleaned = code
-          .split("\n")
-          .filter((l) => {
+
+        // 清理内联样式定义，让全局主题统一控制
+        const stripInlineStyles = (src: string) =>
+          src.split("\n").filter((l) => {
             if (/^\s*classDef\s/.test(l)) return false
             if (/^\s*style\s+\S+\s/.test(l)) return false
-            // "class X,Y nodeClass" — style assignment (has comma-separated IDs followed by a class name)
             if (/^\s*class\s+[\w,]+\s+\w+\s*$/.test(l)) return false
             return true
+          }).join("\n")
+
+        // 自动修复 LLM 生成的常见 Mermaid 语法问题
+        const autoFix = (src: string) => {
+          let fixed = src
+          // 1. 边标签里的双引号：-->|"文本"| 改为 -->|文本|
+          fixed = fixed.replace(/-->\|"([^"]*?)"\|/g, "-->|$1|")
+          // 2. 中文全角引号 → 半角
+          fixed = fixed.replace(/[""]/g, '"').replace(/['']/g, "'")
+          // 3. 中文括号在节点标签里导致解析错误：A["含（括号）文本"] → A["含-括号-文本"]
+          //    只在方括号标签内替换
+          fixed = fixed.replace(/\["([^"]*?)"\]/g, (_match, inner: string) => {
+            return '["' + inner.replace(/（/g, "(").replace(/）/g, ")") + '"]'
           })
-          .join("\n")
+          // 4. 节点 ID 不能以数字开头（mermaid 有时不接受）→ 加前缀 n
+          fixed = fixed.replace(/^\s+(\d+)(\[|\(|\{|-->)/gm, (m, id, rest) => {
+            return m.replace(id + rest, "n" + id + rest)
+          })
+          return fixed
+        }
+
+        const cleaned = stripInlineStyles(code)
         const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`
-        const { svg: rendered } = await mermaid.render(id, cleaned)
+
+        // 先尝试原始代码渲染
+        let rendered: string
+        try {
+          const result = await mermaid.render(id, cleaned)
+          rendered = result.svg
+        } catch {
+          // 渲染失败 → 尝试自动修复后重试一次
+          const fixed = autoFix(cleaned)
+          const retryId = `mermaid-retry-${Math.random().toString(36).slice(2, 10)}`
+          const result = await mermaid.render(retryId, fixed)
+          rendered = result.svg
+        }
+
         if (!cancelled) setSvg(rendered)
       } catch (e) {
         if (!cancelled) setError(String(e))
@@ -115,9 +145,9 @@ function MermaidBlock({ code }: { code: string }) {
       <div className="my-4 overflow-x-auto rounded-md border bg-muted/30 p-4" role="alert">
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="inline-block size-2 rounded-full bg-amber-500" />
-          <span>图表语法暂不支持渲染</span>
+          <span>图表语法解析失败，已显示源码</span>
         </div>
-        <pre className="text-xs text-muted-foreground"><code>{code}</code></pre>
+        <pre className="text-xs text-muted-foreground whitespace-pre-wrap"><code>{code}</code></pre>
       </div>
     )
   }
