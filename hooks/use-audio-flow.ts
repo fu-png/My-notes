@@ -373,13 +373,10 @@ export function useAudioFlow(options: UseAudioFlowOptions): UseAudioFlowReturn {
     setAudioCurrentLine(-1)
   }
 
-  // Cleanup on unmount
+  // Cleanup on unmount — 仅停止音频播放，不中止正在进行的生成请求
+  // 这样用户在音频生成过程中回退到首页，后台生成不会被中断
   React.useEffect(() => {
     return () => {
-      if (abortRef.current) {
-        abortRef.current.abort()
-        abortRef.current = null
-      }
       if (audioRef.current) {
         audioRef.current.onended = null
         audioRef.current.onerror = null

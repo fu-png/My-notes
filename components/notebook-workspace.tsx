@@ -133,10 +133,33 @@ const searchParams = useSearchParams()
   // 避免 Next.js 客户端 Router Cache 导致旧名称回退
   const [currentProjectName, setCurrentProjectName] = React.useState(projectName)
 
+  // ─── File order persistence (localStorage) ───
+  const fileOrderKey = `file-order-${projectId}`
+
+  const applyFileOrder = React.useCallback((rawFiles: DocFile[]) => {
+    try {
+      const stored = localStorage.getItem(fileOrderKey)
+      if (!stored) return rawFiles
+      const order: string[] = JSON.parse(stored)
+      const orderMap = new Map(order.map((f, i) => [f, i]))
+      return [...rawFiles].sort((a, b) => {
+        const ai = orderMap.get(a.filename)
+        const bi = orderMap.get(b.filename)
+        if (ai !== undefined && bi !== undefined) return ai - bi
+        if (ai !== undefined) return -1
+        if (bi !== undefined) return 1
+        return (b.lastModified || 0) - (a.lastModified || 0)
+      })
+    } catch {
+      return rawFiles
+    }
+  }, [fileOrderKey])
+
   // File state
-  const [files, setFiles] = React.useState<DocFile[]>(
-    initialFiles ? initialFiles.map(f => ({ filename: f.filename, title: f.title, lastModified: f.lastModified })) : []
-  )
+  const [files, setFiles] = React.useState<DocFile[]>(() => {
+    const raw = initialFiles ? initialFiles.map(f => ({ filename: f.filename, title: f.title, lastModified: f.lastModified })) : []
+    return applyFileOrder(raw)
+  })
   const [loadingFiles, setLoadingFiles] = React.useState(!initialFiles)
   const [activeFile, setActiveFile] = React.useState<string | null>(initialFile)
   const fileCache = useFileCache({ projectId, initialFile, initialContent: initialFileContent })
@@ -570,7 +593,7 @@ scheduleOSSFetch(() => {
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
       const data = await res.json()
-      setFiles(data.files || [])
+      setFiles(applyFileOrder(data.files || []))
       // 用 API 返回的最新名称覆盖，防止 Router Cache 缓存了旧名称
       if (data.project?.name) {
         setCurrentProjectName(data.project.name)
@@ -582,7 +605,27 @@ scheduleOSSFetch(() => {
     } finally {
       setLoadingFiles(false)
     }
-  }, [projectId, showToast])
+  }, [projectId, showToast, applyFileOrder])
+
+  const handleReorderFiles = React.useCallback((orderedFilenames: string[]) => {
+    localStorage.setItem(fileOrderKey, JSON.stringify(orderedFilenames))
+    setFiles(prev => {
+      const fileMap = new Map(prev.map(f => [f.filename, f]))
+      const reordered: DocFile[] = []
+      for (const fn of orderedFilenames) {
+        const file = fileMap.get(fn)
+        if (file) {
+          reordered.push(file)
+          fileMap.delete(fn)
+        }
+      }
+      // 追加不在排序列表中的文件
+      for (const f of fileMap.values()) {
+        reordered.push(f)
+      }
+      return reordered
+    })
+  }, [fileOrderKey])
 
   React.useEffect(() => {
     // 有服务端预取数据时跳过首次 fetch
@@ -1099,6 +1142,29 @@ queueMicrotask(() => selectFile(target))
     showToast("success", "已退回修改")
   }, [showToast])
 
+  // ─── Reading progress ───
+  const [readingProgress, setReadingProgress] = React.useState(0)
+
+  React.useEffect(() => {
+    const scrollEl = docContentRef.current
+    if (!scrollEl) return
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = scrollEl
+      if (scrollHeight <= clientHeight) {
+        setReadingProgress(0)
+        return
+      }
+      const progress = Math.min(scrollTop / (scrollHeight - clientHeight), 1)
+      setReadingProgress(progress)
+    }
+
+    scrollEl.addEventListener("scroll", handleScroll, { passive: true })
+    // 文件切换时重置进度
+    handleScroll()
+    return () => scrollEl.removeEventListener("scroll", handleScroll)
+  }, [activeFile, fileContent, editMode])
+
   // ─── Active file title ───
 
   const activeTitle = activeFile
@@ -1142,6 +1208,7 @@ queueMicrotask(() => selectFile(target))
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
+          onReorderFiles={handleReorderFiles}
         />}
 
         {/* ─── Center: Document Viewer / Editor ─── */}
@@ -1209,7 +1276,7 @@ queueMicrotask(() => selectFile(target))
           )}
 
           {/* Desktop header */}
-          <div className={`items-center justify-between border-b px-4 py-2 ${activeFile ? "hidden md:flex" : "hidden"}`}>
+          <div className={`relative items-center justify-between border-b px-4 py-2 ${activeFile ? "hidden md:flex" : "hidden"}`}>
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-medium">{activeTitle || "未选择文件"}</h2>
               {wordCount && (
@@ -1311,6 +1378,15 @@ queueMicrotask(() => selectFile(target))
                 </Tooltip>
               )}
             </div>
+            {/* Reading progress bar */}
+            {activeFile && !editMode && (
+              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-transparent">
+                <div
+                  className="h-full bg-primary/60 transition-[width] duration-150 ease-out"
+                  style={{ width: `${readingProgress * 100}%` }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Content area */}

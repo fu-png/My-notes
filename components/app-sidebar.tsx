@@ -111,7 +111,7 @@ export function TopNav() {
     <header className="sticky top-0 z-30 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-12 items-center justify-between gap-4 px-4">
         {/* Left side: Logo */}
-        <Link href="/docs/projects" className="flex shrink-0 items-center">
+        <Link href="/" className="flex shrink-0 items-center">
           <Image
             src="/logo.png"
             alt="My notes"

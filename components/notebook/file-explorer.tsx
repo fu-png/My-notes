@@ -7,7 +7,7 @@ import {
   IconTrash,
   IconLoader2,
   IconChevronLeft,
-  IconDotsVertical,
+  IconGripVertical,
   IconFolder,
 } from "@tabler/icons-react"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -17,12 +17,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu"
 import type { DocFile } from "./types"
 import { getFileIcon } from "./types"
 
@@ -179,6 +173,11 @@ interface FileItemProps {
   onSelect: (filename: string) => void
   onDeleteRequest: (filename: string) => void
   level?: number
+  draggable?: boolean
+  onDragStart?: (e: React.DragEvent, filename: string) => void
+  onDragOver?: (e: React.DragEvent, filename: string) => void
+  onDragEnd?: () => void
+  isDragOver?: boolean
 }
 
 const FileItem = React.memo(function FileItem({
@@ -188,6 +187,11 @@ const FileItem = React.memo(function FileItem({
   onSelect,
   onDeleteRequest,
   level = 0,
+  draggable = false,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  isDragOver = false,
 }: FileItemProps) {
   const isDeleting = deleting === file.filename
 
@@ -196,13 +200,22 @@ const FileItem = React.memo(function FileItem({
       role="treeitem"
       aria-level={level + 1}
       aria-selected={isActive}
+      draggable={draggable}
+      onDragStart={draggable ? (e) => onDragStart?.(e, file.filename) : undefined}
+      onDragOver={draggable ? (e) => { e.preventDefault(); onDragOver?.(e, file.filename) } : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
       className={`group flex items-center px-3 py-2 text-[13px] transition-colors ${
         isActive
           ? "border-l-2 border-primary bg-accent text-accent-foreground"
           : "border-l-2 border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-      }`}
+      } ${isDragOver ? "border-t-2 border-t-primary" : ""}`}
       style={{ paddingLeft: `${12 + level * 12}px` }}
     >
+      {draggable && (
+        <span className="mr-1 shrink-0 cursor-grab opacity-0 transition-opacity duration-150 group-hover:opacity-50 active:cursor-grabbing">
+          <IconGripVertical className="size-3" />
+        </span>
+      )}
       <button
         onClick={() => onSelect(file.filename)}
         aria-label={`打开文件 ${file.title}`}
@@ -212,31 +225,18 @@ const FileItem = React.memo(function FileItem({
         <span className="truncate">{file.title}</span>
       </button>
       <div className="ml-1 w-0 shrink-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:w-6 group-hover:opacity-100">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              onClick={(e) => e.stopPropagation()}
-              disabled={isDeleting}
-              aria-label={`${file.title} 的更多操作`}
-              className="p-1 text-muted-foreground hover:text-foreground"
-            >
-              {isDeleting ? (
-                <IconLoader2 className="size-3.5 animate-spin" />
-              ) : (
-                <IconDotsVertical className="size-3.5" />
-              )}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="right" sideOffset={4}>
-            <DropdownMenuItem
-              onClick={() => onDeleteRequest(file.filename)}
-              className="text-destructive focus:text-destructive"
-            >
-              <IconTrash className="size-3.5" />
-              删除
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDeleteRequest(file.filename) }}
+          disabled={isDeleting}
+          aria-label={`删除文件 ${file.title}`}
+          className="p-1 text-muted-foreground hover:text-destructive"
+        >
+          {isDeleting ? (
+            <IconLoader2 className="size-3.5 animate-spin" />
+          ) : (
+            <IconTrash className="size-3.5" />
+          )}
+        </button>
       </div>
     </div>
   )
@@ -262,6 +262,7 @@ export interface FileExplorerProps {
   onDragOver: (e: React.DragEvent) => void
   onDragLeave: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
+  onReorderFiles?: (orderedFilenames: string[]) => void
 }
 
 export const FileExplorer = React.memo(function FileExplorer({
@@ -282,9 +283,46 @@ export const FileExplorer = React.memo(function FileExplorer({
   onDragOver,
   onDragLeave,
   onDrop,
+  onReorderFiles,
 }: FileExplorerProps) {
   const [expandedDirs, setExpandedDirs] = React.useState<Set<string>>(() => new Set())
   const tree = React.useMemo(() => buildFileTree(files), [files])
+
+  // ─── Drag-to-reorder state ───
+  const [dragSource, setDragSource] = React.useState<string | null>(null)
+  const [dragOverTarget, setDragOverTarget] = React.useState<string | null>(null)
+
+  // 仅对根级别文件（无子目录）支持拖拽排序
+  const rootFiles = React.useMemo(() => tree.children.filter(n => !n.isDir && n.file), [tree])
+  const hasSubdirs = React.useMemo(() => tree.children.some(n => n.isDir), [tree])
+
+  const handleFileDragStart = React.useCallback((e: React.DragEvent, filename: string) => {
+    setDragSource(filename)
+    e.dataTransfer.effectAllowed = "move"
+    e.dataTransfer.setData("text/x-file-reorder", filename)
+  }, [])
+
+  const handleFileDragOver = React.useCallback((_e: React.DragEvent, filename: string) => {
+    if (dragSource && dragSource !== filename) {
+      setDragOverTarget(filename)
+    }
+  }, [dragSource])
+
+  const handleFileDragEnd = React.useCallback(() => {
+    if (dragSource && dragOverTarget && dragSource !== dragOverTarget && onReorderFiles) {
+      const currentOrder = rootFiles.map(n => n.file!.filename)
+      const fromIndex = currentOrder.indexOf(dragSource)
+      const toIndex = currentOrder.indexOf(dragOverTarget)
+      if (fromIndex !== -1 && toIndex !== -1) {
+        const newOrder = [...currentOrder]
+        const [moved] = newOrder.splice(fromIndex, 1)
+        newOrder.splice(toIndex, 0, moved)
+        onReorderFiles(newOrder)
+      }
+    }
+    setDragSource(null)
+    setDragOverTarget(null)
+  }, [dragSource, dragOverTarget, rootFiles, onReorderFiles])
 
   const toggleDir = React.useCallback((path: string) => {
     setExpandedDirs((prev) => {
@@ -440,6 +478,11 @@ export const FileExplorer = React.memo(function FileExplorer({
                   onSelect={onSelectFile}
                   onDeleteRequest={onDeleteRequest}
                   level={0}
+                  draggable={!hasSubdirs && !!onReorderFiles}
+                  onDragStart={handleFileDragStart}
+                  onDragOver={handleFileDragOver}
+                  onDragEnd={handleFileDragEnd}
+                  isDragOver={dragOverTarget === node.file.filename}
                 />
               ) : null
             )}
