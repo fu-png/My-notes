@@ -2,8 +2,8 @@ import { NotebookWorkspace } from "@/components/notebook-workspace"
 import { notFound } from "next/navigation"
 import { readFile, getProject } from "@/lib/storage"
 
-// 禁止缓存，确保每次进入都读取最新的项目名称
-export const dynamic = "force-dynamic"
+// 不缓存数据，但允许 Next.js prefetch 页面 shell（Link hover 预取）
+export const revalidate = 0
 
 export async function generateMetadata({
   params,

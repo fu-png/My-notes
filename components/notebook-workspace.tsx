@@ -82,7 +82,14 @@ import { useAudioFlow } from "@/hooks/use-audio-flow"
 import { useChatFlow } from "@/hooks/use-chat-flow"
 import { TableOfContents } from "./notebook/table-of-contents"
 import { FileExplorer, MobileFileList } from "./notebook/file-explorer"
-import { ReadingModePanel, ReadingModeButton } from "./notebook/reading-mode"
+const ReadingModePanel = dynamic(
+  () => import("./notebook/reading-mode").then((m) => ({ default: m.ReadingModePanel })),
+  { ssr: false }
+)
+const ReadingModeButton = dynamic(
+  () => import("./notebook/reading-mode").then((m) => ({ default: m.ReadingModeButton })),
+  { ssr: false }
+)
 const ChatPanel = dynamic(
   () => import("./notebook/chat-panel").then((m) => ({ default: m.ChatPanel })),
   {
@@ -274,28 +281,26 @@ React.useEffect(() => {
 // Instant load from localStorage cache (full data, for immediate use)
 const cached = loadConversationsSync(projectId)
 queueMicrotask(() => setConversations(cached))
-// Then fetch summaries from OSS (lightweight — no message content)
-loadConversationSummaries(projectId).then(async (summaries) => {
-  if (summaries.length > 0) {
-    // Check if we need to fetch full data for any conversation
-    // If cache is stale (different IDs or count), fetch full data
-    const cachedIds = new Set(cached.map((c) => c.id))
-    const summaryIds = new Set(summaries.map((s) => s.id))
-    const needsFullFetch =
-      cached.length !== summaries.length ||
-      summaries.some((s) => !cachedIds.has(s.id)) ||
-      cached.some((c) => !summaryIds.has(c.id))
+// 延迟加载 OSS 对话历史，避免阻塞首屏渲染
+const scheduleOSSFetch = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb: () => void) => setTimeout(cb, 200)
+scheduleOSSFetch(() => {
+  loadConversationSummaries(projectId).then(async (summaries) => {
+    if (summaries.length > 0) {
+      const cachedIds = new Set(cached.map((c) => c.id))
+      const summaryIds = new Set(summaries.map((s) => s.id))
+      const needsFullFetch =
+        cached.length !== summaries.length ||
+        summaries.some((s) => !cachedIds.has(s.id)) ||
+        cached.some((c) => !summaryIds.has(c.id))
 
-    if (needsFullFetch) {
-      // Fetch full conversations (one-time, to populate cache)
-      const fullConvs = await loadConversations(projectId)
-      queueMicrotask(() => setConversations(fullConvs))
+      if (needsFullFetch) {
+        const fullConvs = await loadConversations(projectId)
+        queueMicrotask(() => setConversations(fullConvs))
+      }
+    } else if (cached.length > 0) {
+      migrateLocalToOSS(projectId)
     }
-    // If cache is up-to-date, we already have full data from localStorage
-  } else if (cached.length > 0) {
-    // OSS is empty but localStorage has data → migrate
-    migrateLocalToOSS(projectId)
-  }
+  })
 })
 }, [projectId])
 
@@ -391,9 +396,13 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     }
   }, [projectId])
 
-  // Fetch RAG index status on mount
+  // 延迟检查 RAG 索引状态，避免阻塞首屏渲染
   React.useEffect(() => {
-    queueMicrotask(() => fetchIndexStatus())
+    const schedule = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb: () => void) => setTimeout(cb, 300)
+    const id = schedule(() => fetchIndexStatus())
+    return () => {
+      if (typeof cancelIdleCallback !== "undefined") cancelIdleCallback(id as number)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
