@@ -370,7 +370,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const hasValidActiveProvider = providers.some((p) => p.id === activeProviderId && p.apiKey.trim())
+  
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -480,7 +480,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
           {/* Footer */}
           <div className="flex items-center justify-end gap-2 border-t px-6 py-3">
             <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
-            <Button size="sm" onClick={handleSave} disabled={!hasValidActiveProvider} className="min-w-[80px]">
+            <Button size="sm" onClick={handleSave} className="min-w-[80px]">
               {saved ? (
                 <span className="flex items-center gap-1">
                   <IconCheck className="size-3.5" />
@@ -760,7 +760,7 @@ function SectionEmbedding({
             onChange={(e) => setEmbApiBase(e.target.value)}
             className="h-8 text-sm"
           />
-          <p className="text-[11px] text-muted-foreground">留空则使用对话模型的 API Base URL</p>
+          <p className="text-[11px] text-muted-foreground">填写到 /v1 即可，无需添加 /embeddings 后缀。留空则使用对话模型的 API Base URL</p>
         </div>
       </div>
 
