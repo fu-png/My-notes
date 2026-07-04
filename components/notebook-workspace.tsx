@@ -43,7 +43,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { getAIConfig, isAIConfigured, getConfiguredModel } from "@/lib/ai-config"
+import { getAIConfig, isAIConfigured, getConfiguredModel, getConfiguredEmbeddingModel } from "@/lib/ai-config"
 import { useToast } from "@/hooks/use-toast"
 import { ToastContainer } from "@/components/toast-container"
 import { ErrorBoundary } from "@/components/error-boundary"
@@ -434,6 +434,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
           apiKey: config.apiKey,
           apiBase: config.apiBase,
           model: chatModelRef.current,
+          embeddingModel: getConfiguredEmbeddingModel(),
           stream: true,
         }),
       })
@@ -486,31 +487,56 @@ loadConversationSummaries(projectId).then(async (summaries) => {
       clearTimeout(autoIndexTimerRef.current)
     }
 
-    autoIndexTimerRef.current = setTimeout(() => {
+    autoIndexTimerRef.current = setTimeout(async () => {
       const config = getAIConfig()
       if (!config) return
 
-      fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "index",
-          apiKey: config.apiKey,
-          apiBase: config.apiBase,
-          model: getConfiguredModel(),
-        }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success) {
-            setRagEnabled(true)
-            fetchIndexStatus()
-            if (showSources) fetchSourcesData()
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "index",
+            apiKey: config.apiKey,
+            apiBase: config.apiBase,
+            model: getConfiguredModel(),
+            embeddingModel: getConfiguredEmbeddingModel(),
+            stream: true,
+          }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          console.warn("[autoIndex] HTTP error:", data.error || res.status)
+          return
+        }
+
+        const reader = res.body?.getReader()
+        if (!reader) return
+
+        const { parseSSEStream } = await import("@/lib/infra/stream-utils")
+        let success = false
+
+        for await (const event of parseSSEStream(reader)) {
+          if (event.done === true) {
+            if (event.success === true) {
+              success = true
+              setRagEnabled(true)
+              fetchIndexStatus()
+              if (showSources) fetchSourcesData()
+            } else {
+              const errMsg = typeof event.error === "string" ? event.error : "索引失败"
+              console.warn("[autoIndex] failed:", errMsg)
+            }
           }
-        })
-        .catch((err: unknown) => {
-          console.warn("[autoIndex]", err)
-        })
+        }
+
+        if (!success) {
+          console.warn("[autoIndex] stream ended without success")
+        }
+      } catch (err: unknown) {
+        console.warn("[autoIndex]", err)
+      }
     }, 2000)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])

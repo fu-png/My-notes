@@ -10,6 +10,7 @@
 export const STORAGE_KEY_API_KEY = "ai-assistant-api-key"
 export const STORAGE_KEY_API_BASE = "ai-assistant-api-base"
 export const STORAGE_KEY_MODEL = "ai-assistant-model"
+export const STORAGE_KEY_EMBEDDING_MODEL = "ai-assistant-embedding-model"
 
 // TTS 配置
 export const STORAGE_KEY_TTS_API_KEY = "ai-tts-api-key"
@@ -35,6 +36,7 @@ export const STORAGE_KEY_ACTIVE_PROVIDER = "ai-assistant-active-provider"
 
 export const DEFAULT_API_BASE = "https://api.openai.com/v1"
 export const DEFAULT_MODEL = "gpt-4o-mini"
+export const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 export const DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
 export const DEFAULT_TTS_VOICE_HOST = "冰糖"
 export const DEFAULT_TTS_VOICE_EXPERT = "苏打"
@@ -79,6 +81,7 @@ export interface AIConfig {
   apiKey: string
   apiBase: string
   model: string
+  embeddingModel?: string
 }
 
 export interface TTSConfig {
@@ -102,8 +105,9 @@ export function getAIConfig(): AIConfig | null {
   const apiKey = localStorage.getItem(STORAGE_KEY_API_KEY)
   const apiBase = localStorage.getItem(STORAGE_KEY_API_BASE) || DEFAULT_API_BASE
   const model = localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL
+  const embeddingModel = localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || ""
   if (!apiKey) return null
-  return { apiKey, apiBase, model }
+  return { apiKey, apiBase, model, embeddingModel: embeddingModel || undefined }
 }
 
 export function getTTSConfig(): TTSConfig | null {
@@ -128,6 +132,12 @@ export function isAIConfigured(): boolean {
 export function getConfiguredModel(): string {
   if (typeof window === "undefined") return DEFAULT_MODEL
   return localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL
+}
+
+/** Get the configured embedding model name (for RAG indexing) */
+export function getConfiguredEmbeddingModel(): string {
+  if (typeof window === "undefined") return DEFAULT_EMBEDDING_MODEL
+  return localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL
 }
 
 // ─── Image Generation Config ───

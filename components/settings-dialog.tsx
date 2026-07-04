@@ -46,6 +46,7 @@ import {
   getTTSConfig,
   isAIConfigured,
   getConfiguredModel,
+  getConfiguredEmbeddingModel,
   getImageConfig,
   isImageConfigured,
   getPersonaPrompt,
@@ -56,6 +57,7 @@ import {
   TTS_VOICE_OPTIONS,
   DEFAULT_API_BASE,
   DEFAULT_MODEL,
+  DEFAULT_EMBEDDING_MODEL,
   DEFAULT_TTS_MODEL,
   DEFAULT_TTS_VOICE_HOST,
   DEFAULT_TTS_VOICE_EXPERT,
@@ -64,6 +66,7 @@ import {
   STORAGE_KEY_API_KEY,
   STORAGE_KEY_API_BASE,
   STORAGE_KEY_MODEL,
+  STORAGE_KEY_EMBEDDING_MODEL,
   STORAGE_KEY_TTS_API_KEY,
   STORAGE_KEY_TTS_API_BASE,
   STORAGE_KEY_TTS_MODEL,
@@ -82,6 +85,7 @@ export {
   getTTSConfig,
   isAIConfigured,
   getConfiguredModel,
+  getConfiguredEmbeddingModel,
   getImageConfig,
   isImageConfigured,
   getPersonaPrompt,
@@ -92,6 +96,7 @@ export {
   TTS_VOICE_OPTIONS,
   DEFAULT_API_BASE,
   DEFAULT_MODEL,
+  DEFAULT_EMBEDDING_MODEL,
   DEFAULT_TTS_MODEL,
   DEFAULT_TTS_VOICE_HOST,
   DEFAULT_TTS_VOICE_EXPERT,
@@ -100,6 +105,7 @@ export {
   STORAGE_KEY_API_KEY,
   STORAGE_KEY_API_BASE,
   STORAGE_KEY_MODEL,
+  STORAGE_KEY_EMBEDDING_MODEL,
   STORAGE_KEY_TTS_API_KEY,
   STORAGE_KEY_TTS_API_BASE,
   STORAGE_KEY_TTS_MODEL,
@@ -143,6 +149,7 @@ export function SettingsDialog() {
   const [apiKey, setApiKey] = React.useState("")
   const [apiBase, setApiBase] = React.useState(DEFAULT_API_BASE)
   const [model, setModel] = React.useState(DEFAULT_MODEL)
+  const [embeddingModel, setEmbeddingModel] = React.useState(DEFAULT_EMBEDDING_MODEL)
   const [provider, setProvider] = React.useState("自定义")
 
   // TTS 配置
@@ -181,6 +188,7 @@ export function SettingsDialog() {
       setApiKey(savedKey)
       setApiBase(savedBase)
       setModel(savedModel)
+      setEmbeddingModel(localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL)
       const detected = detectProvider(savedBase)
       setProvider(detected)
       const preset = PROVIDER_PRESETS.find((p) => p.name === detected)
@@ -258,6 +266,7 @@ export function SettingsDialog() {
     localStorage.setItem(STORAGE_KEY_API_KEY, apiKey.trim())
     localStorage.setItem(STORAGE_KEY_API_BASE, apiBase.trim() || DEFAULT_API_BASE)
     localStorage.setItem(STORAGE_KEY_MODEL, model.trim() || DEFAULT_MODEL)
+    localStorage.setItem(STORAGE_KEY_EMBEDDING_MODEL, embeddingModel.trim() || DEFAULT_EMBEDDING_MODEL)
 
     if (useSameKey) {
       localStorage.removeItem(STORAGE_KEY_TTS_API_KEY)
@@ -428,6 +437,23 @@ export function SettingsDialog() {
             </div>
             <p className="text-xs text-muted-foreground">
               用于 AI 对话和笔记本指南生成。
+            </p>
+          </div>
+
+          {/* Embedding Model */}
+          <div className="space-y-2">
+            <Label htmlFor="embedding-model" className="flex items-center gap-1.5">
+              <IconBrain className="size-3.5 text-muted-foreground" />
+              Embedding 模型
+            </Label>
+            <Input
+              id="embedding-model"
+              placeholder={DEFAULT_EMBEDDING_MODEL}
+              value={embeddingModel}
+              onChange={(e) => setEmbeddingModel(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              用于知识库索引（RAG）。OpenAI 默认 text-embedding-3-small，硅基流动可用 BAAI/bge-m3 等。不支持 Embedding 的服务商将无法建索引。
             </p>
           </div>
         </div>
