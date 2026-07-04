@@ -387,8 +387,20 @@ scheduleOSSFetch(() => {
   // AI config
   const [aiConfigured, setAiConfigured] = React.useState(() => isAIConfigured())
 
+  // 使用 ref 持有 triggerAutoIndex，以便在 ai-config-changed 监听器中调用
+  // （triggerAutoIndex 声明在更下方，直接引用会触发 TDZ）
+  const triggerAutoIndexRef = React.useRef<(() => void) | null>(null)
+
   React.useEffect(() => {
-    const handleConfigChange = () => setAiConfigured(isAIConfigured())
+    const handleConfigChange = () => {
+      const configured = isAIConfigured()
+      setAiConfigured(configured)
+      // [关键修复] API 配置变更后，如果已配置且索引未建立，自动触发索引
+      // 解决用户配好模型后 RAG 不生效的问题
+      if (configured) {
+        triggerAutoIndexRef.current?.()
+      }
+    }
     window.addEventListener("ai-config-changed", handleConfigChange)
     return () => window.removeEventListener("ai-config-changed", handleConfigChange)
   }, [])
@@ -549,7 +561,9 @@ scheduleOSSFetch(() => {
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
-          console.warn("[autoIndex] HTTP error:", data.error || res.status)
+          const errDetail = data.error || `HTTP ${res.status}`
+          console.warn("[autoIndex] HTTP error:", errDetail)
+          showToast("error", `知识索引构建失败: ${errDetail}`)
           return
         }
 
@@ -573,6 +587,7 @@ scheduleOSSFetch(() => {
             } else {
               const errMsg = typeof event.error === "string" ? event.error : "索引失败"
               console.warn("[autoIndex] failed:", errMsg)
+              showToast("error", `知识索引构建失败: ${errMsg}`)
             }
           }
         }
@@ -582,11 +597,32 @@ scheduleOSSFetch(() => {
         }
       } catch (err: unknown) {
         console.warn("[autoIndex]", err)
+        if (err instanceof Error && err.message) {
+          showToast("error", `知识索引构建异常: ${err.message}`)
+        }
       } finally {
         setIndexing(false)
         setIndexProgress("")
       }
     }, 2000)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  // 将 triggerAutoIndex 注入 ref，供 ai-config-changed 监听器使用
+  React.useEffect(() => {
+    triggerAutoIndexRef.current = triggerAutoIndex
+  }, [triggerAutoIndex])
+
+  // 页面加载时：如果 API 已配置、但索引未建立，自动触发索引
+  // 解决"先配置 API、后上传文件"等时序问题
+  React.useEffect(() => {
+    // 延迟执行，等 fetchIndexStatus 完成
+    const timer = setTimeout(() => {
+      if (isAIConfigured() && !ragEnabled) {
+        triggerAutoIndex()
+      }
+    }, 3000)
+    return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
@@ -1189,6 +1225,28 @@ queueMicrotask(() => selectFile(target))
     handleScroll()
     return () => scrollEl.removeEventListener("scroll", handleScroll)
   }, [activeFile, fileContent, editMode])
+
+  // ─── 从文件内容提取真实标题，更新文件列表 ───
+  React.useEffect(() => {
+    if (!activeFile || !fileContent) return
+    const firstLine = fileContent.trim().split("\n")[0]?.trim()
+    if (!firstLine) return
+    const title = firstLine
+      .replace(/^#{1,6}\s*/, "")
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/\*(.+?)\*/g, "$1")
+      .replace(/\[(.+?)\]\(.+?\)/g, "$1")
+      .replace(/`(.+?)`/g, "$1")
+      .trim()
+    if (!title) return
+    setFiles((prev) => {
+      const idx = prev.findIndex((f) => f.filename === activeFile)
+      if (idx === -1 || prev[idx].title === title) return prev
+      const updated = [...prev]
+      updated[idx] = { ...updated[idx], title }
+      return updated
+    })
+  }, [activeFile, fileContent])
 
   // ─── Active file title ───
 
