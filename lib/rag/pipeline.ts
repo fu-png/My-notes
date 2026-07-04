@@ -95,7 +95,7 @@ export async function ingestProject(
 
   // 4. Embedding
   // [修复] 即使 embedding 失败也继续创建 BM25 索引，确保 RAG 至少有全文检索兜底
-  log("正在生成 Embedding（这可能需要几分钟）...")
+  log("正在生成 Embedding...")
   const contents = chunks.map((c) => c.content)
   let embeddings: number[][] = []
   let embeddingFailed = false
@@ -103,7 +103,7 @@ export async function ingestProject(
     let lastReportedPercent = -1
     embeddings = await embedBatch(contents, config, (done, total) => {
       const percent = Math.floor((done / total) * 100)
-      if (percent >= lastReportedPercent + 10 || done === total) {
+      if (percent >= lastReportedPercent + 20 || done === total) {
         lastReportedPercent = percent
         log(`Embedding 进度：${done}/${total}（${percent}%）`)
       }
@@ -115,42 +115,32 @@ export async function ingestProject(
     embeddingFailed = true
   }
 
-  // 5. 先清空旧索引，再存入向量索引和 BM25 索引
+  // 5. 清空旧索引 + 存入新索引 + 保存状态（核心路径并行，知识图谱后台异步不阻塞）
   log("正在存入索引...")
   await deleteIndex(projectId)
+  const indexPromises: Promise<void>[] = []
   if (!embeddingFailed && embeddings.length > 0) {
-    await Promise.all([
-      addChunks(projectId, chunks, embeddings),
-      createBm25Index(projectId, chunks),
-    ])
-  } else {
-    // embedding 失败时只创建 BM25 索引
-    await createBm25Index(projectId, chunks)
+    indexPromises.push(addChunks(projectId, chunks, embeddings))
   }
-  log("索引创建完成")
+  indexPromises.push(createBm25Index(projectId, chunks))
+  indexPromises.push(saveIndexStatus(projectId, {
+    indexed: true,
+    lastIndexedAt: new Date().toISOString(),
+    totalChunks: chunks.length,
+    totalFiles: documents.length,
+  }))
+  await Promise.all(indexPromises)
 
-  // 7. 保存索引状态 + 构建知识图谱（两者互不依赖，并行执行）
-  log("正在保存索引状态并构建知识图谱...")
-  const graphPromise = (async () => {
+  // 知识图谱：后台异步构建，不阻塞索引完成（CPU 密集型，2000+ 实体需要 1-2 秒）
+  ;(async () => {
     try {
       const graph = buildKnowledgeGraph(chunks)
       await saveKnowledgeGraph(projectId, graph)
-      log(`知识图谱构建完成：${graph.entities.size} 个实体，${graph.relations.length} 条关系`)
+      console.debug(`[pipeline] 知识图谱构建完成：${graph.entities.size} 实体，${graph.relations.length} 关系`)
     } catch (err) {
       console.error("[pipeline] 知识图谱构建失败:", err)
-      log("知识图谱构建失败（不影响基本检索）")
     }
   })()
-
-  await Promise.all([
-    saveIndexStatus(projectId, {
-      indexed: true,
-      lastIndexedAt: new Date().toISOString(),
-      totalChunks: chunks.length,
-      totalFiles: documents.length,
-    }),
-    graphPromise,
-  ])
 
   log(`索引完成：${documents.length} 个文件，${chunks.length} 个文本块`)
   return { totalChunks: chunks.length, totalFiles: documents.length }

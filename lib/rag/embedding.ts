@@ -25,8 +25,8 @@ function simpleHash(str: string): string {
 const MAX_RETRIES = 3
 const RETRY_DELAY_MS = 1000
 const RATE_LIMIT_RETRY_DELAY_MS = 3000 // 429 限流专用退避基数（比普通 5xx 更保守）
-const BATCH_SIZE = 50 // 每批最多 50 条（行业通用值，OpenAI/SiliconFlow 均支持）
-const MAX_CONCURRENCY = 15 // 同时在途的批次请求数上限（行业通用 10-20，SiliconFlow 轻量模型可适当偏高）
+const BATCH_SIZE = 100 // 每批 100 条（SiliconFlow bge-large-zh-v1.5 支持大 batch，减少请求次数）
+const MAX_CONCURRENCY = 20 // 同时在途的批次请求数上限（确保所有批次一轮并发完成）
 const MAX_TEXT_CHARS = 900 // 单条文本最大字符数（超过则截断，防止超出 embedding 模型 token 限制）
 
 // 查询 embedding 缓存：避免重复 API 调用（相同文本短时间内返回相同结果）
