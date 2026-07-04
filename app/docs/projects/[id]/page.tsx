@@ -1,8 +1,8 @@
 import { NotebookWorkspace } from "@/components/notebook-workspace"
 import { notFound } from "next/navigation"
-import { readFile, getProject } from "@/lib/storage"
+import { readFile } from "@/lib/storage"
 
-// 不缓存数据，但允许 Next.js prefetch 页面 shell（Link hover 预取）
+// 允许 Next.js prefetch 页面 shell（Link hover 预取），数据不缓存
 export const revalidate = 0
 
 export async function generateMetadata({
@@ -28,26 +28,21 @@ export default async function ProjectDetailPage({
 }) {
   const { id } = await params
 
-  // 服务端一次性获取 meta + 文件列表，避免客户端二次请求
-  const projectData = await getProject(id)
-  if (!projectData) notFound()
+  // 只读取 meta.json 验证项目存在 + 获取名称，文件列表和内容由客户端加载
+  // 这样页面可以快速返回，避免服务端 N 次 OSS 请求阻塞导航
+  const metaContent = await readFile(`projects/${id}/meta.json`)
+  if (!metaContent) notFound()
 
-  const { meta, files: initialFiles } = projectData
-
-  // 预取第一个文件内容，消除客户端串行瀑布流
-  const initialFile = initialFiles[0]?.filename ?? null
-  let initialFileContent = ""
-  if (initialFile) {
-    initialFileContent = await readFile(`projects/${id}/${initialFile}`) ?? ""
-  }
+  let projectName = "笔记本"
+  try {
+    const meta = JSON.parse(metaContent)
+    projectName = meta.name || projectName
+  } catch { /* ignore */ }
 
   return (
     <NotebookWorkspace
       projectId={id}
-      projectName={meta.name}
-      initialFiles={initialFiles}
-      initialFile={initialFile}
-      initialFileContent={initialFileContent}
+      projectName={projectName}
     />
   )
 }
