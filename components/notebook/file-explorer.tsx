@@ -130,11 +130,10 @@ const DirItem = React.memo(function DirItem({
   const isExpanded = expandedDirs.has(node.path)
 
   return (
-    <div>
+    <div role="treeitem" aria-expanded={isExpanded} aria-selected={false} aria-level={level + 1}>
       <button
         onClick={() => onToggleDir(node.path)}
         aria-label={`${isExpanded ? "折叠" : "展开"}文件夹 ${node.name}`}
-        aria-expanded={isExpanded}
         className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
         style={{ paddingLeft: `${12 + level * 12}px` }}
       >
@@ -143,7 +142,7 @@ const DirItem = React.memo(function DirItem({
         <span className="truncate">{node.name}</span>
       </button>
       {isExpanded && (
-        <div>
+        <div role="group">
           {node.children.map((child) =>
             child.isDir ? (
               <DirItem
@@ -198,6 +197,9 @@ const FileItem = React.memo(function FileItem({
 
   return (
     <div
+      role="treeitem"
+      aria-level={level + 1}
+      aria-selected={isActive}
       className={`group flex items-center px-3 py-2 text-[13px] transition-colors ${
         isActive
           ? "border-l-2 border-primary bg-accent text-accent-foreground"
@@ -417,7 +419,7 @@ export const FileExplorer = React.memo(function FileExplorer({
 
       {/* File list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="py-1">
+        <div className="py-1" role="tree" aria-label="文件列表">
           {loadingFiles ? (
             <div className="space-y-1 px-3 py-2" role="status" aria-label="正在加载文件列表">
               {Array.from({ length: 6 }).map((_, i) => (

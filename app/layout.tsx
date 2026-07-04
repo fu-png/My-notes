@@ -31,6 +31,13 @@ export default function RootLayout({
       className={cn("antialiased", fontMono.variable, "font-sans", inter.variable)}
     >
       <body>
+        {/* Skip-to-content 链接（WCAG 2.4.1 键盘可访问性要求） */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground focus:shadow-lg"
+        >
+          跳转到主要内容
+        </a>
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

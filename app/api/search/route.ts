@@ -21,11 +21,44 @@ interface SearchResultItem {
 }
 
 // GET /api/search?q=keyword&mode=all|title|content — 跨项目搜索
+// 简易速率限制（内存计数器，每 IP 每分钟最多 30 次搜索）
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX = 30
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return true
+  }
+  entry.count++
+  return entry.count <= RATE_LIMIT_MAX
+}
+
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q")?.trim().toLowerCase()
   const mode = request.nextUrl.searchParams.get("mode") || "all" // all | title | content
   if (!q) {
     return NextResponse.json({ results: [] })
+  }
+
+  // 查询长度限制（防止超长查询句消耗资源）
+  if (q.length > 200) {
+    return NextResponse.json(
+      { results: [], error: "查询长度超出限制" },
+      { status: 400 }
+    )
+  }
+
+  // 速率限制
+  const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+  if (!checkRateLimit(clientIp)) {
+    return NextResponse.json(
+      { results: [], error: "请求过于频繁，请稍后重试" },
+      { status: 429 }
+    )
   }
 
   try {

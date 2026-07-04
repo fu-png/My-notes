@@ -19,6 +19,15 @@ export function NewProjectForm() {
       setError("请输入笔记本名称")
       return
     }
+    if (trimmed.length > 100) {
+      setError("名称不能超过 100 个字符")
+      return
+    }
+    // 禁止特殊字符（与文件名规则保持一致）
+    if (/[\\/:*?"<>|]/.test(trimmed)) {
+      setError("名称不能包含特殊字符 / \\ : * ? \" < > |")
+      return
+    }
 
     setLoading(true)
     setError("")
@@ -82,6 +91,7 @@ export function NewProjectForm() {
               }}
               placeholder="例如：Claude Code 读书笔记"
               autoFocus
+              maxLength={100}
               className="h-11"
               disabled={loading}
               aria-label="项目名称"

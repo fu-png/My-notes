@@ -116,24 +116,28 @@ export async function ingestProject(
   ])
   log("索引创建完成")
 
-  // 7. 保存索引状态
-  await saveIndexStatus(projectId, {
-    indexed: true,
-    lastIndexedAt: new Date().toISOString(),
-    totalChunks: chunks.length,
-    totalFiles: documents.length,
-  })
+  // 7. 保存索引状态 + 构建知识图谱（两者互不依赖，并行执行）
+  log("正在保存索引状态并构建知识图谱...")
+  const graphPromise = (async () => {
+    try {
+      const graph = buildKnowledgeGraph(chunks)
+      await saveKnowledgeGraph(projectId, graph)
+      log(`知识图谱构建完成：${graph.entities.size} 个实体，${graph.relations.length} 条关系`)
+    } catch (err) {
+      console.error("[pipeline] 知识图谱构建失败:", err)
+      log("知识图谱构建失败（不影响基本检索）")
+    }
+  })()
 
-  // 8. 构建知识图谱
-  log("正在构建知识图谱...")
-  try {
-    const graph = buildKnowledgeGraph(chunks)
-    await saveKnowledgeGraph(projectId, graph)
-    log(`知识图谱构建完成：${graph.entities.size} 个实体，${graph.relations.length} 条关系`)
-  } catch (err) {
-    console.error("[pipeline] 知识图谱构建失败:", err)
-    log("知识图谱构建失败（不影响基本检索）")
-  }
+  await Promise.all([
+    saveIndexStatus(projectId, {
+      indexed: true,
+      lastIndexedAt: new Date().toISOString(),
+      totalChunks: chunks.length,
+      totalFiles: documents.length,
+    }),
+    graphPromise,
+  ])
 
   log(`索引完成：${documents.length} 个文件，${chunks.length} 个文本块`)
   return { totalChunks: chunks.length, totalFiles: documents.length }

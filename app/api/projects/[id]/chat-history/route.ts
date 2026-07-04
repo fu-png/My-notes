@@ -90,6 +90,44 @@ export async function POST(
       )
     }
 
+    // 消息结构校验：确保每个对话的消息格式合法
+    const VALID_ROLES = new Set(["user", "assistant", "system"])
+    const MAX_MESSAGES_PER_CONV = 500
+    for (const conv of conversations) {
+      if (typeof conv !== "object" || conv === null) {
+        return NextResponse.json({ error: "对话格式无效" }, { status: 400 })
+      }
+      const c = conv as Record<string, unknown>
+      // 校验必填字段
+      if (typeof c.id !== "string" || !c.id.trim()) {
+        return NextResponse.json({ error: "对话缺少 id 字段" }, { status: 400 })
+      }
+      // 校验消息数组
+      if (Array.isArray(c.messages)) {
+        if (c.messages.length > MAX_MESSAGES_PER_CONV) {
+          return NextResponse.json(
+            { error: `单个对话消息数超出限制（最多 ${MAX_MESSAGES_PER_CONV} 条）` },
+            { status: 400 }
+          )
+        }
+        for (const msg of c.messages) {
+          const m = msg as Record<string, unknown>
+          if (typeof m.role !== "string" || !VALID_ROLES.has(m.role)) {
+            return NextResponse.json(
+              { error: `消息 role 无效，必须为 user/assistant/system` },
+              { status: 400 }
+            )
+          }
+          if (typeof m.content !== "string") {
+            return NextResponse.json(
+              { error: "消息 content 必须为字符串" },
+              { status: 400 }
+            )
+          }
+        }
+      }
+    }
+
     // 清理大数据（base64 图片等）再存储
     const cleaned = conversations.map((conv: Record<string, unknown>) => ({
       ...conv,

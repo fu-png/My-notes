@@ -109,6 +109,18 @@ import {
 
 export function SettingsDialog() {
   const [open, setOpen] = React.useState(false)
+
+  // 键盘快捷键：Cmd+, (macOS) / Ctrl+, (其他平台) 打开设置
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault()
+        setOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [])
   const [showKey, setShowKey] = React.useState(false)
   const [showTtsKey, setShowTtsKey] = React.useState(false)
   const [showImageKey, setShowImageKey] = React.useState(false)

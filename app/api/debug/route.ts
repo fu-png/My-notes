@@ -1,9 +1,19 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { listFiles } from "@/lib/storage"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // 双重保护：环境变量 + 访问令牌
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "Debug endpoint disabled in production" }, { status: 403 })
+  }
+
+  // 非生产环境也需要令牌验证（防止未授权访问）
+  const debugSecret = process.env.DEBUG_SECRET
+  if (debugSecret) {
+    const token = request.headers.get("x-debug-token")
+    if (token !== debugSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
   }
 
   const info = {

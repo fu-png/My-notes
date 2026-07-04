@@ -8,7 +8,7 @@ export default function DocsLayout({
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <TopNav />
-      <main className="min-h-0 flex-1">{children}</main>
+      <main id="main-content" className="min-h-0 flex-1">{children}</main>
     </div>
   )
 }

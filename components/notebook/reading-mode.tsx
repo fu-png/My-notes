@@ -23,6 +23,16 @@ import {
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -522,9 +532,10 @@ export function ReadingModePanel({
     }
   }
 
-  // ── Reset session
-  const handleReset = () => {
-    if (notes.length > 0 && !window.confirm("确定要重置所有阅读进度和笔记吗？")) return
+  // ── Reset session（使用组件化确认对话框替代 window.confirm）
+  const [showResetConfirm, setShowResetConfirm] = React.useState(false)
+
+  const doReset = React.useCallback(() => {
     clearSession(fileKey)
     setCurrentStep(0)
     setCompletedSteps(new Set())
@@ -541,6 +552,15 @@ export function ReadingModePanel({
     paragraphPauseRef.current = null
     pausedSectionRef.current = -1
     activeSectionIdxRef.current = 0
+    setShowResetConfirm(false)
+  }, [fileKey])
+
+  const handleReset = () => {
+    if (notes.length > 0) {
+      setShowResetConfirm(true)
+    } else {
+      doReset()
+    }
   }
 
   // ── Auto-focus
@@ -1056,6 +1076,22 @@ export function ReadingModePanel({
           </Button>
         )}
       </div>
+
+      {/* 重置确认对话框（替代 window.confirm） */}
+      <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认重置</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要重置所有阅读进度和笔记吗？此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={doReset}>确认重置</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

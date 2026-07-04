@@ -199,77 +199,57 @@ const searchParams = useSearchParams()
 
   // 切换文件时清除划词 — moved into selectFile() to avoid set-state-in-effect
 
-  const handleResizeStart = React.useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startWidth = aiPanelRef.current?.offsetWidth ?? 320
-    let rafId: number | null = null
-    let latestWidth = startWidth
+  // 拖拽调整宽度的通用工厂函数（消除 AI 面板 / 精读面板乌重复的 resize 逻辑）
+  const createResizeHandler = React.useCallback(
+    (panelRef: React.RefObject<HTMLDivElement | null>, setWidth: React.Dispatch<React.SetStateAction<number>>) => {
+      return (e: React.MouseEvent) => {
+        e.preventDefault()
+        const startX = e.clientX
+        const startWidth = panelRef.current?.offsetWidth ?? 320
+        let rafId: number | null = null
+        let latestWidth = startWidth
 
-    const handleMouseMove = (ev: MouseEvent) => {
-      const delta = startX - ev.clientX
-      latestWidth = Math.min(Math.max(startWidth + delta, 260), 600)
-      if (rafId === null) {
-        rafId = requestAnimationFrame(() => {
-          if (aiPanelRef.current) {
-            aiPanelRef.current.style.width = `${latestWidth}px`
+        const handleMouseMove = (ev: MouseEvent) => {
+          const delta = startX - ev.clientX
+          latestWidth = Math.min(Math.max(startWidth + delta, 260), 600)
+          if (rafId === null) {
+            rafId = requestAnimationFrame(() => {
+              if (panelRef.current) {
+                panelRef.current.style.width = `${latestWidth}px`
+              }
+              rafId = null
+            })
           }
-          rafId = null
-        })
+        }
+
+        const handleMouseUp = () => {
+          if (rafId !== null) cancelAnimationFrame(rafId)
+          document.removeEventListener("mousemove", handleMouseMove)
+          document.removeEventListener("mouseup", handleMouseUp)
+          document.body.style.cursor = ""
+          document.body.style.userSelect = ""
+          setWidth(latestWidth)
+        }
+
+        document.addEventListener("mousemove", handleMouseMove)
+        document.addEventListener("mouseup", handleMouseUp)
+        document.body.style.cursor = "col-resize"
+        document.body.style.userSelect = "none"
       }
-    }
+    },
+    []
+  )
 
-    const handleMouseUp = () => {
-      if (rafId !== null) cancelAnimationFrame(rafId)
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
-      setAiPanelWidth(latestWidth)
-    }
-
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
-    document.body.style.cursor = "col-resize"
-    document.body.style.userSelect = "none"
-  }, [])
+  const handleResizeStart = React.useCallback(
+    (e: React.MouseEvent) => createResizeHandler(aiPanelRef, setAiPanelWidth)(e),
+    [createResizeHandler]
+  )
 
   // Reading mode panel resize handler
-  const handleReadingResizeStart = React.useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startWidth = readingPanelRef.current?.offsetWidth ?? 320
-    let rafId: number | null = null
-    let latestWidth = startWidth
-
-    const handleMouseMove = (ev: MouseEvent) => {
-      // 向左拖拽增大宽度（面板在右侧）
-      const delta = startX - ev.clientX
-      latestWidth = Math.min(Math.max(startWidth + delta, 260), 600)
-      if (rafId === null) {
-        rafId = requestAnimationFrame(() => {
-          if (readingPanelRef.current) {
-            readingPanelRef.current.style.width = `${latestWidth}px`
-          }
-          rafId = null
-        })
-      }
-    }
-
-    const handleMouseUp = () => {
-      if (rafId !== null) cancelAnimationFrame(rafId)
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
-      setReadingPanelWidth(latestWidth)
-    }
-
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
-    document.body.style.cursor = "col-resize"
-    document.body.style.userSelect = "none"
-  }, [])
+  const handleReadingResizeStart = React.useCallback(
+    (e: React.MouseEvent) => createResizeHandler(readingPanelRef, setReadingPanelWidth)(e),
+    [createResizeHandler]
+  )
 
 
   // Conversation history
@@ -317,7 +297,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     editModeRef.current = editMode
     editContentRef.current = editContent
     fileContentRef.current = fileContent
-  })
+  }, [conversations, editMode, editContent, fileContent])
   React.useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (conversationsRef.current.length > 0) {
@@ -594,7 +574,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     pptSessionRef.current = pptSession
     pptAbortRef.current = pptFlow.pptAbortRef.current
     startPptFlowRef.current = pptFlow.startPptFlow
-  })
+  }, [pptSession, pptFlow.pptAbortRef, pptFlow.startPptFlow])
 
   // ─── Audio Overview (via hook) ───
   const audioFlow = useAudioFlow({
@@ -615,7 +595,7 @@ loadConversationSummaries(projectId).then(async (summaries) => {
   React.useEffect(() => {
     activeConvIdRef.current = activeConversationId
     chatMessagesRef.current = chatMessages
-  })
+  }, [activeConversationId, chatMessages])
 
   React.useEffect(() => {
     if (chatMessages.length <= 1) return

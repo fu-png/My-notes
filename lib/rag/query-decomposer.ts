@@ -6,6 +6,7 @@
  */
 
 import type { RAGConfig, DecomposedQuery } from "./types"
+import { parseRobustJSON } from "./json-parser"
 
 const DECOMPOSE_SYSTEM_PROMPT = `你是一个搜索查询优化器。你的任务是分析用户的问题，判断是否需要拆解为多个子查询来检索文档。
 
@@ -140,53 +141,19 @@ function isSimpleQuery(question: string): boolean {
   return !COMPLEX_INDICATOR_PATTERNS.some(re => re.test(trimmed))
 }
 
-/** 解析 LLM 的 JSON 响应 */
+/** 解析 LLM 的 JSON 响应（使用统一的鲁棒 JSON 解析器） */
 function parseDecomposeResponse(content: string): {
   subQueries: string[]
   reasoning: string
 } {
-  try {
-    // 尝试直接解析
-    const parsed = JSON.parse(content)
+  const parsed = parseRobustJSON(content) as Record<string, unknown> | null
+  if (parsed && typeof parsed === "object") {
     return {
       subQueries: Array.isArray(parsed.sub_queries)
-        ? parsed.sub_queries.filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
+        ? parsed.sub_queries.filter((q: unknown) => typeof q === "string" && (q as string).trim().length > 0)
         : [],
-      reasoning: parsed.reasoning || "",
+      reasoning: (parsed.reasoning as string) || "",
     }
-  } catch {
-    // 尝试从 markdown 代码块中提取 JSON
-    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[1].trim())
-        return {
-          subQueries: Array.isArray(parsed.sub_queries)
-            ? parsed.sub_queries.filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
-            : [],
-          reasoning: parsed.reasoning || "",
-        }
-      } catch {
-        // fallthrough
-      }
-    }
-
-    // 最后尝试从花括号提取
-    const braceMatch = content.match(/\{[\s\S]*\}/)
-    if (braceMatch) {
-      try {
-        const parsed = JSON.parse(braceMatch[0])
-        return {
-          subQueries: Array.isArray(parsed.sub_queries)
-            ? parsed.sub_queries.filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
-            : [],
-          reasoning: parsed.reasoning || "",
-        }
-      } catch {
-        // fallthrough
-      }
-    }
-
-    return { subQueries: [], reasoning: "JSON 解析失败" }
   }
+  return { subQueries: [], reasoning: "JSON 解析失败" }
 }

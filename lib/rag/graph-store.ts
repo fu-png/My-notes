@@ -306,23 +306,25 @@ export function expandWithGraph(
     adjacency.get(relation.target)!.push({ target: relation.source, weight: relation.weight })
   }
 
-  // 1. 从初始检索结果中提取实体
+  // 1. 从初始检索结果中提取实体（通过图谱反向索引查找，而非重新抽取）
+  // 优化：不再对每个 chunk 调用 extractEntities（该工作已在索引时完成），
+  // 而是通过文件名匹配图谱中的实体，避免查询时重复运行正则抽取
   const queryEntities = new Set<string>()
   const foundEntityNames: { name: string; type: string; documents: string[] }[] = []
 
-  for (const result of initialResults) {
-    const entities = extractEntities(result.chunk.content)
-    for (const name of entities) {
-      const normalized = name.toLowerCase().trim()
-      const entity = graph.entities.get(normalized)
-      if (entity) {
-        queryEntities.add(normalized)
-        foundEntityNames.push({
-          name: entity.name,
-          type: entity.type,
-          documents: entity.documents,
-        })
-      }
+  // 收集初始结果涉及的文件名
+  const initialFilenames = new Set(initialResults.map((r) => r.chunk.filename))
+
+  // 遍历图谱实体，找出与初始结果文件相关的实体
+  for (const [entityId, entity] of graph.entities) {
+    const hasMatchingDoc = entity.documents.some((doc) => initialFilenames.has(doc))
+    if (hasMatchingDoc) {
+      queryEntities.add(entityId)
+      foundEntityNames.push({
+        name: entity.name,
+        type: entity.type,
+        documents: entity.documents,
+      })
     }
   }
 
@@ -375,14 +377,15 @@ export function expandWithGraph(
     (c) => expansionDocuments.has(c.filename) && !existingChunkIds.has(c.id)
   )
 
-  // 5. 限制扩展数量，优先选择与查询实体相关的 chunk
+  // 5. 限制扩展数量，通过图谱反向索引匹配实体（而非重新抽取）
   const scoredExpansions = expansionChunks.map((chunk) => {
-    const chunkEntities = extractEntities(chunk.content)
+    // 通过文件名查找相关实体，而非对每个 chunk 重新运行正则抽取
     let score = 0
-    for (const name of chunkEntities) {
-      const normalized = name.toLowerCase().trim()
-      if (queryEntities.has(normalized)) score += 0.3
-      if (neighborEntities.has(normalized)) score += 0.15
+    for (const [entityId, entity] of graph.entities) {
+      if (entity.documents.includes(chunk.filename)) {
+        if (queryEntities.has(entityId)) score += 0.3
+        if (neighborEntities.has(entityId)) score += 0.15
+      }
     }
     return { chunk, score }
   })

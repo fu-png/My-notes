@@ -7,6 +7,7 @@
 
 import type { SearchResult, AssembledContext, ContextSource } from "./types"
 import { estimateTokens } from "./chunker"
+import { tokenizeToSet } from "./tokenizer"
 
 const DEFAULT_MAX_TOKENS = 12000
 
@@ -158,23 +159,7 @@ function removeNearDuplicates(
 ): SearchResult[] {
   if (results.length <= 1) return results
 
-  // 将文本转为词集（支持中英文混合分词）
-  const tokenize = (text: string): Set<string> => {
-    const tokens = new Set<string>()
-    // 英文词
-    const enMatches = text.match(/[a-zA-Z0-9_]+/g)
-    if (enMatches) enMatches.forEach((t) => tokens.add(t.toLowerCase()))
-    // 中文 bigram
-    const cjkMatches = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]+/g)
-    if (cjkMatches) {
-      for (const seg of cjkMatches) {
-        for (let i = 0; i < seg.length - 1; i++) {
-          tokens.add(seg[i] + seg[i + 1])
-        }
-      }
-    }
-    return tokens
-  }
+  // 将文本转为词集（使用统一分词器，确保与 BM25 索引一致）
 
   const jaccard = (a: Set<string>, b: Set<string>): number => {
     if (a.size === 0 && b.size === 0) return 1
@@ -189,15 +174,18 @@ function removeNearDuplicates(
   const keptTokenSets: Set<string>[] = []
 
   for (const result of results) {
-    const tokens = tokenize(result.chunk.content)
+    const tokens = tokenizeToSet(result.chunk.content)
     let isDuplicate = false
 
-    for (const existing of keptTokenSets) {
+    for (let ki = 0; ki < keptTokenSets.length; ki++) {
+      const existing = keptTokenSets[ki]
       if (jaccard(tokens, existing) > threshold) {
         isDuplicate = true
         break
       }
     }
+    // 早退出优化：当已保留的块超过 30 个时，停止检查（O(n^2) → 有界）
+    if (kept.length >= 30) break
 
     if (!isDuplicate) {
       kept.push(result)

@@ -16,6 +16,7 @@
  */
 
 import type { RAGConfig, SearchResult } from "./types"
+import { parseRobustJSON } from "./json-parser"
 
 const MAX_CANDIDATES = 30 // 最多送入 reranker 的候选数（扩大候选池，避免相关片段过早被截断）
 const MIN_RELEVANCE = 0.1 // 专用 rerank API 打分（0-1）低于此值的结果将被过滤
@@ -223,51 +224,15 @@ export async function rerankResults(
   return [...finalResults, ...remaining]
 }
 
-/** 解析 LLM 返回的 JSON 分数（仅用于 chat-model 降级路径） */
+/** 解析 LLM 返回的 JSON 分数（仅用于 chat-model 降级路径，使用统一鲁棒 JSON 解析器） */
 function parseRerankResponse(content: string): RerankResult[] {
-  // 尝试直接解析
-  try {
-    const parsed = JSON.parse(content)
-    if (Array.isArray(parsed.scores)) {
-      return parsed.scores.map((s: { id: string; score: number }) => ({
-        id: String(s.id),
-        score: Number(s.score),
-      }))
-    }
-  } catch {
-    // fallthrough
-  }
-
-  // 尝试从 markdown 代码块提取
-  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1].trim())
-      if (Array.isArray(parsed.scores)) {
-        return parsed.scores.map((s: { id: string; score: number }) => ({
-          id: String(s.id),
-          score: Number(s.score),
-        }))
-      }
-    } catch {
-      // fallthrough
-    }
-  }
-
-  // 尝试从花括号提取
-  const braceMatch = content.match(/\{[\s\S]*\}/)
-  if (braceMatch) {
-    try {
-      const parsed = JSON.parse(braceMatch[0])
-      if (Array.isArray(parsed.scores)) {
-        return parsed.scores.map((s: { id: string; score: number }) => ({
-          id: String(s.id),
-          score: Number(s.score),
-        }))
-      }
-    } catch {
-      // fallthrough
-    }
+  // 使用统一的鲁棒 JSON 解析器（3 级降级：直接解析 → markdown 代码块 → 花括号提取）
+  const parsed = parseRobustJSON(content) as Record<string, unknown> | null
+  if (parsed && typeof parsed === "object" && Array.isArray(parsed.scores)) {
+    return parsed.scores.map((s: { id: string; score: number }) => ({
+      id: String(s.id),
+      score: Number(s.score),
+    }))
   }
 
   // 最后手段：用正则从损坏的 JSON 文本中抢救 "id": "xxx" ... "score": n 键值对

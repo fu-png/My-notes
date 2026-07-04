@@ -12,6 +12,16 @@
 
 import type { RAGConfig } from "./types"
 
+/** 简单哈希函数（FNV-1a 变体），用于缓存键生成，避免将完整文本作为 Map key */
+function simpleHash(str: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(36)
+}
+
 const MAX_RETRIES = 3
 const RETRY_DELAY_MS = 1000
 const RATE_LIMIT_RETRY_DELAY_MS = 3000 // 429 限流专用退避基数（比普通 5xx 更保守）
@@ -34,7 +44,8 @@ export async function embed(
   text: string,
   config: RAGConfig
 ): Promise<number[]> {
-  const cacheKey = `${config.embeddingModel || "default"}:${text}`
+  // 使用哈希代替完整文本作为缓存键，减少内存占用和 Map lookup 开销
+  const cacheKey = `${config.embeddingModel || "default"}:${simpleHash(text)}`
   const cached = embeddingCache.get(cacheKey)
   if (cached && Date.now() - cached.cachedAt < EMBEDDING_CACHE_TTL_MS) {
     // LRU 策略：命中时移到末尾（Map 保持插入顺序，末尾为最近使用）

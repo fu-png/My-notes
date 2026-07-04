@@ -18,43 +18,9 @@ import { readFile, writeFile as storageWrite, deleteFile as storageDelete } from
 const bm25Cache = new Map<string, { index: MiniSearch<MiniSearchDoc>; loadedAt: number }>()
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 分钟
 
-// ─── 中英文混合分词器 ───
+// ─── 中英文混合分词器（统一实现） ───
 
-const CJK_RANGE = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/g
-const NON_CJK_WORD = /[a-zA-Z0-9_]+/g
-
-/**
- * 混合分词：
- * 1. 提取所有英文/数字词
- * 2. 对中文连续区间做 bigram（2 字滑窗） + unigram
- * 3. 合并为 token 列表
- */
-function cjkTokenize(text: string): string[] {
-  const tokens: string[] = []
-
-  // 提取英文词
-  let match: RegExpExecArray | null
-  NON_CJK_WORD.lastIndex = 0
-  while ((match = NON_CJK_WORD.exec(text)) !== null) {
-    tokens.push(match[0].toLowerCase())
-  }
-
-  // 提取中文 bigram + unigram
-  CJK_RANGE.lastIndex = 0
-  while ((match = CJK_RANGE.exec(text)) !== null) {
-    const chars = match[0]
-    // unigram
-    for (const ch of chars) {
-      tokens.push(ch)
-    }
-    // bigram
-    for (let i = 0; i < chars.length - 1; i++) {
-      tokens.push(chars[i] + chars[i + 1])
-    }
-  }
-
-  return tokens
-}
+import { tokenize as cjkTokenize } from "./tokenizer"
 
 // MiniSearch 配置
 const MINISEARCH_OPTIONS = {
