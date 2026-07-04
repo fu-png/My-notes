@@ -123,8 +123,11 @@ async function embedBatchWithRetry(
   texts: string[],
   config: RAGConfig
 ): Promise<number[][]> {
-  // 直接使用用户填入的完整 API 地址，不做任何拼接
-  const url = (config.embeddingApiBase || config.apiBase).replace(/\/+$/, "")
+  // 与 chat API（apiBase + /chat/completions）保持一致的拼接逻辑
+  const baseUrl = (config.embeddingApiBase || config.apiBase).replace(/\/+$/, "")
+  // 如果用户已经填了完整的 embedding 端点（以 /embeddings 结尾），直接用；
+  // 否则自动拼接 /embeddings，与 OpenAI 兼容 API 的标准路径一致
+  const url = baseUrl.endsWith("/embeddings") ? baseUrl : `${baseUrl}/embeddings`
   const model = config.embeddingModel || "text-embedding-3-small"
   const embApiKey = config.embeddingApiKey || config.apiKey
 

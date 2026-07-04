@@ -342,7 +342,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
           const CONCURRENCY = 10
           const results: (string | null)[] = new Array(dialogue.length).fill(null)
           let completedCount = 0
-          let hardFailure: string | null = null
+
+          // 单段 TTS 请求超时时间：并发场景下部分供应商可能对某个请求"挂住"不返回，
+          // 必须设置超时，否则 Promise.all 会永远不 resolve，导致前端一直转圈。
+          const TTS_TIMEOUT_MS = 60000
 
           const synthesizeLine = async (i: number) => {
             const line = dialogue[i]
@@ -372,11 +375,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
                     voice: line.speaker === "host" ? hostVoice : expertVoice,
                   },
                 }),
+                signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
               })
 
               if (!ttsRes.ok) {
                 const errText = await ttsRes.text().catch(() => "")
-                hardFailure = `TTS API 调用失败 (${ttsRes.status}): ${errText.slice(0, 200)}`
+                // 单段失败（含 429/5xx 限流）只跳过该段，不终止整批，
+                // 避免因个别请求偶发失败导致所有已合成的语音全部作废。
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `第 ${i + 1} 段合成失败 (${ttsRes.status})，跳过: ${errText.slice(0, 100)}` })}\n\n`))
                 return
               }
 
@@ -392,9 +398,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
               const stored = await writeFile(AUDIO_CHUNK_PATH(projectId, i), audioBuffer, { contentType: "audio/mpeg" })
               // OSS SDK 返回 http:// URL，但 Vercel HTTPS 页面会因 Mixed Content 阻止加载，需强制 HTTPS
               results[i] = stored.url.replace(/^http:\/\//, "https://")
-            } catch {
-              // 单段失败不中断
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `第 ${i + 1} 段合成失败，跳过` })}\n\n`))
+            } catch (err) {
+              // 超时或网络错误：单段失败不中断整体流程
+              const isTimeout = err instanceof Error && err.name === "TimeoutError"
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `第 ${i + 1} 段${isTimeout ? "合成超时" : "合成失败"}，跳过` })}\n\n`))
             } finally {
               completedCount++
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `合成语音 (${completedCount}/${dialogue.length})...`, current: completedCount, total: dialogue.length })}\n\n`))
@@ -404,30 +411,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
           // 简单的并发池：同时最多跑 CONCURRENCY 个任务
           let nextIndex = 0
           const worker = async () => {
-            while (nextIndex < dialogue.length && !hardFailure) {
+            while (nextIndex < dialogue.length) {
               const current = nextIndex++
               await synthesizeLine(current)
             }
           }
           await Promise.all(Array.from({ length: Math.min(CONCURRENCY, dialogue.length) }, () => worker()))
 
-          if (hardFailure) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_unavailable", message: hardFailure })}\n\n`))
+          const chunkUrls: string[] = results.filter((url): url is string => url !== null)
+
+          if (chunkUrls.length === 0) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_unavailable", message: "所有语音段合成均失败，请检查 TTS API 配置" })}\n\n`))
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false, script: dialogue })}\n\n`))
             return
           }
 
-          const chunkUrls: string[] = results.filter((url): url is string => url !== null)
-
           // Step 3: 写入清单文件（JSON，极小，秒传）
-          if (chunkUrls.length > 0) {
-            const manifest = { chunks: chunkUrls, createdAt: new Date().toISOString() }
-            await writeFile(AUDIO_MANIFEST_PATH(projectId), JSON.stringify(manifest), { contentType: "application/json" })
+          const manifest = { chunks: chunkUrls, createdAt: new Date().toISOString() }
+          await writeFile(AUDIO_MANIFEST_PATH(projectId), JSON.stringify(manifest), { contentType: "application/json" })
 
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: true, manifest, script: dialogue })}\n\n`))
-          } else {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false, script: dialogue })}\n\n`))
-          }
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: true, manifest, script: dialogue })}\n\n`))
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : "未知错误"
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`))
