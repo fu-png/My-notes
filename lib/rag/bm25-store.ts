@@ -131,6 +131,18 @@ export async function searchByBm25(
   return mapped
 }
 
+/**
+ * 增量重建 BM25 索引：用合并后的全量 chunks 重建
+ * MiniSearch 的 remove() 需要完整字段值匹配，不如直接重建可靠
+ * BM25 构建是纯 CPU 操作（无 API 调用），几百个 chunks 不到 0.1 秒
+ */
+export async function rebuildBm25Index(
+  projectId: string,
+  allChunks: Chunk[]
+): Promise<void> {
+  return createBm25Index(projectId, allChunks)
+}
+
 /** 删除 BM25 索引 */
 export async function deleteBm25Index(projectId: string): Promise<void> {
   await storageDelete(getBm25Path(projectId))

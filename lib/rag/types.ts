@@ -79,6 +79,14 @@ export interface ContextSource {
   score: number
 }
 
+/** 单个文件的指纹信息，用于增量索引的变更检测 */
+export interface FileFingerprint {
+  /** 文件内容的 hash（MD5 hex） */
+  contentHash: string
+  /** 文件大小（字节） */
+  size: number
+}
+
 /** 项目索引状态 */
 export interface IndexStatus {
   /** 是否已建立索引 */
@@ -89,4 +97,6 @@ export interface IndexStatus {
   totalChunks?: number
   /** 上次索引时间 */
   lastIndexedAt?: string | null
+  /** 各文件的指纹快照，用于增量索引时比对变更（filename → fingerprint） */
+  fileManifest?: Record<string, FileFingerprint>
 }

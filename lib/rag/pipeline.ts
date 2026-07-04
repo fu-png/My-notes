@@ -8,23 +8,38 @@
 
 import { chunkDocuments } from "./chunker"
 import { embedBatch } from "./embedding"
-import { addChunks, searchByVector, deleteIndex, loadChunksData } from "./vector-store"
-import { createBm25Index, searchByBm25 } from "./bm25-store"
+import { addChunks, searchByVector, deleteIndex, loadChunksData, updateChunksByFiles } from "./vector-store"
+import { createBm25Index, searchByBm25, rebuildBm25Index } from "./bm25-store"
 import { decomposeQuery } from "./query-decomposer"
 import { buildContext } from "./context-builder"
 import { rerankResults } from "./reranker"
 import { buildRAGSystemPrompt, buildPlainSystemPrompt } from "./prompts"
 import { buildKnowledgeGraph, saveKnowledgeGraph, loadKnowledgeGraph, expandWithGraph } from "./graph-store"
-import type { RAGConfig, AssembledContext, IndexStatus, SearchResult } from "./types"
+import type { RAGConfig, AssembledContext, IndexStatus, FileFingerprint, SearchResult } from "./types"
 import { readFile, listFiles, writeFile as storageWrite } from "../storage"
 
 // 索引并发锁：防止同一项目的多个索引请求同时执行
 const indexingLocks = new Map<string, Promise<void>>()
 
+/** 计算文件内容的简单 hash（用于增量索引的变更检测） */
+function simpleHash(content: string): string {
+  let hash = 0
+  for (let i = 0; i < content.length; i++) {
+    const chr = content.charCodeAt(i)
+    hash = ((hash << 5) - hash) + chr
+    hash |= 0 // 转为 32 位整数
+  }
+  return hash.toString(36)
+}
+
 /**
- * 索引整个项目
+ * 索引整个项目（支持增量索引）
  *
- * 流程：读取所有 Markdown 文件 → 分块 → Embedding → 存入 Vectra + BM25
+ * 增量逻辑：
+ * 1. 计算每个文件的内容 hash，与上次索引时的 fileManifest 对比
+ * 2. 如果没有任何文件变更 → 跳过索引，返回现有统计
+ * 3. 如果有变更 → 只对变更文件重新分块和 embedding，未变更文件复用旧数据
+ * 4. 首次索引或旧索引无 fileManifest → 全量重建
  */
 export async function ingestProject(
   projectId: string,
@@ -62,12 +77,11 @@ export async function ingestProject(
 
   log(`找到 ${mdFiles.length} 个文件`)
 
-  // 2. 并行读取所有文件内容（提速：从串行 N 次 I/O 改为并行）
+  // 2. 并行读取所有文件内容
   const fileReadResults = await Promise.all(
     mdFiles.map(async (file) => {
       const content = await readFile(file.pathname)
       if (content && content.trim().length > 0) {
-        // 使用相对路径作为 filename（包含子目录路径）
         const filename = file.pathname.slice(projectPrefix.length)
         return {
           filename,
@@ -84,57 +98,147 @@ export async function ingestProject(
 
   log(`读取了 ${documents.length} 个文件的内容`)
 
-  // 3. 分块
+  // 3. 计算当前文件指纹，与旧索引对比确定变更集
+  const currentManifest: Record<string, FileFingerprint> = {}
+  for (const doc of documents) {
+    currentManifest[doc.filename] = {
+      contentHash: simpleHash(doc.content),
+      size: doc.content.length,
+    }
+  }
+
+  const oldStatus = await getIndexStatus(projectId)
+  const oldManifest = oldStatus?.fileManifest || {}
+  const currentFilenames = new Set(documents.map((d) => d.filename))
+  const oldFilenames = new Set(Object.keys(oldManifest))
+
+  // 计算变更集：新增 / 修改 / 删除
+  const added: string[] = []
+  const modified: string[] = []
+  const deleted: string[] = []
+
+  for (const fn of currentFilenames) {
+    if (!oldManifest[fn]) {
+      added.push(fn)
+    } else if (oldManifest[fn].contentHash !== currentManifest[fn].contentHash) {
+      modified.push(fn)
+    }
+  }
+  for (const fn of oldFilenames) {
+    if (!currentFilenames.has(fn)) {
+      deleted.push(fn)
+    }
+  }
+
+  const changedFiles = new Set([...added, ...modified, ...deleted])
+  const isIncremental = oldStatus?.indexed && Object.keys(oldManifest).length > 0 && changedFiles.size > 0
+  const noChanges = oldStatus?.indexed && Object.keys(oldManifest).length > 0 && changedFiles.size === 0
+
+  // 没有任何文件变更 → 跳过索引
+  if (noChanges) {
+    log("文件无变更，跳过索引")
+    return { totalChunks: oldStatus!.totalChunks || 0, totalFiles: oldStatus!.totalFiles || 0 }
+  }
+
+  if (isIncremental) {
+    log(`增量索引：${added.length} 新增，${modified.length} 修改，${deleted.length} 删除`)
+  }
+
+  // 4. 分块（增量时只对变更文件分块）
   log("正在分块...")
-  const chunks = chunkDocuments(documents)
-  log(`生成了 ${chunks.length} 个文本块`)
+  const docsToChunk = isIncremental
+    ? documents.filter((d) => added.includes(d.filename) || modified.includes(d.filename))
+    : documents
+  const newChunks = chunkDocuments(docsToChunk)
+  log(`生成了 ${newChunks.length} 个文本块${isIncremental ? "（增量）" : ""}`)
 
-  if (chunks.length === 0) {
-    return { totalChunks: 0, totalFiles: documents.length }
-  }
-
-  // 4. Embedding
-  // [修复] 即使 embedding 失败也继续创建 BM25 索引，确保 RAG 至少有全文检索兜底
-  log("正在生成 Embedding...")
-  const contents = chunks.map((c) => c.content)
-  let embeddings: number[][] = []
+  // 5. Embedding（只对新分块的 chunks 生成 embedding）
+  let newEmbeddings: number[][] = []
   let embeddingFailed = false
-  try {
-    let lastReportedPercent = -1
-    embeddings = await embedBatch(contents, config, (done, total) => {
-      const percent = Math.floor((done / total) * 100)
-      if (percent >= lastReportedPercent + 20 || done === total) {
-        lastReportedPercent = percent
-        log(`Embedding 进度：${done}/${total}（${percent}%）`)
-      }
-    })
-    log(`生成了 ${embeddings.length} 个 Embedding 向量`)
-  } catch (err) {
-    console.error("[pipeline] Embedding 整体失败，仅创建 BM25 索引:", err)
-    log("Embedding 失败，将仅使用全文搜索（BM25）")
-    embeddingFailed = true
+  if (newChunks.length > 0) {
+    log("正在生成 Embedding...")
+    const contents = newChunks.map((c) => c.content)
+    try {
+      let lastReportedPercent = -1
+      newEmbeddings = await embedBatch(contents, config, (done, total) => {
+        const percent = Math.floor((done / total) * 100)
+        if (percent >= lastReportedPercent + 20 || done === total) {
+          lastReportedPercent = percent
+          log(`Embedding 进度：${done}/${total}（${percent}%）`)
+        }
+      })
+      log(`生成了 ${newEmbeddings.length} 个 Embedding 向量`)
+    } catch (err) {
+      console.error("[pipeline] Embedding 整体失败，仅创建 BM25 索引:", err)
+      log("Embedding 失败，将仅使用全文搜索（BM25）")
+      embeddingFailed = true
+    }
   }
 
-  // 5. 清空旧索引 + 存入新索引 + 保存状态（核心路径并行，知识图谱后台异步不阻塞）
+  // 6. 存入索引
   log("正在存入索引...")
-  await deleteIndex(projectId)
   const indexPromises: Promise<void>[] = []
-  if (!embeddingFailed && embeddings.length > 0) {
-    indexPromises.push(addChunks(projectId, chunks, embeddings))
-  }
-  indexPromises.push(createBm25Index(projectId, chunks))
-  indexPromises.push(saveIndexStatus(projectId, {
-    indexed: true,
-    lastIndexedAt: new Date().toISOString(),
-    totalChunks: chunks.length,
-    totalFiles: documents.length,
-  }))
-  await Promise.all(indexPromises)
 
-  // 知识图谱：后台异步构建，不阻塞索引完成（CPU 密集型，2000+ 实体需要 1-2 秒）
+  if (isIncremental) {
+    // 增量模式：局部更新向量存储
+    if (!embeddingFailed && newEmbeddings.length > 0) {
+      indexPromises.push(updateChunksByFiles(projectId, changedFiles, newChunks, newEmbeddings))
+    } else if (deleted.length > 0) {
+      // 即使 embedding 失败，也要删除已删除文件的旧 chunks
+      indexPromises.push(updateChunksByFiles(projectId, new Set(deleted), [], []))
+    }
+  } else {
+    // 全量模式：清空旧索引 + 整体写入
+    await deleteIndex(projectId)
+    if (!embeddingFailed && newEmbeddings.length > 0) {
+      indexPromises.push(addChunks(projectId, newChunks, newEmbeddings))
+    }
+  }
+
+  // BM25 索引：用合并后的全量 chunks 重建（CPU 操作，毫秒级）
+  // 增量模式下需要先拿到合并后的完整 chunks 列表
+  const bm25Promise = (async () => {
+    if (isIncremental) {
+      // 等向量存储更新完成后，从中获取合并后的全量 chunks
+      await Promise.all(indexPromises)
+      const allChunks = await loadChunksData(projectId)
+      await rebuildBm25Index(projectId, allChunks)
+    } else {
+      await createBm25Index(projectId, newChunks)
+    }
+  })()
+
+  // 保存索引状态（含文件指纹快照）
+  const statusPromise = (async () => {
+    // 增量模式下需要等向量存储完成才能获取准确的 totalChunks
+    if (isIncremental) {
+      await Promise.all(indexPromises)
+      const allChunks = await loadChunksData(projectId)
+      await saveIndexStatus(projectId, {
+        indexed: true,
+        lastIndexedAt: new Date().toISOString(),
+        totalChunks: allChunks.length,
+        totalFiles: documents.length,
+        fileManifest: currentManifest,
+      })
+    } else {
+      await saveIndexStatus(projectId, {
+        indexed: true,
+        lastIndexedAt: new Date().toISOString(),
+        totalChunks: newChunks.length,
+        totalFiles: documents.length,
+        fileManifest: currentManifest,
+      })
+    }
+  })()
+
+  await Promise.all([...indexPromises, bm25Promise, statusPromise])
+
+  // 知识图谱：后台异步构建，不阻塞索引完成
   ;(async () => {
     try {
-      const graph = buildKnowledgeGraph(chunks)
+      const allChunks = await loadChunksData(projectId)
+      const graph = buildKnowledgeGraph(allChunks)
       await saveKnowledgeGraph(projectId, graph)
       console.debug(`[pipeline] 知识图谱构建完成：${graph.entities.size} 实体，${graph.relations.length} 关系`)
     } catch (err) {
@@ -142,8 +246,11 @@ export async function ingestProject(
     }
   })()
 
-  log(`索引完成：${documents.length} 个文件，${chunks.length} 个文本块`)
-  return { totalChunks: chunks.length, totalFiles: documents.length }
+  const finalChunkCount = isIncremental
+    ? (await loadChunksData(projectId)).length
+    : newChunks.length
+  log(`索引完成：${documents.length} 个文件，${finalChunkCount} 个文本块`)
+  return { totalChunks: finalChunkCount, totalFiles: documents.length }
   } finally {
     resolveLock!()
     indexingLocks.delete(projectId)

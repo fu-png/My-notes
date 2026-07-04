@@ -106,6 +106,42 @@ export async function addChunks(
   await saveVectorStore(projectId, { chunks, vectors })
 }
 
+/**
+ * 增量更新向量存储：删除指定文件的旧 chunks，追加新 chunks
+ * 先加载现有数据 → 过滤掉变更文件 → 合并新数据 → 一次性写回
+ * 保证原子性：不会出现删了旧的但新的没写入的中间状态
+ */
+export async function updateChunksByFiles(
+  projectId: string,
+  changedFilenames: Set<string>,
+  newChunks: Chunk[],
+  newVectors: number[][]
+): Promise<void> {
+  if (newChunks.length !== newVectors.length) {
+    throw new Error("newChunks and newVectors must have the same length")
+  }
+
+  const existing = await loadVectorStore(projectId)
+
+  // 保留未变更文件的 chunks 和 vectors
+  let keptChunks: Chunk[] = []
+  let keptVectors: number[][] = []
+  if (existing) {
+    for (let i = 0; i < existing.chunks.length; i++) {
+      if (!changedFilenames.has(existing.chunks[i].filename)) {
+        keptChunks.push(existing.chunks[i])
+        keptVectors.push(existing.vectors[i])
+      }
+    }
+  }
+
+  // 合并：保留的 + 新增的
+  const mergedChunks = [...keptChunks, ...newChunks]
+  const mergedVectors = [...keptVectors, ...newVectors]
+
+  await saveVectorStore(projectId, { chunks: mergedChunks, vectors: mergedVectors })
+}
+
 /** 向量相似度搜索：暴力计算全部向量的余弦相似度，取 TopK */
 export async function searchByVector(
   projectId: string,
