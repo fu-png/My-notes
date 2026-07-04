@@ -382,21 +382,10 @@ export const ChatPanel = React.memo(function ChatPanel({
                 </p>
               </div>
 
-              {/* RAG index status hint */}
-              {files.length > 0 && !indexStatus?.indexed && !indexing && (
-                <div className="mb-3 flex items-center justify-between rounded-md border border-amber-500/20 bg-amber-50/50 px-3 py-2 dark:bg-amber-950/20">
-                  <div className="flex min-w-0 items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
-                    <IconAlertCircle className="size-3.5 shrink-0" />
-                    <span className="truncate">未建立知识索引，AI 仅基于当前文件回答</span>
-                  </div>
-                  <button
-                    onClick={onBuildIndex}
-                    className="shrink-0 text-[11px] font-medium text-amber-700 underline-offset-2 hover:underline dark:text-amber-400"
-                  >
-                    建索引
-                  </button>
-                </div>
-              )}
+              {/* RAG index status hint — 仅在 API 已配置且索引正在构建时显示进度，其他情况隐藏：
+                   - 未配置 API：不显示（用户无法建索引）
+                   - 已配置但未建索引：不显示（自动索引会在后台处理）
+                   - 已建索引：不显示 */}
               {indexing && (
                 <div className="mb-3 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-primary/80" role="status" aria-live="polite">
                   <IconLoader2 className="size-3.5 shrink-0 animate-spin" />
@@ -707,32 +696,36 @@ export const ChatPanel = React.memo(function ChatPanel({
           />
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-1.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-1">
-                    <IconBrain className={`size-3 ${deepThinkMode ? "text-primary" : "text-muted-foreground/70"}`} />
-                    <Switch
-                      size="sm"
-                      checked={deepThinkMode}
-                      onCheckedChange={onToggleDeepThink}
-                    />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  {deepThinkMode ? "深度思考已开启，点击关闭" : "开启深度思考模式"}
-                </TooltipContent>
-              </Tooltip>
-              <span className="ml-2 text-[11px] text-muted-foreground/70">
-                {providerList.length > 1 ? (
-                  <ModelSwitcher
-                    model={chatModel}
-                    providers={providerList}
-                    onSwitch={onSwitchProvider}
-                  />
-                ) : (
-                  <>{chatModel}{ragEnabled && indexStatus?.indexed ? " · RAG" : ""}</>
-                )}
-              </span>
+              {aiConfigured && (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-1">
+                        <IconBrain className={`size-3 ${deepThinkMode ? "text-primary" : "text-muted-foreground/70"}`} />
+                        <Switch
+                          size="sm"
+                          checked={deepThinkMode}
+                          onCheckedChange={onToggleDeepThink}
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {deepThinkMode ? "深度思考已开启，点击关闭" : "开启深度思考模式"}
+                    </TooltipContent>
+                  </Tooltip>
+                  <span className="ml-2 text-[11px] text-muted-foreground/70">
+                    {providerList.length > 1 ? (
+                      <ModelSwitcher
+                        model={chatModel}
+                        providers={providerList}
+                        onSwitch={onSwitchProvider}
+                      />
+                    ) : (
+                      <>{chatModel}{ragEnabled && indexStatus?.indexed ? " · RAG" : ""}</>
+                    )}
+                  </span>
+                </>
+              )}
             </div>
             {chatLoading || generating ? (
               <button

@@ -8,10 +8,7 @@ import {
   IconLoader2,
   IconChevronLeft,
   IconDotsVertical,
-  IconFileText,
   IconFolder,
-  IconSearch,
-  IconX,
 } from "@tabler/icons-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
@@ -26,7 +23,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
-import { formatRelativeTime } from "@/lib/utils"
 import type { DocFile } from "./types"
 import { getFileIcon } from "./types"
 
@@ -213,14 +209,7 @@ const FileItem = React.memo(function FileItem({
         className="flex min-w-0 flex-1 items-center gap-2"
       >
         {getFileIcon(file.filename)}
-        <div className="flex min-w-0 flex-col text-left">
-          <span className="truncate">{file.title}</span>
-          {file.lastModified ? (
-            <p className="text-[10px] text-muted-foreground">
-              {formatRelativeTime(file.lastModified)}
-            </p>
-          ) : null}
-        </div>
+        <span className="truncate">{file.title}</span>
       </button>
       <div className="ml-1 w-0 shrink-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:w-6 group-hover:opacity-100">
         <DropdownMenu>
@@ -264,7 +253,6 @@ export interface FileExplorerProps {
   isDragging: boolean
   deleting: string | null
   fileInputRef: React.RefObject<HTMLInputElement | null>
-  recentFiles?: string[]
   onBack: () => void
   onSelectFile: (filename: string) => void
   onDeleteRequest: (filename: string) => void
@@ -285,7 +273,6 @@ export const FileExplorer = React.memo(function FileExplorer({
   isDragging,
   deleting,
   fileInputRef,
-  recentFiles,
   onBack,
   onSelectFile,
   onDeleteRequest,
@@ -297,34 +284,7 @@ export const FileExplorer = React.memo(function FileExplorer({
   onDrop,
 }: FileExplorerProps) {
   const [expandedDirs, setExpandedDirs] = React.useState<Set<string>>(() => new Set())
-  const [searchQuery, setSearchQuery] = React.useState("")
-
-  const filteredFiles = React.useMemo(() => {
-    if (!searchQuery.trim()) return files
-    const q = searchQuery.trim().toLowerCase()
-    return files.filter(
-      (f) =>
-        f.title.toLowerCase().includes(q) ||
-        f.filename.toLowerCase().includes(q)
-    )
-  }, [files, searchQuery])
-
-  const tree = React.useMemo(() => buildFileTree(filteredFiles), [filteredFiles])
-  const isSearching = searchQuery.trim().length > 0
-
-  // When searching, auto-expand all directories so matching files in subdirs are visible
-  const allDirPaths = React.useMemo(() => {
-    if (!isSearching) return new Set<string>()
-    const paths = new Set<string>()
-    function collect(node: TreeNode) {
-      if (node.isDir && node.path) {
-        paths.add(node.path)
-        node.children.forEach(collect)
-      }
-    }
-    tree.children.forEach(collect)
-    return paths
-  }, [isSearching, tree])
+  const tree = React.useMemo(() => buildFileTree(files), [files])
 
   const toggleDir = React.useCallback((path: string) => {
     setExpandedDirs((prev) => {
@@ -430,32 +390,6 @@ export const FileExplorer = React.memo(function FileExplorer({
         </div>
       </div>
 
-      {/* Quick search */}
-      {!loadingFiles && files.length > 3 && (
-        <div className="border-b px-2.5 py-1.5">
-          <div className="relative">
-            <IconSearch className="absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/50" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索文件..."
-              aria-label="搜索文件"
-              className="w-full rounded-none border-none bg-muted/50 py-1 pl-7 pr-6 text-[12px] outline-none placeholder:text-muted-foreground/50 focus:bg-muted"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground"
-                aria-label="清除搜索"
-              >
-                <IconX className="size-3" />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* File list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="py-1" role="tree" aria-label="文件列表" onKeyDown={handleTreeKeyDown}>
@@ -471,11 +405,6 @@ export const FileExplorer = React.memo(function FileExplorer({
                 </div>
               ))}
             </div>
-          ) : isSearching && filteredFiles.length === 0 ? (
-            <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-              <p>未找到匹配的文件</p>
-              <p className="mt-1 text-xs">试试其他关键词</p>
-            </div>
           ) : files.length === 0 ? (
             <div className="px-3 py-12 text-center text-sm text-muted-foreground">
               {isDragging ? (
@@ -489,38 +418,6 @@ export const FileExplorer = React.memo(function FileExplorer({
             </div>
           ) : (
             <>
-            {recentFiles && recentFiles.length > 0 && !isSearching && (
-            <div className="mb-3">
-              <p className="mb-1.5 px-1 text-[11px] font-medium tracking-wider text-muted-foreground/60">
-                最近打开
-              </p>
-              <div className="flex flex-wrap gap-1.5 px-1">
-                {recentFiles.map((filename) => {
-                  const file = files.find((f) => f.filename === filename)
-                  if (!file) return null
-                  return (
-                    <button
-                      key={filename}
-                      onClick={() => onSelectFile(filename)}
-                      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
-                        activeFile === filename
-                          ? "border-primary/30 bg-primary/5 text-primary"
-                          : "border-border bg-background text-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <IconFileText className="size-3 shrink-0 text-muted-foreground" />
-                      <span className="max-w-[120px] truncate">{file.title}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-            {isSearching && (
-              <p className="mb-1 px-3 text-[11px] text-muted-foreground/60">
-                找到 {filteredFiles.length} 个结果
-              </p>
-            )}
             {tree.children.map((node) =>
               node.isDir ? (
                 <DirItem
@@ -529,7 +426,7 @@ export const FileExplorer = React.memo(function FileExplorer({
                   level={0}
                   activeFile={activeFile}
                   deleting={deleting}
-                  expandedDirs={isSearching ? allDirPaths : expandedDirs}
+                  expandedDirs={expandedDirs}
                   onToggleDir={toggleDir}
                   onSelectFile={onSelectFile}
                   onDeleteRequest={onDeleteRequest}
@@ -584,7 +481,6 @@ export interface MobileFileListProps {
   files: DocFile[]
   activeFile: string | null
   deleting: string | null
-  recentFiles?: string[]
   onSelectFile: (filename: string) => void
   onDeleteRequest: (filename: string) => void
 }

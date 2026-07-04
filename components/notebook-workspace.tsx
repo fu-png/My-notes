@@ -132,7 +132,6 @@ const searchParams = useSearchParams()
   )
   const [loadingFiles, setLoadingFiles] = React.useState(!initialFiles)
   const [activeFile, setActiveFile] = React.useState<string | null>(initialFile)
-  const [recentFiles, setRecentFiles] = React.useState<string[]>([])
   const fileCache = useFileCache({ projectId, initialFile, initialContent: initialFileContent })
   const { fileContent, editContent, setEditContent, loadingContent } = fileCache
   const [uploading, setUploading] = React.useState(false)
@@ -730,11 +729,6 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     setEditMode(false)
     setSelectedText("") // 切换文件时清除划词
     fileCache.loadFileContent(filename)
-    // 添加到最近打开列表
-    setRecentFiles((prev) => {
-      const filtered = prev.filter((f) => f !== filename)
-      return [filename, ...filtered].slice(0, 10) // 最多保留10个
-    })
   }, [fileCache, editMode, editContent, fileContent])
 
   React.useEffect(() => {
@@ -894,7 +888,6 @@ queueMicrotask(() => selectFile(target))
           setActiveFile(null)
           setEditMode(false)
         }
-        setRecentFiles((prev) => prev.filter((f) => f !== filename))
         fileCache.invalidate(filename)
         router.refresh()
         triggerAutoIndex()
@@ -1096,7 +1089,6 @@ queueMicrotask(() => selectFile(target))
           isDragging={isDragging}
           deleting={deleting}
           fileInputRef={fileInputRef}
-          recentFiles={recentFiles}
           onBack={() => router.push("/docs/projects")}
           onSelectFile={selectFile}
           onDeleteRequest={(filename: string) => {
@@ -1139,7 +1131,6 @@ queueMicrotask(() => selectFile(target))
                     files={files}
                     activeFile={activeFile}
                     deleting={deleting}
-                    recentFiles={recentFiles}
                     onSelectFile={selectFile}
                     onDeleteRequest={(filename: string) => {
                       deleteTargetRef.current = filename
@@ -1465,10 +1456,6 @@ onPptGuideClick={() => pptFlow.startPptFlow(selectedText ? `基于选中内容�
                   setActiveFile(target)
                   setEditMode(false)
                   fileCache.loadFileContent(target)
-                  setRecentFiles((prev) => {
-                    const filtered = prev.filter((f) => f !== target)
-                    return [target, ...filtered].slice(0, 10)
-                  })
                 }
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
