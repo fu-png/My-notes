@@ -28,11 +28,14 @@ let _ossClient: OSS | null = null
 
 function getOSSClient(): OSS {
   if (!_ossClient) {
+    if (!process.env.OSS_BUCKET) {
+      throw new Error("OSS_BUCKET 环境变量未配置，无法连接对象存储")
+    }
     _ossClient = new OSS({
       region: process.env.OSS_REGION || "oss-cn-beijing",
       accessKeyId: process.env.OSS_ACCESS_KEY_ID!,
       accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET!,
-      bucket: process.env.OSS_BUCKET || "my-notes-fzc",
+      bucket: process.env.OSS_BUCKET,
       timeout: 300000, // 300s — Vercel US → OSS Beijing 跨区域上传音频文件需要足够长的超时
     })
   }
@@ -258,7 +261,7 @@ export async function renameFile(oldPathname: string, newPathname: string): Prom
   if (USE_OSS) {
     try {
       const client = getOSSClient()
-      const bucket = process.env.OSS_BUCKET || "my-notes-fzc"
+      const bucket = process.env.OSS_BUCKET!
       // OSS copy 需要完整的 source key: /bucket/key
       await client.copy(newPathname, `/${bucket}/${oldPathname}`)
       await client.delete(oldPathname)
@@ -603,7 +606,7 @@ function isOSSNotFound(err: unknown): boolean {
 
 /** 生成 OSS 对象的公共访问 URL */
 function getOSSUrl(pathname: string): string {
-  const bucket = process.env.OSS_BUCKET || "my-notes-fzc"
+  const bucket = process.env.OSS_BUCKET!
   const region = process.env.OSS_REGION || "oss-cn-beijing"
   return `https://${bucket}.${region}.aliyuncs.com/${encodeURIComponent(pathname).replace(/%2F/g, "/")}`
 }

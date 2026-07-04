@@ -13,6 +13,7 @@
 import MiniSearch from "minisearch"
 import type { Chunk, SearchResult } from "./types"
 import { readFile, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
+import { loadChunksData } from "./vector-store"
 
 // 内存缓存：避免每次搜索都从存储读取和反序列化
 const bm25Cache = new Map<string, { index: MiniSearch<MiniSearchDoc>; loadedAt: number }>()
@@ -138,6 +139,5 @@ export async function deleteBm25Index(projectId: string): Promise<void> {
 
 // 辅助：从 vector-store 模块加载 chunks 数据
 async function loadChunksForBm25(projectId: string): Promise<Chunk[]> {
-  const { loadChunksData } = await import("./vector-store")
   return loadChunksData(projectId)
 }

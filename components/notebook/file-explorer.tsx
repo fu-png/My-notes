@@ -338,6 +338,45 @@ export const FileExplorer = React.memo(function FileExplorer({
     })
   }, [])
 
+  // 键盘导航：方向键在树节点之间移动
+  const handleTreeKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const treeEl = e.currentTarget
+    const items = Array.from(treeEl.querySelectorAll<HTMLElement>('[role="treeitem"]'))
+    if (items.length === 0) return
+
+    const currentIndex = items.findIndex((el) => el.contains(document.activeElement) || el === document.activeElement)
+
+    switch (e.key) {
+      case "ArrowDown": {
+        e.preventDefault()
+        const next = currentIndex < items.length - 1 ? currentIndex + 1 : 0
+        const btn = items[next].querySelector<HTMLElement>("button")
+        ;(btn || items[next]).focus()
+        break
+      }
+      case "ArrowUp": {
+        e.preventDefault()
+        const prev = currentIndex > 0 ? currentIndex - 1 : items.length - 1
+        const btn = items[prev].querySelector<HTMLElement>("button")
+        ;(btn || items[prev]).focus()
+        break
+      }
+      case "Home": {
+        e.preventDefault()
+        const btn = items[0].querySelector<HTMLElement>("button")
+        ;(btn || items[0]).focus()
+        break
+      }
+      case "End": {
+        e.preventDefault()
+        const last = items[items.length - 1]
+        const btn = last.querySelector<HTMLElement>("button")
+        ;(btn || last).focus()
+        break
+      }
+    }
+  }, [])
+
   return (
     <div
       className={`relative hidden w-60 shrink-0 flex-col overflow-hidden border-r bg-muted/20 md:flex ${isDragging ? "ring-2 ring-inset ring-primary/50" : ""}`}
@@ -419,7 +458,7 @@ export const FileExplorer = React.memo(function FileExplorer({
 
       {/* File list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="py-1" role="tree" aria-label="文件列表">
+        <div className="py-1" role="tree" aria-label="文件列表" onKeyDown={handleTreeKeyDown}>
           {loadingFiles ? (
             <div className="space-y-1 px-3 py-2" role="status" aria-label="正在加载文件列表">
               {Array.from({ length: 6 }).map((_, i) => (

@@ -26,8 +26,18 @@ const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 30
 
+let rateLimitEvictCounter = 0
+
 function checkRateLimit(ip: string): boolean {
   const now = Date.now()
+
+  // 每 50 次调用清理一次过期条目，防止内存无限增长
+  if (++rateLimitEvictCounter % 50 === 0) {
+    for (const [key, val] of rateLimitMap) {
+      if (now > val.resetAt) rateLimitMap.delete(key)
+    }
+  }
+
   const entry = rateLimitMap.get(ip)
   if (!entry || now > entry.resetAt) {
     rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
@@ -156,7 +166,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     console.error("GET /api/search error:", err)
     return NextResponse.json(
-      { results: [], error: String(err) },
+      { results: [], error: "搜索服务暂时不可用" },
       { status: 500 }
     )
   }

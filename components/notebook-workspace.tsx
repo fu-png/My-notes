@@ -331,6 +331,18 @@ loadConversationSummaries(projectId).then(async (summaries) => {
     })
   }, [showAI])
 
+  // 键盘快捷键：Cmd+Shift+R / Ctrl+Shift+R 切换精读模式
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "R") {
+        e.preventDefault()
+        toggleReadingMode()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [toggleReadingMode])
+
   // AI config
   const [aiConfigured, setAiConfigured] = React.useState(() => isAIConfigured())
 
@@ -723,6 +735,15 @@ queueMicrotask(() => selectFile(target))
     const uploadFiles = Array.from(fileList)
     if (uploadFiles.length === 0) return
 
+    // 前端文件大小检查（10MB 限制），避免上传大文件浪费带宽
+    const MAX_FILE_SIZE = 10 * 1024 * 1024
+    const oversized = uploadFiles.filter((f) => f.size > MAX_FILE_SIZE)
+    if (oversized.length > 0) {
+      const names = oversized.map((f) => f.name).join("、")
+      showToast("error", `以下文件超过 10MB 限制：${names}`)
+      return
+    }
+
     setUploading(true)
     try {
       const formData = new FormData()
@@ -768,6 +789,11 @@ queueMicrotask(() => selectFile(target))
       return
     }
     const filename = name.endsWith(".md") ? name : `${name}.md`
+    // 检查是否与现有文件重名
+    if (files.some((f) => f.filename === filename)) {
+      showToast("error", `文件 "${filename}" 已存在`)
+      return
+    }
     const content = `# ${name.replace(/\.md$/, "")}\n\n`
 
     try {
@@ -1292,11 +1318,23 @@ queueMicrotask(() => selectFile(target))
                 >
                   {/* Drag handle */}
                   <div
-                    className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
+                    className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 focus:bg-primary/20 focus:outline-none"
                     onMouseDown={handleReadingResizeStart}
+                    onKeyDown={(e) => {
+                      // 键盘左右箭头调整面板宽度
+                      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                        e.preventDefault()
+                        const delta = e.key === "ArrowLeft" ? -20 : 20
+                        setReadingPanelWidth((prev) => {
+                          const current = typeof prev === "number" ? prev : parseInt(String(prev), 10) || 400
+                          return Math.max(200, Math.min(800, current + delta))
+                        })
+                      }
+                    }}
                     role="separator"
                     aria-orientation="vertical"
-                    aria-label="调整阅读面板宽度"
+                    aria-label="调整阅读面板宽度，使用左右箭头键调整"
+                    aria-valuenow={readingPanelWidth}
                     tabIndex={0}
                   />
                   <ReadingModePanel

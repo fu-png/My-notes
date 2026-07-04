@@ -9,11 +9,13 @@ export async function GET(request: NextRequest) {
 
   // 非生产环境也需要令牌验证（防止未授权访问）
   const debugSecret = process.env.DEBUG_SECRET
-  if (debugSecret) {
-    const token = request.headers.get("x-debug-token")
-    if (token !== debugSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+  if (!debugSecret) {
+    // 未配置 DEBUG_SECRET 时直接拒绝访问
+    return NextResponse.json({ error: "DEBUG_SECRET not configured" }, { status: 403 })
+  }
+  const token = request.headers.get("x-debug-token")
+  if (token !== debugSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   const info = {

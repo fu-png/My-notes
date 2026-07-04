@@ -31,7 +31,7 @@ const MAX_CONCURRENCY = 10 // 同时在途的批次请求数上限
 // 查询 embedding 缓存：避免重复 API 调用（相同文本短时间内返回相同结果）
 const embeddingCache = new Map<string, { vector: number[]; cachedAt: number }>()
 const EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000 // 10 分钟
-const EMBEDDING_CACHE_MAX_SIZE = 100
+const EMBEDDING_CACHE_MAX_SIZE = 500 // 扩大缓存：避免多子查询 pipeline 中的频繁驱逐
 
 interface EmbeddingResponse {
   data: { embedding: number[]; index: number }[]

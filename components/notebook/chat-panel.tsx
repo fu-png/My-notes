@@ -259,11 +259,24 @@ export const ChatPanel = React.memo(function ChatPanel({
     <div ref={aiPanelRef} className="relative hidden shrink-0 flex-col overflow-hidden border-l bg-background md:flex" style={{ width: aiPanelWidth }}>
       {/* Resize handle */}
       <div
-        className="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
+        className="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 focus:bg-primary/20 focus:outline-none"
         onMouseDown={onResizeStart}
+        onKeyDown={(e) => {
+          // 键盘左右箭头触发拖拽调整面板宽度（模拟鼠标事件）
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            e.preventDefault()
+            const syntheticEvent = new MouseEvent("mousedown", { clientX: 0 })
+            onResizeStart(syntheticEvent as unknown as React.MouseEvent)
+            // 模拟拖动：发送 mousemove + mouseup
+            const delta = e.key === "ArrowLeft" ? -20 : 20
+            window.dispatchEvent(new MouseEvent("mousemove", { clientX: delta }))
+            window.dispatchEvent(new MouseEvent("mouseup"))
+          }
+        }}
         role="separator"
         aria-orientation="vertical"
-        aria-label="调整 AI 面板宽度"
+        aria-label="调整 AI 面板宽度，使用左右箭头键调整"
+        aria-valuenow={aiPanelWidth}
         tabIndex={0}
       />
       {/* Chat header */}
@@ -472,8 +485,9 @@ export const ChatPanel = React.memo(function ChatPanel({
                         />
                       )}
                       {!msg.content && !msg.reasoning && chatLoading && !msg.audioMeta ? (
-                        <div className="px-1 py-2">
-                          <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
+                        <div className="px-1 py-2" role="status" aria-label="AI 正在回复">
+                          <IconLoader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+                          <span className="sr-only">AI 正在回复...</span>
                         </div>
                       ) : msg.content ? (
                         <MarkdownRenderer content={msg.content} />
@@ -868,8 +882,8 @@ const SourcesPanel = React.memo(function SourcesPanel({
           </Button>
         </div>
         {sourcesLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+<div className="flex items-center justify-center py-12" role="status" aria-label="正在加载">
+<IconLoader2 className="size-5 animate-spin text-muted-foreground" aria-hidden="true" />
           </div>
         ) : sourcesData ? (
           <>

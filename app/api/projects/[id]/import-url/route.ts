@@ -69,6 +69,12 @@ export async function POST(
       )
     }
 
+    // 限制响应体大小（防止恶意 URL 导致 OOM）
+    const contentLength = parseInt(response.headers.get("content-length") || "0", 10)
+    if (contentLength > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: "页面内容过大（超过 5MB）" }, { status: 400 })
+    }
+
     const contentType = response.headers.get("content-type") || ""
     const html = await response.text()
 

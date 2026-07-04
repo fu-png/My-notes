@@ -28,63 +28,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  STORAGE_KEY_API_KEY,
+  STORAGE_KEY_API_BASE,
+  STORAGE_KEY_MODEL,
+  STORAGE_KEY_PROVIDERS,
+  STORAGE_KEY_ACTIVE_PROVIDER,
+  STORAGE_KEY_TTS_API_KEY,
+  STORAGE_KEY_TTS_API_BASE,
+  STORAGE_KEY_TTS_MODEL,
+  STORAGE_KEY_TTS_VOICE_HOST,
+  STORAGE_KEY_TTS_VOICE_EXPERT,
+  STORAGE_KEY_IMAGE_API_KEY,
+  STORAGE_KEY_IMAGE_API_BASE,
+  STORAGE_KEY_IMAGE_MODEL,
+  STORAGE_KEY_PERSONA,
+  STORAGE_KEY_USER_NAME,
+  DEFAULT_API_BASE,
+  DEFAULT_MODEL,
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_VOICE_HOST,
+  DEFAULT_TTS_VOICE_EXPERT,
+  DEFAULT_IMAGE_API_BASE,
+  DEFAULT_IMAGE_MODEL,
+  PROVIDER_PRESETS as BASE_PROVIDER_PRESETS,
+  TTS_VOICE_OPTIONS,
+} from "@/lib/ai-config"
 
-// ─── Storage Keys ───
-
-const STORAGE_KEY_API_KEY = "ai-assistant-api-key"
-const STORAGE_KEY_API_BASE = "ai-assistant-api-base"
-const STORAGE_KEY_MODEL = "ai-assistant-model"
-const STORAGE_KEY_PROVIDERS = "ai-assistant-providers"
-const STORAGE_KEY_ACTIVE_PROVIDER = "ai-assistant-active-provider"
-
-const STORAGE_KEY_TTS_API_KEY = "ai-tts-api-key"
-const STORAGE_KEY_TTS_API_BASE = "ai-tts-api-base"
-const STORAGE_KEY_TTS_MODEL = "ai-tts-model"
-const STORAGE_KEY_TTS_VOICE_HOST = "ai-tts-voice-host"
-const STORAGE_KEY_TTS_VOICE_EXPERT = "ai-tts-voice-expert"
-
-const STORAGE_KEY_IMAGE_API_KEY = "ai-image-api-key"
-const STORAGE_KEY_IMAGE_API_BASE = "ai-image-api-base"
-const STORAGE_KEY_IMAGE_MODEL = "ai-image-model"
-
-// 用户偏好 / AI Persona
-const STORAGE_KEY_PERSONA = "ai-persona-prompt"
-const STORAGE_KEY_USER_NAME = "ai-user-name"
-
-// ─── Defaults ───
-
-const DEFAULT_API_BASE = "https://api.openai.com/v1"
-const DEFAULT_MODEL = "gpt-4o-mini"
-const DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
-const DEFAULT_TTS_VOICE_HOST = "冰糖"
-const DEFAULT_TTS_VOICE_EXPERT = "苏打"
-const DEFAULT_IMAGE_API_BASE = "https://www.hfsyapi.cn"
-const DEFAULT_IMAGE_MODEL = "gpt-image-2"
-
-// ─── Provider Presets ───
-
+// 本地补充 MiMo 服务商预设（ai-config 中未包含）
 const PROVIDER_PRESETS = [
-  { name: "OpenAI", apiBase: "https://api.openai.com/v1", models: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1", "o4-mini"] },
-  { name: "DeepSeek", apiBase: "https://api.deepseek.com", models: ["deepseek-chat", "deepseek-reasoner"] },
-  { name: "硅基流动", apiBase: "https://api.siliconflow.cn/v1", models: ["deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"] },
-  { name: "Moonshot", apiBase: "https://api.moonshot.cn/v1", models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
-  { name: "通义千问", apiBase: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen-plus", "qwen-turbo", "qwen-max"] },
-  { name: "智谱 GLM", apiBase: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-flash", "glm-4-air", "glm-4"] },
+  ...BASE_PROVIDER_PRESETS.slice(0, -1),
   { name: "MiMo", apiBase: "https://api.xiaomimimo.com/v1", models: ["mimo-v2.5-pro", "mimo-v2.5-tts"] },
-  { name: "自定义", apiBase: "", models: [] },
-]
-
-// ─── TTS Voice Options ───
-
-const TTS_VOICE_OPTIONS = [
-  { value: "冰糖", label: "冰糖（中文女声）" },
-  { value: "茉莉", label: "茉莉（中文女声）" },
-  { value: "苏打", label: "苏打（中文男声）" },
-  { value: "白桦", label: "白桦（中文男声）" },
-  { value: "Mia", label: "Mia（英文女声）" },
-  { value: "Chloe", label: "Chloe（英文女声）" },
-  { value: "Milo", label: "Milo（英文男声）" },
-  { value: "Dean", label: "Dean（英文男声）" },
+  BASE_PROVIDER_PRESETS[BASE_PROVIDER_PRESETS.length - 1],
 ]
 
 // ─── Provider Config Type ───
@@ -255,6 +230,52 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     return () => window.removeEventListener("keydown", handler)
   }, [onClose])
 
+  // 焦点捕获：Tab / Shift+Tab 在对话框内循环
+  const dialogRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    // 获取对话框内所有可聚焦元素
+    const getFocusableElements = () => {
+      return dialog.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    }
+
+    // 打开时聚焦第一个可聚焦元素
+    const focusable = getFocusableElements()
+    if (focusable.length > 0) {
+      ;(focusable[0] as HTMLElement).focus()
+    }
+
+    const handleTabKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return
+
+      const elements = getFocusableElements()
+      if (elements.length === 0) return
+
+      const first = elements[0]
+      const last = elements[elements.length - 1]
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    document.addEventListener("keydown", handleTabKey)
+    return () => document.removeEventListener("keydown", handleTabKey)
+  }, [])
+
   // Provider helpers
   const addProvider = () => {
     const newProvider: ProviderConfig = {
@@ -347,6 +368,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="relative flex h-[min(720px,88vh)] w-[min(960px,92vw)] overflow-hidden rounded-xl border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"

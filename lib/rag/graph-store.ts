@@ -21,6 +21,8 @@ export interface GraphEntity {
   type: "concept" | "person" | "org" | "tech" | "other"
   /** 出现在哪些文档中 */
   documents: string[]
+  /** 文档集合（O(1) 查找，避免 includes 线性扫描） */
+  documentSet?: Set<string>
   /** 出现次数 */
   frequency: number
 }
@@ -215,8 +217,9 @@ export function buildKnowledgeGraph(chunks: Chunk[]): KnowledgeGraph {
       const existing = entities.get(normalized)
 
       if (existing) {
-        if (!existing.documents.includes(chunk.filename)) {
+        if (!existing.documentSet!.has(chunk.filename)) {
           existing.documents.push(chunk.filename)
+          existing.documentSet!.add(chunk.filename)
         }
         existing.frequency++
       } else {
@@ -225,6 +228,7 @@ export function buildKnowledgeGraph(chunks: Chunk[]): KnowledgeGraph {
           name,
           type: inferEntityType(name),
           documents: [chunk.filename],
+          documentSet: new Set([chunk.filename]),
           frequency: 1,
         }
         entities.set(normalized, entity)
@@ -378,11 +382,20 @@ export function expandWithGraph(
   )
 
   // 5. 限制扩展数量，通过图谱反向索引匹配实体（而非重新抽取）
+  // 预构建文件名 → 实体 ID 索引，避免 O(entities × chunks) 扫描
+  const filenameToEntityIds = new Map<string, string[]>()
+  for (const [entityId, entity] of graph.entities) {
+    for (const doc of entity.documents) {
+      if (!filenameToEntityIds.has(doc)) filenameToEntityIds.set(doc, [])
+      filenameToEntityIds.get(doc)!.push(entityId)
+    }
+  }
+
   const scoredExpansions = expansionChunks.map((chunk) => {
-    // 通过文件名查找相关实体，而非对每个 chunk 重新运行正则抽取
     let score = 0
-    for (const [entityId, entity] of graph.entities) {
-      if (entity.documents.includes(chunk.filename)) {
+    const entityIds = filenameToEntityIds.get(chunk.filename)
+    if (entityIds) {
+      for (const entityId of entityIds) {
         if (queryEntities.has(entityId)) score += 0.3
         if (neighborEntities.has(entityId)) score += 0.15
       }
@@ -411,6 +424,10 @@ export function expandWithGraph(
 
 const GRAPH_FILE = "graph.json"
 
+// 知识图谱查询缓存（避免每次 RAG 查询都读取和反序列化 graph.json）
+const graphCache = new Map<string, { graph: KnowledgeGraph; loadedAt: number }>()
+const GRAPH_CACHE_TTL_MS = 5 * 60 * 1000 // 5 分钟
+
 export async function saveKnowledgeGraph(
   projectId: string,
   graph: KnowledgeGraph
@@ -425,11 +442,18 @@ export async function saveKnowledgeGraph(
     JSON.stringify(serializable, null, 2),
     { contentType: "application/json" }
   )
+  graphCache.delete(projectId)
 }
 
 export async function loadKnowledgeGraph(
   projectId: string
 ): Promise<KnowledgeGraph | null> {
+  // 检查缓存
+  const cached = graphCache.get(projectId)
+  if (cached && Date.now() - cached.loadedAt < GRAPH_CACHE_TTL_MS) {
+    return cached.graph
+  }
+
   try {
     const content = await readFile(`projects/${projectId}/.rag/${GRAPH_FILE}`)
     if (!content) return null
@@ -441,13 +465,18 @@ export async function loadKnowledgeGraph(
 
     const entities = new Map<string, GraphEntity>()
     for (const e of data.entities) {
+      // 反序列化时重建 documentSet（Set 不可序列化为 JSON）
+      e.documentSet = new Set(e.documents)
       entities.set(e.id, e)
     }
 
-    return {
+    const graph: KnowledgeGraph = {
       entities,
       relations: data.relations || [],
     }
+
+    graphCache.set(projectId, { graph, loadedAt: Date.now() })
+    return graph
   } catch {
     return null
   }

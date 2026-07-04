@@ -40,9 +40,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// Re-export all config utilities from the decoupled module for backward compatibility.
-// New consumers should import directly from "@/lib/ai-config".
-export {
+// 从 ai-config 导入所有配置常量和工具函数（同时供本组件使用和向后兼容再导出）
+import {
   getAIConfig,
   getTTSConfig,
   isAIConfigured,
@@ -77,10 +76,18 @@ export {
   STORAGE_KEY_USER_NAME,
 } from "@/lib/ai-config"
 
-import type { ProviderInfo } from "@/lib/ai-config"
-export type { ProviderInfo }
-
-import {
+// 向后兼容再导出，新消费者应直接从 "@/lib/ai-config" 导入
+export {
+  getAIConfig,
+  getTTSConfig,
+  isAIConfigured,
+  getConfiguredModel,
+  getImageConfig,
+  isImageConfigured,
+  getPersonaPrompt,
+  getUserName,
+  getProviderList,
+  switchActiveProvider,
   PROVIDER_PRESETS,
   TTS_VOICE_OPTIONS,
   DEFAULT_API_BASE,
@@ -103,7 +110,10 @@ import {
   STORAGE_KEY_IMAGE_MODEL,
   STORAGE_KEY_PERSONA,
   STORAGE_KEY_USER_NAME,
-} from "@/lib/ai-config"
+}
+
+import type { ProviderInfo } from "@/lib/ai-config"
+export type { ProviderInfo }
 
 // ─── Component ───
 
@@ -283,7 +293,7 @@ export function SettingsDialog() {
 
     setSaved(true)
     window.dispatchEvent(new CustomEvent("ai-config-changed"))
-    setTimeout(() => setOpen(false), 600)
+    setTimeout(() => setSaved(false), 1500) // 显示保存成功状态 1.5 秒，不自动关闭
   }
 
   return (
@@ -564,11 +574,15 @@ export function SettingsDialog() {
               value={personaPrompt}
               onChange={(e) => setPersonaPrompt(e.target.value)}
               rows={3}
+              maxLength={500}
               className="resize-none"
             />
-            <p className="text-xs text-muted-foreground">
-              可以指定 AI 的回答风格、语言偏好、专业领域等。留空则使用默认行为。
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                可以指定 AI 的回答风格、语言偏好、专业领域等。留空则使用默认行为。
+              </p>
+              <span className="text-xs text-muted-foreground">{personaPrompt.length}/500</span>
+            </div>
           </div>
         </div>
 

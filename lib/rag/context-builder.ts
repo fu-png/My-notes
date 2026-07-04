@@ -6,7 +6,6 @@
  */
 
 import type { SearchResult, AssembledContext, ContextSource } from "./types"
-import { estimateTokens } from "./chunker"
 import { tokenizeToSet } from "./tokenizer"
 
 const DEFAULT_MAX_TOKENS = 12000
@@ -47,7 +46,8 @@ export function buildContext(
 
   for (const result of dedupedSimilar) {
     const chunkTokens = result.chunk.tokenCount + headerOverhead
-    if (currentTokens + chunkTokens > maxTokens) {
+    const safeMax = Math.floor(maxTokens * 0.95) // 5% 安全余量，防止估算误差导致上下文溢出
+    if (currentTokens + chunkTokens > safeMax) {
       // 如果至少有一个块了，停止
       if (selected.length > 0) break
       // 如果第一个块就超预算，截断内容以适配 token 预算
@@ -109,7 +109,7 @@ export function buildContext(
   return {
     text,
     sources,
-    totalTokens: estimateTokens(text),
+    totalTokens: currentTokens,
   }
 }
 
@@ -184,13 +184,12 @@ function removeNearDuplicates(
         break
       }
     }
-    // 早退出优化：当已保留的块超过 30 个时，停止检查（O(n^2) → 有界）
-    if (kept.length >= 30) break
-
     if (!isDuplicate) {
       kept.push(result)
       keptTokenSets.push(tokens)
     }
+    // 早退出优化：当已保留的块超过 30 个时，停止 Jaccard 比较（O(n²) → 有界）
+    if (keptTokenSets.length >= 30) break
   }
 
   return kept

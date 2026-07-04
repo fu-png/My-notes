@@ -14,8 +14,33 @@ export const maxDuration = 60
  *  - github: 读取 GitHub 仓库信息（GitHub REST API）
  *  - bilibili: 搜索 B 站内容
  */
+// Agent Reach 速率限制（每 IP 每分钟最多 20 次）
+const agentReachRateLimitMap = new Map<string, { count: number; resetAt: number }>()
+
+function checkAgentReachRateLimit(ip: string): boolean {
+  const now = Date.now()
+  if (agentReachRateLimitMap.size > 100) {
+    for (const [key, val] of agentReachRateLimitMap) {
+      if (now > val.resetAt) agentReachRateLimitMap.delete(key)
+    }
+  }
+  const entry = agentReachRateLimitMap.get(ip)
+  if (!entry || now > entry.resetAt) {
+    agentReachRateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 })
+    return true
+  }
+  entry.count++
+  return entry.count <= 20
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // 速率限制
+    const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    if (!checkAgentReachRateLimit(clientIp)) {
+      return NextResponse.json({ error: "请求过于频繁，请稍后重试" }, { status: 429 })
+    }
+
     const body = await request.json()
     const { action, query, url, count } = body
 
