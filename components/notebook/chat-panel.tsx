@@ -382,17 +382,6 @@ onDelete={onDeleteConversation}
                 </p>
               </div>
 
-              {/* RAG index status hint — 仅在 API 已配置且索引正在构建时显示进度，其他情况隐藏：
-                   - 未配置 API：不显示（用户无法建索引）
-                   - 已配置但未建索引：不显示（自动索引会在后台处理）
-                   - 已建索引：不显示 */}
-              {indexing && (
-                <div className="mb-3 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-primary/80" role="status" aria-live="polite">
-                  <IconLoader2 className="size-3.5 shrink-0 animate-spin" />
-                  <span className="truncate">{indexProgress || "正在构建知识索引..."}</span>
-                </div>
-              )}
-
               {/* 笔记本指南 — AI 生成模板 */}
               {files.length > 0 && (
                 <div className="space-y-1.5 pb-3">

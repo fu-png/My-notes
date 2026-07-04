@@ -43,7 +43,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { getAIConfig, isAIConfigured, getConfiguredModel, getConfiguredEmbeddingModel, getEmbeddingConfig } from "@/lib/ai-config"
+import { getAIConfig, isAIConfigured, isEmbeddingConfigured, getConfiguredModel, getConfiguredEmbeddingModel, getEmbeddingConfig } from "@/lib/ai-config"
 import { useToast } from "@/hooks/use-toast"
 import { ToastContainer } from "@/components/toast-container"
 import { ErrorBoundary } from "@/components/error-boundary"
@@ -468,6 +468,9 @@ scheduleOSSFetch(() => {
     autoIndexTimerRef.current = setTimeout(async () => {
       const config = getAIConfig()
       if (!config) return
+      // 只有用户主动配置了向量模型（填写了 Embedding API Key 或 Base）才自动触发索引
+      // 仅配置了文本模型不应该后台偷偷跑 embedding 索引构建
+      if (!isEmbeddingConfigured()) return
       const embConfig = getEmbeddingConfig()
 
       // 显示索引进度，让用户知道后台正在工作

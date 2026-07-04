@@ -180,6 +180,19 @@ export function getEmbeddingConfig(): EmbeddingConfig | null {
   }
 }
 
+/**
+ * 判断用户是否**主动**配置了 Embedding 模型（API Key 或 API Base 至少填了一个）。
+ * 用于自动索引的前置判断：只有用户明确配置了向量模型才自动触发索引构建，
+ * 避免仅配置了文本模型就后台偷偷跑 embedding。
+ * 注意：这和 getEmbeddingConfig() 不同，后者总会返回内置默认值用于兜底。
+ */
+export function isEmbeddingConfigured(): boolean {
+  if (typeof window === "undefined") return false
+  const embApiKey = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_KEY) || ""
+  const embApiBase = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || ""
+  return !!(embApiKey || embApiBase)
+}
+
 // ─── Image Generation Config ───
 
 export function getImageConfig(): ImageConfig | null {
