@@ -130,7 +130,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       editingProviderId: null as string | null,
       embeddingModel: DEFAULT_EMBEDDING_MODEL,
       embApiKey: "",
-      embApiBase: DEFAULT_API_BASE,
+      embApiBase: "",
       ttsApiKey: "",
       ttsApiBase: "",
       ttsModel: DEFAULT_TTS_MODEL,
@@ -182,7 +182,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     // Embedding
     config.embeddingModel = localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL
     config.embApiKey = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_KEY) || ""
-    config.embApiBase = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || DEFAULT_API_BASE
+    config.embApiBase = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || ""
 
     // TTS
     const savedTtsKey = localStorage.getItem(STORAGE_KEY_TTS_API_KEY) || ""
@@ -339,7 +339,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     // Embedding
     localStorage.setItem(STORAGE_KEY_EMBEDDING_MODEL, embeddingModel.trim() || DEFAULT_EMBEDDING_MODEL)
     localStorage.setItem(STORAGE_KEY_EMBEDDING_API_KEY, embApiKey.trim())
-    localStorage.setItem(STORAGE_KEY_EMBEDDING_API_BASE, embApiBase.trim() || DEFAULT_API_BASE)
+    localStorage.setItem(STORAGE_KEY_EMBEDDING_API_BASE, embApiBase.trim())
 
     // TTS
     localStorage.setItem(STORAGE_KEY_TTS_API_KEY, ttsApiKey.trim())
@@ -752,15 +752,15 @@ function SectionEmbedding({
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label className="text-[13px]">Embedding API Base URL</Label>
-          <Input
-            type="url"
-            placeholder={DEFAULT_API_BASE}
+<Label className="text-[13px]">Embedding API Base URL</Label>
+<Input
+type="url"
+placeholder="https://api.siliconflow.cn/v1/embeddings"
             value={embApiBase}
             onChange={(e) => setEmbApiBase(e.target.value)}
             className="h-8 text-sm"
           />
-          <p className="text-[11px] text-muted-foreground">可填写完整地址（如 https://api.siliconflow.cn/v1/embedding）。留空则使用对话模型的 API Base URL</p>
+          <p className="text-[11px] text-muted-foreground">填写完整的 Embedding API 地址（如 https://api.siliconflow.cn/v1/embeddings）</p>
         </div>
       </div>
 
@@ -920,6 +920,7 @@ function SectionImage({
             onChange={(e) => setImageApiBase(e.target.value)}
             className="h-8 text-sm"
           />
+          <p className="text-[11px] text-muted-foreground">填写完整的生图 API 地址（如 https://api.openai.com/v1/images/generations）</p>
         </div>
       </div>
 

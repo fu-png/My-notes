@@ -123,9 +123,8 @@ async function embedBatchWithRetry(
   texts: string[],
   config: RAGConfig
 ): Promise<number[][]> {
-  const rawBase = (config.embeddingApiBase || config.apiBase).replace(/\/+$/, "")
-  // 如果用户填的 URL 已经包含 /embeddings 或 /embedding，直接使用；否则自动拼接
-  const url = /\/embeddings?\/?$/i.test(rawBase) ? rawBase : `${rawBase}/embeddings`
+  // 直接使用用户填入的完整 API 地址，不做任何拼接
+  const url = (config.embeddingApiBase || config.apiBase).replace(/\/+$/, "")
   const model = config.embeddingModel || "text-embedding-3-small"
   const embApiKey = config.embeddingApiKey || config.apiKey
 

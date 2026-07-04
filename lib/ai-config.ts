@@ -42,7 +42,7 @@ export const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 export const DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
 export const DEFAULT_TTS_VOICE_HOST = "冰糖"
 export const DEFAULT_TTS_VOICE_EXPERT = "苏打"
-export const DEFAULT_IMAGE_API_BASE = "https://www.hfsyapi.cn"
+export const DEFAULT_IMAGE_API_BASE = "https://www.hfsyapi.cn/v1/images/generations"
 export const DEFAULT_IMAGE_MODEL = "gpt-image-2"
 
 // ─── Provider Presets ───
@@ -166,7 +166,7 @@ export function getEmbeddingConfig(): EmbeddingConfig | null {
   if (embApiKey) {
     return {
       apiKey: embApiKey,
-      apiBase: embApiBase || DEFAULT_API_BASE,
+      apiBase: embApiBase,
       embeddingModel,
     }
   }
@@ -185,7 +185,7 @@ export function getImageConfig(): ImageConfig | null {
   if (typeof window === "undefined") return null
   const aiConfig = getAIConfig()
   const imageApiKey = localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || aiConfig?.apiKey || ""
-  const imageApiBase = localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || aiConfig?.apiBase?.replace(/\/v1$/, "") || DEFAULT_IMAGE_API_BASE
+  const imageApiBase = localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || DEFAULT_IMAGE_API_BASE
   const imageModel = localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL
   if (!imageApiKey) return null
   return { apiKey: imageApiKey, apiBase: imageApiBase, model: imageModel }

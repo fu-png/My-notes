@@ -54,7 +54,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return Response.json({ error: "缺少 slide 数据" }, { status: 400 })
   }
 
-  const apiBase = (imageApiBase || "https://www.hfsyapi.cn").replace(/\/+$/, "")
+  // 直接使用用户填入的完整 API 地址，不做任何拼接
+  const url = (imageApiBase || "https://www.hfsyapi.cn/v1/images/generations").replace(/\/+$/, "")
   const model = imageModel || "gpt-image-2pro"
   const imageSize = size || "1792x1024"
 
@@ -100,7 +101,7 @@ Page ${slideIndex + 1} of ${totalSlides}.`
   }
 
   try {
-    const response = await fetch(`${apiBase}/v1/images/generations`, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
