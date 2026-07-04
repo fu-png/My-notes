@@ -3,11 +3,11 @@
 import * as React from "react"
 import type { DocFile, ChatMessage } from "@/components/notebook/types"
 import { WELCOME_MESSAGE } from "@/components/notebook/types"
-import { getAIConfig, getConfiguredModel, getConfiguredEmbeddingModel, getEmbeddingConfig, getProviderList, switchActiveProvider, getPersonaPrompt, getUserName } from "@/components/settings-dialog"
-import type { ProviderInfo } from "@/components/settings-dialog"
-import { detectIntent } from "@/lib/agents/supervisor"
-import { buildSystemPrompt, trimConversationHistory } from "@/lib/agents/context-manager"
-import { parseSSEStream, streamIntoMessage } from "@/lib/infra/stream-utils"
+import { getAIConfig, getConfiguredModel, getConfiguredEmbeddingModel, getEmbeddingConfig, getProviderList, switchActiveProvider, getPersonaPrompt, getUserName } from "@/lib/ai-config"
+import type { ProviderInfo } from "@/lib/ai-config"
+// Agent 和流处理模块仅在发送消息时才需要，使用懒加载避免首屏打包
+// detectIntent / buildSystemPrompt / trimConversationHistory / parseSSEStream / streamIntoMessage
+// 在下方实际调用处通过 dynamic import 引入
 
 // ─── Hook Options & Return Types ────────────────────────────────────────────
 
@@ -283,6 +283,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     let webIntent: { action: string; query?: string; url?: string } | null = null
 
     if (lastUserMsg) {
+      const { detectIntent } = await import("@/lib/agents/supervisor")
       const intent = detectIntent(lastUserMsg.content, { hasPptSession: !!pptSessionRef.current?.active })
       webIntent = intent.type === "web_search" ? { action: intent.action, query: intent.query, url: intent.url } : null
       if (webIntent) {
@@ -362,6 +363,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     const activeFileName = activeFile ? (files.find((f) => f.filename === activeFile)?.title || activeFile) : undefined
 
     // 使用 Context Manager 统一构建 system prompt
+    const { buildSystemPrompt } = await import("@/lib/agents/context-manager")
     const systemPrompt = buildSystemPrompt({
       ragContextText: ragContextText || undefined,
       ragSources,
@@ -388,6 +390,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
     // 对话上下文窗口化：裁剪历史消息以控制 token 用量，
     // 避免长对话导致 API 延迟增大或 token 上限截断
+    const { trimConversationHistory } = await import("@/lib/agents/context-manager")
     const apiMessages = trimConversationHistory(allApiMessages)
 
     try {
@@ -425,6 +428,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
       // 使用统一的流式消费 helper（消除与 handleGenerate 的重复代码）
       const reader = res.body.getReader()
+      const { streamIntoMessage } = await import("@/lib/infra/stream-utils")
       const result = await streamIntoMessage({
         reader,
         msgId: aiMsgId,
@@ -484,6 +488,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     if (!text || chatLoading) return
 
     // ─── PPT Intent Detection (via Supervisor) ───
+    const { detectIntent } = await import("@/lib/agents/supervisor")
     const intent = detectIntent(text, { hasPptSession: !!pptSessionRef.current?.active })
     if (intent.type === "ppt") {
       setChatInput("")
@@ -608,6 +613,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       }
 
       // 使用统一的流式消费 helper（与 streamAI 保持一致，消除重复代码）
+      const { streamIntoMessage } = await import("@/lib/infra/stream-utils")
       const result = await streamIntoMessage({
         reader,
         msgId: aiMsgId,

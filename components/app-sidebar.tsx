@@ -5,7 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { SettingsPage } from "@/components/settings-page"
+import dynamic from "next/dynamic"
 import {
   IconSearch,
   IconFileText,
@@ -13,6 +13,12 @@ import {
   IconX,
   IconSettings,
 } from "@tabler/icons-react"
+
+// 设置页面 1017 行，仅在用户点击设置按钮时才加载
+const SettingsPage = dynamic(
+  () => import("@/components/settings-page").then((m) => ({ default: m.SettingsPage })),
+  { ssr: false }
+)
 import {
   TooltipProvider,
 } from "@/components/ui/tooltip"

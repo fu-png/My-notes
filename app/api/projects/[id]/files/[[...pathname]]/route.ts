@@ -147,6 +147,10 @@ export async function GET(
       title: decodedPathname.split("/").pop()?.replace(/\.[^.]+$/, "") || decodedPathname,
       content,
       lastModified: meta?.lastModified || Date.now(),
+    }, {
+      headers: {
+        "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
+      },
     })
   } catch {
     return NextResponse.json({ error: "读取失败" }, { status: 500 })

@@ -3,7 +3,7 @@
 import * as React from "react"
 import type { ChatMessage, PptOutline, SlideImage } from "@/components/notebook/types"
 import { PPT_STYLE_PRESETS } from "@/components/notebook/types"
-import { getAIConfig, getImageConfig } from "@/components/settings-dialog"
+import { getAIConfig, getImageConfig } from "@/lib/ai-config"
 import { parseSSEStream } from "@/lib/infra/stream-utils"
 
 // ─── PPT Session State ──────────────────────────────────────────────────────

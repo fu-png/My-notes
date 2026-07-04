@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import type { ChatMessage } from "@/components/notebook/types"
-import { getAIConfig, getTTSConfig } from "@/components/settings-dialog"
+import { getAIConfig, getTTSConfig } from "@/lib/ai-config"
 import {
   subscribeAudioTask,
   getAudioTask,

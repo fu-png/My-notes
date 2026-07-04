@@ -60,7 +60,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import type { ProviderInfo } from "@/components/settings-dialog"
+import type { ProviderInfo } from "@/lib/ai-config"
 import type { ChatMessage, Conversation, DocFile, PptOutline } from "./types"
 import { GENERATE_TEMPLATES, PPT_STYLE_PRESETS } from "./types"
 

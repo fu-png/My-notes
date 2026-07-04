@@ -547,14 +547,18 @@ export async function getProject(id: string): Promise<{
   files: { filename: string; title: string; lastModified: number }[]
   firstFileContent?: { filename: string; content: string; lastModified: number }
 } | null> {
-  const metaContent = await readFile(`projects/${id}/meta.json`)
+  // 并行读取 meta.json 和文件列表，减少 OSS 串行往返延迟
+  const projectPrefix = `projects/${id}/`
+  const [metaContent, allFiles] = await Promise.all([
+    readFile(`projects/${id}/meta.json`),
+    listFiles(projectPrefix, true),
+  ])
+
   if (!metaContent) return null
 
   try {
     const meta = JSON.parse(metaContent) as ProjectMeta
 
-    const projectPrefix = `projects/${id}/`
-    const allFiles = await listFiles(projectPrefix, true)
     const fileList = allFiles
       .filter((f) => !f.pathname.endsWith("/meta.json"))
       .filter((f) => !f.pathname.endsWith("/chat-history.json"))
@@ -573,7 +577,7 @@ export async function getProject(id: string): Promise<{
       })
       .sort((a, b) => a.filename.localeCompare(b.filename, "zh", { numeric: true }))
 
-    // 并行预取第一个文件的完整内容
+    // 预取第一个文件的完整内容（与文件列表已并行，此处只需一次额外请求）
     let firstFileContent: { filename: string; content: string; lastModified: number } | undefined
     if (files.length > 0) {
       const content = await readFile(`${projectPrefix}${files[0].filename}`)

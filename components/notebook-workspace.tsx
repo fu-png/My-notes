@@ -408,10 +408,6 @@ scheduleOSSFetch(() => {
   // Toast (professional queue system with animations) — 前置声明以供 fetchIndexStatus/fetchSourcesData 使用
   const { toasts, showToast, removeToast } = useToast()
 
-  // chatModel 由 useChatFlow 提供，但声明晚于 handleBuildIndex；
-  // 用 ref 提前占位，避免 handleBuildIndex 的 useCallback 依赖数组访问 TDZ 变量
-  const chatModelRef = React.useRef<string>("")
-
   // Fetch RAG index status
   const fetchIndexStatus = React.useCallback(async () => {
     try {
@@ -459,71 +455,6 @@ scheduleOSSFetch(() => {
     } finally {
       setSourcesLoading(false)
     }
-  }, [projectId, showToast])
-
-  const handleBuildIndex = React.useCallback(async () => {
-    const config = getAIConfig()
-    if (!config) {
-      showToast("error", "请先配置 API Key")
-      return
-    }
-    setIndexing(true)
-    setIndexProgress("准备中...")
-    const embConfig = getEmbeddingConfig()
-    try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "index",
-          apiKey: config.apiKey,
-          apiBase: config.apiBase,
-          model: chatModelRef.current,
-          embeddingModel: embConfig?.embeddingModel || getConfiguredEmbeddingModel(),
-          embeddingApiKey: embConfig?.apiKey,
-          embeddingApiBase: embConfig?.apiBase,
-          stream: true,
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        showToast("error", data.error || "索引失败")
-        return
-      }
-
-      const reader = res.body?.getReader()
-      if (!reader) {
-        showToast("error", "无法读取响应流")
-        return
-      }
-
-      // 使用统一的 SSE 流解析工具（消除手写缓冲逻辑）
-      const { parseSSEStream } = await import("@/lib/infra/stream-utils")
-
-      for await (const event of parseSSEStream(reader)) {
-        if (typeof event.progress === "string") {
-          setIndexProgress(event.progress)
-        }
-        if (event.done === true) {
-          if (event.success === true) {
-            showToast("success", `索引完成：${event.totalFiles} 个文件，${event.totalChunks} 个文本块`)
-            setRagEnabled(true)
-            await fetchIndexStatus()
-            if (showSources) fetchSourcesData()
-          } else {
-            const errMsg = typeof event.error === "string" ? event.error : "索引失败"
-            showToast("error", errMsg)
-          }
-        }
-      }
-    } catch {
-      showToast("error", "索引构建失败，请检查网络")
-    } finally {
-      setIndexing(false)
-      setIndexProgress("")
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, showToast])
 
   // Auto-index on file changes
@@ -646,17 +577,23 @@ scheduleOSSFetch(() => {
       if (data.project?.name) {
         setCurrentProjectName(data.project.name)
       }
-      // 文件列表加载成功后，后台预取所有文件内容
+      // 文件列表加载成功后，后台预取前 5 个文件内容（避免大量并发请求抢占带宽）
+      const PREFETCH_LIMIT = 5
       if (orderedFiles.length > 0) {
         // 如果 API 返回了第一篇文件的完整内容，直接写入缓存
         if (data.firstFileContent?.filename && data.firstFileContent.content) {
           fileCache.setFileContent(data.firstFileContent.filename, data.firstFileContent.content)
           // 预取时跳过已缓存的第一篇
           fileCache.prefetchFiles(
-            orderedFiles.filter((f: DocFile) => f.filename !== data.firstFileContent.filename).map((f: DocFile) => f.filename)
+            orderedFiles
+              .filter((f: DocFile) => f.filename !== data.firstFileContent.filename)
+              .slice(0, PREFETCH_LIMIT - 1)
+              .map((f: DocFile) => f.filename)
           )
         } else {
-          fileCache.prefetchFiles(orderedFiles.map((f: DocFile) => f.filename))
+          fileCache.prefetchFiles(
+            orderedFiles.slice(0, PREFETCH_LIMIT).map((f: DocFile) => f.filename)
+          )
         }
       }
     } catch (err) {
@@ -723,11 +660,6 @@ scheduleOSSFetch(() => {
     handleToggleDeepThink, handleGenerate, handleSaveGenerated,
     handleCopyGenerated, handleRegenerateGuide, handleRegenerateChat,
   } = chatFlow
-
-  // 同步最新 chatModel 到 ref，供声明顺序更早的 handleBuildIndex 使用
-  React.useEffect(() => {
-    chatModelRef.current = chatModel
-  }, [chatModel])
 
   // ─── PPT Generation (via hook) ───
   const pptFlow = usePptFlow({
@@ -1210,20 +1142,29 @@ queueMicrotask(() => selectFile(target))
     const scrollEl = docContentRef.current
     if (!scrollEl) return
 
+    let rafId: number | null = null
+
     const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = scrollEl
-      if (scrollHeight <= clientHeight) {
-        setReadingProgress(0)
-        return
-      }
-      const progress = Math.min(scrollTop / (scrollHeight - clientHeight), 1)
-      setReadingProgress(progress)
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        const { scrollTop, scrollHeight, clientHeight } = scrollEl
+        if (scrollHeight <= clientHeight) {
+          setReadingProgress(0)
+          return
+        }
+        const progress = Math.min(scrollTop / (scrollHeight - clientHeight), 1)
+        setReadingProgress(progress)
+      })
     }
 
     scrollEl.addEventListener("scroll", handleScroll, { passive: true })
     // 文件切换时重置进度
     handleScroll()
-    return () => scrollEl.removeEventListener("scroll", handleScroll)
+    return () => {
+      scrollEl.removeEventListener("scroll", handleScroll)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
   }, [activeFile, fileContent, editMode])
 
   // ─── 从文件内容提取真实标题，更新文件列表 ───
@@ -1605,7 +1546,7 @@ queueMicrotask(() => selectFile(target))
           onDeleteConversation={deleteConversation}
           onFetchSourcesData={fetchSourcesData}
           onChatScroll={handleChatScroll}
-          onBuildIndex={handleBuildIndex}
+          onBuildIndex={() => triggerAutoIndex()}
           onGenerate={handleGenerate}
           onSaveGenerated={handleSaveGenerated}
           onCopyGenerated={handleCopyGenerated}
