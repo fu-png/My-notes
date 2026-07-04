@@ -333,15 +333,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
           // Step 2: TTS 合成 — 逐段合成并上传（避免合并大文件跨区域上传超时）
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts", progress: "正在合成语音..." })}\n\n`))
 
-          const chunkUrls: string[] = []
           const hostVoice = voiceHost || "冰糖"
           const expertVoice = voiceExpert || "苏打"
           const ttsModelName = ttsModel || "mimo-v2.5-tts"
 
-          for (let i = 0; i < dialogue.length; i++) {
-            const line = dialogue[i]
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `合成语音 (${i + 1}/${dialogue.length})...`, current: i + 1, total: dialogue.length })}\n\n`))
+          // 并发合成每一段语音（限制并发数，避免打爆 TTS API），
+          // 结果按原始对话顺序写入，保证最终拼接播放顺序正确。
+          const CONCURRENCY = 10
+          const results: (string | null)[] = new Array(dialogue.length).fill(null)
+          let completedCount = 0
+          let hardFailure: string | null = null
 
+          const synthesizeLine = async (i: number) => {
+            const line = dialogue[i]
             try {
               const ttsRes = await fetch(`${apiBaseUrl}/chat/completions`, {
                 method: "POST",
@@ -372,8 +376,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
               if (!ttsRes.ok) {
                 const errText = await ttsRes.text().catch(() => "")
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_unavailable", message: `TTS API 调用失败 (${ttsRes.status}): ${errText.slice(0, 200)}` })}\n\n`))
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false, script: dialogue })}\n\n`))
+                hardFailure = `TTS API 调用失败 (${ttsRes.status}): ${errText.slice(0, 200)}`
                 return
               }
 
@@ -381,19 +384,40 @@ export async function POST(request: NextRequest, context: RouteContext) {
               const audioBase64 = ttsData.choices?.[0]?.message?.audio?.data
               if (!audioBase64) {
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `第 ${i + 1} 段未返回音频数据，跳过` })}\n\n`))
-                continue
+                return
               }
               const audioBuffer = Buffer.from(audioBase64, "base64")
 
               // 立即上传这一小段 MP3（几十 KB，秒传）
               const stored = await writeFile(AUDIO_CHUNK_PATH(projectId, i), audioBuffer, { contentType: "audio/mpeg" })
               // OSS SDK 返回 http:// URL，但 Vercel HTTPS 页面会因 Mixed Content 阻止加载，需强制 HTTPS
-              chunkUrls.push(stored.url.replace(/^http:\/\//, "https://"))
+              results[i] = stored.url.replace(/^http:\/\//, "https://")
             } catch {
               // 单段失败不中断
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `第 ${i + 1} 段合成失败，跳过` })}\n\n`))
+            } finally {
+              completedCount++
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_progress", progress: `合成语音 (${completedCount}/${dialogue.length})...`, current: completedCount, total: dialogue.length })}\n\n`))
             }
           }
+
+          // 简单的并发池：同时最多跑 CONCURRENCY 个任务
+          let nextIndex = 0
+          const worker = async () => {
+            while (nextIndex < dialogue.length && !hardFailure) {
+              const current = nextIndex++
+              await synthesizeLine(current)
+            }
+          }
+          await Promise.all(Array.from({ length: Math.min(CONCURRENCY, dialogue.length) }, () => worker()))
+
+          if (hardFailure) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ step: "tts_unavailable", message: hardFailure })}\n\n`))
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, hasAudio: false, script: dialogue })}\n\n`))
+            return
+          }
+
+          const chunkUrls: string[] = results.filter((url): url is string => url !== null)
 
           // Step 3: 写入清单文件（JSON，极小，秒传）
           if (chunkUrls.length > 0) {
