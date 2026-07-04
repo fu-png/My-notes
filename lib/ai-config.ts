@@ -13,7 +13,6 @@ export const STORAGE_KEY_MODEL = "ai-assistant-model"
 export const STORAGE_KEY_EMBEDDING_MODEL = "ai-assistant-embedding-model"
 export const STORAGE_KEY_EMBEDDING_API_KEY = "ai-embedding-api-key"
 export const STORAGE_KEY_EMBEDDING_API_BASE = "ai-embedding-api-base"
-export const STORAGE_KEY_EMBEDDING_USE_SAME = "ai-embedding-use-same"
 
 // TTS 配置
 export const STORAGE_KEY_TTS_API_KEY = "ai-tts-api-key"
@@ -159,30 +158,25 @@ export function getEmbeddingConfig(): EmbeddingConfig | null {
   const aiConfig = getAIConfig()
   if (!aiConfig) return null
 
-  const useSame = localStorage.getItem(STORAGE_KEY_EMBEDDING_USE_SAME) !== "false" // default true
   const embeddingModel = localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL
 
-  if (useSame) {
-    return {
-      apiKey: aiConfig.apiKey,
-      apiBase: aiConfig.apiBase,
-      embeddingModel,
-    }
-  }
-
   const embApiKey = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_KEY) || ""
-  const embApiBase = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || DEFAULT_API_BASE
+  const embApiBase = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || ""
 
-  if (!embApiKey) {
-    // Fall back to chat config if embedding key not set
+  if (embApiKey) {
     return {
-      apiKey: aiConfig.apiKey,
-      apiBase: aiConfig.apiBase,
+      apiKey: embApiKey,
+      apiBase: embApiBase || DEFAULT_API_BASE,
       embeddingModel,
     }
   }
 
-  return { apiKey: embApiKey, apiBase: embApiBase, embeddingModel }
+  // Fall back to chat API config
+  return {
+    apiKey: aiConfig.apiKey,
+    apiBase: aiConfig.apiBase,
+    embeddingModel,
+  }
 }
 
 // ─── Image Generation Config ───

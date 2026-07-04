@@ -15,12 +15,12 @@ import {
   IconPlus,
   IconTrash,
   IconSparkles,
+  IconBrain,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -42,10 +42,14 @@ import {
   STORAGE_KEY_IMAGE_API_KEY,
   STORAGE_KEY_IMAGE_API_BASE,
   STORAGE_KEY_IMAGE_MODEL,
+  STORAGE_KEY_EMBEDDING_MODEL,
+  STORAGE_KEY_EMBEDDING_API_KEY,
+  STORAGE_KEY_EMBEDDING_API_BASE,
   STORAGE_KEY_PERSONA,
   STORAGE_KEY_USER_NAME,
   DEFAULT_API_BASE,
   DEFAULT_MODEL,
+  DEFAULT_EMBEDDING_MODEL,
   DEFAULT_TTS_MODEL,
   DEFAULT_TTS_VOICE_HOST,
   DEFAULT_TTS_VOICE_EXPERT,
@@ -94,6 +98,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "AI 模型",
     items: [
       { id: "chat", label: "对话模型", icon: IconRobot },
+      { id: "embedding", label: "向量模型", icon: IconBrain },
       { id: "tts", label: "语音合成", icon: IconVolume },
       { id: "image", label: "图像生成", icon: IconPhoto },
     ],
@@ -123,16 +128,17 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       providers: [] as ProviderConfig[],
       activeProviderId: "",
       editingProviderId: null as string | null,
+      embeddingModel: DEFAULT_EMBEDDING_MODEL,
+      embApiKey: "",
+      embApiBase: DEFAULT_API_BASE,
       ttsApiKey: "",
       ttsApiBase: "",
       ttsModel: DEFAULT_TTS_MODEL,
       ttsVoiceHost: DEFAULT_TTS_VOICE_HOST,
       ttsVoiceExpert: DEFAULT_TTS_VOICE_EXPERT,
-      useSameKey: true,
       imageApiKey: "",
       imageApiBase: DEFAULT_IMAGE_API_BASE,
       imageModel: DEFAULT_IMAGE_MODEL,
-      useSameImageKey: true,
       personaPrompt: "",
       userName: "",
     }
@@ -173,6 +179,11 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       }
     }
 
+    // Embedding
+    config.embeddingModel = localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL
+    config.embApiKey = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_KEY) || ""
+    config.embApiBase = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || DEFAULT_API_BASE
+
     // TTS
     const savedTtsKey = localStorage.getItem(STORAGE_KEY_TTS_API_KEY) || ""
     config.ttsApiKey = savedTtsKey
@@ -180,14 +191,11 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     config.ttsModel = localStorage.getItem(STORAGE_KEY_TTS_MODEL) || DEFAULT_TTS_MODEL
     config.ttsVoiceHost = localStorage.getItem(STORAGE_KEY_TTS_VOICE_HOST) || DEFAULT_TTS_VOICE_HOST
     config.ttsVoiceExpert = localStorage.getItem(STORAGE_KEY_TTS_VOICE_EXPERT) || DEFAULT_TTS_VOICE_EXPERT
-    config.useSameKey = !savedTtsKey
 
     // Image
-    const savedImageKey = localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || ""
-    config.imageApiKey = savedImageKey
+    config.imageApiKey = localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || ""
     config.imageApiBase = localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || DEFAULT_IMAGE_API_BASE
     config.imageModel = localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL
-    config.useSameImageKey = !savedImageKey
 
     // Persona
     config.personaPrompt = localStorage.getItem(STORAGE_KEY_PERSONA) || ""
@@ -201,6 +209,12 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
   const [activeProviderId, setActiveProviderId] = React.useState(loadedConfig.activeProviderId)
   const [editingProviderId, setEditingProviderId] = React.useState<string | null>(loadedConfig.editingProviderId)
 
+  // Embedding 配置
+  const [embeddingModel, setEmbeddingModel] = React.useState(loadedConfig.embeddingModel)
+  const [embApiKey, setEmbApiKey] = React.useState(loadedConfig.embApiKey)
+  const [embApiBase, setEmbApiBase] = React.useState(loadedConfig.embApiBase)
+  const [showEmbKey, setShowEmbKey] = React.useState(false)
+
   // TTS 配置
   const [showTtsKey, setShowTtsKey] = React.useState(false)
   const [ttsApiKey, setTtsApiKey] = React.useState(loadedConfig.ttsApiKey)
@@ -208,14 +222,12 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
   const [ttsModel, setTtsModel] = React.useState(loadedConfig.ttsModel)
   const [ttsVoiceHost, setTtsVoiceHost] = React.useState(loadedConfig.ttsVoiceHost)
   const [ttsVoiceExpert, setTtsVoiceExpert] = React.useState(loadedConfig.ttsVoiceExpert)
-  const [useSameKey, setUseSameKey] = React.useState(loadedConfig.useSameKey)
 
   // 生图模型配置
   const [showImageKey, setShowImageKey] = React.useState(false)
   const [imageApiKey, setImageApiKey] = React.useState(loadedConfig.imageApiKey)
   const [imageApiBase, setImageApiBase] = React.useState(loadedConfig.imageApiBase)
   const [imageModel, setImageModel] = React.useState(loadedConfig.imageModel)
-  const [useSameImageKey, setUseSameImageKey] = React.useState(loadedConfig.useSameImageKey)
 
   // AI 个性 / Persona
   const [personaPrompt, setPersonaPrompt] = React.useState(loadedConfig.personaPrompt)
@@ -324,26 +336,21 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       localStorage.setItem(STORAGE_KEY_MODEL, activeProvider.model.trim() || DEFAULT_MODEL)
     }
 
+    // Embedding
+    localStorage.setItem(STORAGE_KEY_EMBEDDING_MODEL, embeddingModel.trim() || DEFAULT_EMBEDDING_MODEL)
+    localStorage.setItem(STORAGE_KEY_EMBEDDING_API_KEY, embApiKey.trim())
+    localStorage.setItem(STORAGE_KEY_EMBEDDING_API_BASE, embApiBase.trim() || DEFAULT_API_BASE)
+
     // TTS
-    if (useSameKey) {
-      localStorage.removeItem(STORAGE_KEY_TTS_API_KEY)
-      localStorage.removeItem(STORAGE_KEY_TTS_API_BASE)
-    } else {
-      localStorage.setItem(STORAGE_KEY_TTS_API_KEY, ttsApiKey.trim())
-      localStorage.setItem(STORAGE_KEY_TTS_API_BASE, ttsApiBase.trim())
-    }
+    localStorage.setItem(STORAGE_KEY_TTS_API_KEY, ttsApiKey.trim())
+    localStorage.setItem(STORAGE_KEY_TTS_API_BASE, ttsApiBase.trim())
     localStorage.setItem(STORAGE_KEY_TTS_MODEL, ttsModel.trim() || DEFAULT_TTS_MODEL)
     localStorage.setItem(STORAGE_KEY_TTS_VOICE_HOST, ttsVoiceHost)
     localStorage.setItem(STORAGE_KEY_TTS_VOICE_EXPERT, ttsVoiceExpert)
 
     // Image
-    if (useSameImageKey) {
-      localStorage.removeItem(STORAGE_KEY_IMAGE_API_KEY)
-      localStorage.removeItem(STORAGE_KEY_IMAGE_API_BASE)
-    } else {
-      localStorage.setItem(STORAGE_KEY_IMAGE_API_KEY, imageApiKey.trim())
-      localStorage.setItem(STORAGE_KEY_IMAGE_API_BASE, imageApiBase.trim() || DEFAULT_IMAGE_API_BASE)
-    }
+    localStorage.setItem(STORAGE_KEY_IMAGE_API_KEY, imageApiKey.trim())
+    localStorage.setItem(STORAGE_KEY_IMAGE_API_BASE, imageApiBase.trim() || DEFAULT_IMAGE_API_BASE)
     localStorage.setItem(STORAGE_KEY_IMAGE_MODEL, imageModel.trim() || DEFAULT_IMAGE_MODEL)
 
     // Persona
@@ -435,9 +442,16 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                 updateProvider={updateProvider}
               />
             )}
+            {activeSection === "embedding" && (
+              <SectionEmbedding
+                embeddingModel={embeddingModel} setEmbeddingModel={setEmbeddingModel}
+                embApiKey={embApiKey} setEmbApiKey={setEmbApiKey}
+                embApiBase={embApiBase} setEmbApiBase={setEmbApiBase}
+                showEmbKey={showEmbKey} setShowEmbKey={setShowEmbKey}
+              />
+            )}
             {activeSection === "tts" && (
               <SectionTTS
-                useSameKey={useSameKey} setUseSameKey={setUseSameKey}
                 ttsApiKey={ttsApiKey} setTtsApiKey={setTtsApiKey}
                 ttsApiBase={ttsApiBase} setTtsApiBase={setTtsApiBase}
                 ttsModel={ttsModel} setTtsModel={setTtsModel}
@@ -448,7 +462,6 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
             )}
             {activeSection === "image" && (
               <SectionImage
-                useSameImageKey={useSameImageKey} setUseSameImageKey={setUseSameImageKey}
                 imageApiKey={imageApiKey} setImageApiKey={setImageApiKey}
                 imageApiBase={imageApiBase} setImageApiBase={setImageApiBase}
                 imageModel={imageModel} setImageModel={setImageModel}
@@ -700,8 +713,72 @@ function ProviderCard({
 
 // ─── Section: 语音合成 ───
 
+// ─── Section: 向量模型 ───
+
+function SectionEmbedding({
+  embeddingModel, setEmbeddingModel,
+  embApiKey, setEmbApiKey,
+  embApiBase, setEmbApiBase,
+  showEmbKey, setShowEmbKey,
+}: {
+  embeddingModel: string; setEmbeddingModel: (v: string) => void
+  embApiKey: string; setEmbApiKey: (v: string) => void
+  embApiBase: string; setEmbApiBase: (v: string) => void
+  showEmbKey: boolean; setShowEmbKey: (v: boolean) => void
+}) {
+  return (
+    <div className="space-y-5">
+      <p className="text-[13px] text-muted-foreground">用于 RAG 索引和检索的向量嵌入模型。推荐使用 OpenAI text-embedding-3-small，也支持其他兼容 OpenAI Embeddings API 的服务商。</p>
+
+      <div className="space-y-3 rounded-lg border bg-muted/20 p-3.5">
+        <div className="space-y-1.5">
+          <Label className="text-[13px]">Embedding API Key</Label>
+          <div className="relative">
+            <Input
+              type={showEmbKey ? "text" : "password"}
+              placeholder="sk-..."
+              value={embApiKey}
+              onChange={(e) => setEmbApiKey(e.target.value)}
+              className="h-8 pr-8 text-sm"
+            />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowEmbKey(!showEmbKey)}
+              aria-label={showEmbKey ? "隐藏 Embedding Key" : "显示 Embedding Key"}
+            >
+              {showEmbKey ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />}
+            </button>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-[13px]">Embedding API Base URL</Label>
+          <Input
+            type="url"
+            placeholder={DEFAULT_API_BASE}
+            value={embApiBase}
+            onChange={(e) => setEmbApiBase(e.target.value)}
+            className="h-8 text-sm"
+          />
+          <p className="text-[11px] text-muted-foreground">留空则使用对话模型的 API Base URL</p>
+        </div>
+      </div>
+
+      <FieldGroup label="Embedding 模型" desc="推荐 text-embedding-3-small，也支持 text-embedding-3-large、text-embedding-ada-002 等">
+        <Input
+          placeholder={DEFAULT_EMBEDDING_MODEL}
+          value={embeddingModel}
+          onChange={(e) => setEmbeddingModel(e.target.value)}
+          className="h-8 text-sm"
+        />
+      </FieldGroup>
+    </div>
+  )
+}
+
+// ─── Section: 语音合成 ───
+
 function SectionTTS({
-  useSameKey, setUseSameKey,
   ttsApiKey, setTtsApiKey,
   ttsApiBase, setTtsApiBase,
   ttsModel, setTtsModel,
@@ -709,7 +786,6 @@ function SectionTTS({
   ttsVoiceExpert, setTtsVoiceExpert,
   showTtsKey, setShowTtsKey,
 }: {
-  useSameKey: boolean; setUseSameKey: (v: boolean) => void
   ttsApiKey: string; setTtsApiKey: (v: string) => void
   ttsApiBase: string; setTtsApiBase: (v: string) => void
   ttsModel: string; setTtsModel: (v: string) => void
@@ -721,48 +797,38 @@ function SectionTTS({
     <div className="space-y-5">
       <p className="text-[13px] text-muted-foreground">用于音频概述的双人对话语音合成。配置 MiMo TTS 模型以生成高质量语音。</p>
 
-      <div className="flex items-center justify-between rounded-lg border px-3.5 py-2.5">
-        <div>
-          <p className="text-[13px] font-medium">复用对话模型 API Key</p>
-          <p className="text-[11px] text-muted-foreground">开启后自动使用当前激活服务商的 Key 和地址</p>
-        </div>
-        <Switch checked={useSameKey} onCheckedChange={setUseSameKey} aria-label="复用对话模型 API Key" />
-      </div>
-
-      {!useSameKey && (
-        <div className="space-y-3 rounded-lg border bg-muted/20 p-3.5">
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">TTS API Key</Label>
-            <div className="relative">
-              <Input
-                type={showTtsKey ? "text" : "password"}
-                placeholder="sk-..."
-                value={ttsApiKey}
-                onChange={(e) => setTtsApiKey(e.target.value)}
-                className="h-8 pr-8 text-sm"
-              />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowTtsKey(!showTtsKey)}
-                aria-label={showTtsKey ? "隐藏 TTS Key" : "显示 TTS Key"}
-              >
-                {showTtsKey ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />}
-              </button>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">TTS API Base URL</Label>
+      <div className="space-y-3 rounded-lg border bg-muted/20 p-3.5">
+        <div className="space-y-1.5">
+          <Label className="text-[13px]">TTS API Key</Label>
+          <div className="relative">
             <Input
-              type="url"
-              placeholder={DEFAULT_API_BASE}
-              value={ttsApiBase}
-              onChange={(e) => setTtsApiBase(e.target.value)}
-              className="h-8 text-sm"
+              type={showTtsKey ? "text" : "password"}
+              placeholder="sk-..."
+              value={ttsApiKey}
+              onChange={(e) => setTtsApiKey(e.target.value)}
+              className="h-8 pr-8 text-sm"
             />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowTtsKey(!showTtsKey)}
+              aria-label={showTtsKey ? "隐藏 TTS Key" : "显示 TTS Key"}
+            >
+              {showTtsKey ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />}
+            </button>
           </div>
         </div>
-      )}
+        <div className="space-y-1.5">
+          <Label className="text-[13px]">TTS API Base URL</Label>
+          <Input
+            type="url"
+            placeholder={DEFAULT_API_BASE}
+            value={ttsApiBase}
+            onChange={(e) => setTtsApiBase(e.target.value)}
+            className="h-8 text-sm"
+          />
+        </div>
+      </div>
 
       <FieldGroup label="TTS 模型" desc="MiMo 使用 mimo-v2.5-tts，也支持 OpenAI tts-1/tts-1-hd">
         <Input
@@ -810,13 +876,11 @@ function SectionTTS({
 // ─── Section: 图像生成 ───
 
 function SectionImage({
-  useSameImageKey, setUseSameImageKey,
   imageApiKey, setImageApiKey,
   imageApiBase, setImageApiBase,
   imageModel, setImageModel,
   showImageKey, setShowImageKey,
 }: {
-  useSameImageKey: boolean; setUseSameImageKey: (v: boolean) => void
   imageApiKey: string; setImageApiKey: (v: string) => void
   imageApiBase: string; setImageApiBase: (v: string) => void
   imageModel: string; setImageModel: (v: string) => void
@@ -826,48 +890,38 @@ function SectionImage({
     <div className="space-y-5">
       <p className="text-[13px] text-muted-foreground">用于 AI 生成 PPT 幻灯片图片。推荐使用 GPT-Image-2 Pro 等图像模型。</p>
 
-      <div className="flex items-center justify-between rounded-lg border px-3.5 py-2.5">
-        <div>
-          <p className="text-[13px] font-medium">复用对话模型 API Key</p>
-          <p className="text-[11px] text-muted-foreground">开启后自动使用当前激活服务商的 Key</p>
-        </div>
-        <Switch checked={useSameImageKey} onCheckedChange={setUseSameImageKey} aria-label="复用对话模型 API Key" />
-      </div>
-
-      {!useSameImageKey && (
-        <div className="space-y-3 rounded-lg border bg-muted/20 p-3.5">
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">生图 API Key</Label>
-            <div className="relative">
-              <Input
-                type={showImageKey ? "text" : "password"}
-                placeholder="sk-..."
-                value={imageApiKey}
-                onChange={(e) => setImageApiKey(e.target.value)}
-                className="h-8 pr-8 text-sm"
-              />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowImageKey(!showImageKey)}
-                aria-label={showImageKey ? "隐藏生图 Key" : "显示生图 Key"}
-              >
-                {showImageKey ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />}
-              </button>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">生图 API Base URL</Label>
+      <div className="space-y-3 rounded-lg border bg-muted/20 p-3.5">
+        <div className="space-y-1.5">
+          <Label className="text-[13px]">生图 API Key</Label>
+          <div className="relative">
             <Input
-              type="url"
-              placeholder={DEFAULT_IMAGE_API_BASE}
-              value={imageApiBase}
-              onChange={(e) => setImageApiBase(e.target.value)}
-              className="h-8 text-sm"
+              type={showImageKey ? "text" : "password"}
+              placeholder="sk-..."
+              value={imageApiKey}
+              onChange={(e) => setImageApiKey(e.target.value)}
+              className="h-8 pr-8 text-sm"
             />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowImageKey(!showImageKey)}
+              aria-label={showImageKey ? "隐藏生图 Key" : "显示生图 Key"}
+            >
+              {showImageKey ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />}
+            </button>
           </div>
         </div>
-      )}
+        <div className="space-y-1.5">
+          <Label className="text-[13px]">生图 API Base URL</Label>
+          <Input
+            type="url"
+            placeholder={DEFAULT_IMAGE_API_BASE}
+            value={imageApiBase}
+            onChange={(e) => setImageApiBase(e.target.value)}
+            className="h-8 text-sm"
+          />
+        </div>
+      </div>
 
       <FieldGroup label="生图模型" desc="支持 gpt-image-2、gpt-image-2pro、dall-e-3 等">
         <Input

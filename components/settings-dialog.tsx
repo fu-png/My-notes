@@ -31,7 +31,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
-import { Switch } from "@/components/ui/switch"
+
 import {
   Select,
   SelectContent,
@@ -69,7 +69,6 @@ import {
   STORAGE_KEY_EMBEDDING_MODEL,
   STORAGE_KEY_EMBEDDING_API_KEY,
   STORAGE_KEY_EMBEDDING_API_BASE,
-  STORAGE_KEY_EMBEDDING_USE_SAME,
   STORAGE_KEY_TTS_API_KEY,
   STORAGE_KEY_TTS_API_BASE,
   STORAGE_KEY_TTS_MODEL,
@@ -111,7 +110,6 @@ export {
   STORAGE_KEY_EMBEDDING_MODEL,
   STORAGE_KEY_EMBEDDING_API_KEY,
   STORAGE_KEY_EMBEDDING_API_BASE,
-  STORAGE_KEY_EMBEDDING_USE_SAME,
   STORAGE_KEY_TTS_API_KEY,
   STORAGE_KEY_TTS_API_BASE,
   STORAGE_KEY_TTS_MODEL,
@@ -157,7 +155,6 @@ export function SettingsDialog() {
   const [apiBase, setApiBase] = React.useState(DEFAULT_API_BASE)
   const [model, setModel] = React.useState(DEFAULT_MODEL)
   const [embeddingModel, setEmbeddingModel] = React.useState(DEFAULT_EMBEDDING_MODEL)
-  const [embUseSame, setEmbUseSame] = React.useState(true)
   const [embApiKey, setEmbApiKey] = React.useState("")
   const [embApiBase, setEmbApiBase] = React.useState(DEFAULT_API_BASE)
   const [showEmbKey, setShowEmbKey] = React.useState(false)
@@ -169,13 +166,11 @@ export function SettingsDialog() {
   const [ttsModel, setTtsModel] = React.useState(DEFAULT_TTS_MODEL)
   const [ttsVoiceHost, setTtsVoiceHost] = React.useState(DEFAULT_TTS_VOICE_HOST)
   const [ttsVoiceExpert, setTtsVoiceExpert] = React.useState(DEFAULT_TTS_VOICE_EXPERT)
-  const [useSameKey, setUseSameKey] = React.useState(true)
 
   // 生图模型配置
   const [imageApiKey, setImageApiKey] = React.useState("")
   const [imageApiBase, setImageApiBase] = React.useState(DEFAULT_IMAGE_API_BASE)
   const [imageModel, setImageModel] = React.useState(DEFAULT_IMAGE_MODEL)
-  const [useSameImageKey, setUseSameImageKey] = React.useState(true)
 
   // AI 个性 / Persona
   const [personaPrompt, setPersonaPrompt] = React.useState("")
@@ -200,7 +195,6 @@ export function SettingsDialog() {
       setApiBase(savedBase)
       setModel(savedModel)
       setEmbeddingModel(localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL)
-      setEmbUseSame(localStorage.getItem(STORAGE_KEY_EMBEDDING_USE_SAME) !== "false")
       setEmbApiKey(localStorage.getItem(STORAGE_KEY_EMBEDDING_API_KEY) || "")
       setEmbApiBase(localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || DEFAULT_API_BASE)
       const detected = detectProvider(savedBase)
@@ -214,13 +208,11 @@ export function SettingsDialog() {
       setTtsModel(localStorage.getItem(STORAGE_KEY_TTS_MODEL) || DEFAULT_TTS_MODEL)
       setTtsVoiceHost(localStorage.getItem(STORAGE_KEY_TTS_VOICE_HOST) || DEFAULT_TTS_VOICE_HOST)
       setTtsVoiceExpert(localStorage.getItem(STORAGE_KEY_TTS_VOICE_EXPERT) || DEFAULT_TTS_VOICE_EXPERT)
-      setUseSameKey(!savedTtsKey)
 
       const savedImageKey = localStorage.getItem(STORAGE_KEY_IMAGE_API_KEY) || ""
       setImageApiKey(savedImageKey)
       setImageApiBase(localStorage.getItem(STORAGE_KEY_IMAGE_API_BASE) || DEFAULT_IMAGE_API_BASE)
       setImageModel(localStorage.getItem(STORAGE_KEY_IMAGE_MODEL) || DEFAULT_IMAGE_MODEL)
-      setUseSameImageKey(!savedImageKey)
 
       setPersonaPrompt(localStorage.getItem(STORAGE_KEY_PERSONA) || "")
       setUserName(localStorage.getItem(STORAGE_KEY_USER_NAME) || "")
@@ -256,7 +248,7 @@ export function SettingsDialog() {
         return
       }
     }
-    const trimmedTtsApiBase = !useSameKey ? ttsApiBase.trim() : ""
+    const trimmedTtsApiBase = ttsApiBase.trim()
     if (trimmedTtsApiBase) {
       try {
         const parsed = new URL(trimmedTtsApiBase)
@@ -266,7 +258,7 @@ export function SettingsDialog() {
         return
       }
     }
-    const trimmedImageApiBase = !useSameImageKey ? imageApiBase.trim() : ""
+    const trimmedImageApiBase = imageApiBase.trim()
     if (trimmedImageApiBase) {
       try {
         const parsed = new URL(trimmedImageApiBase)
@@ -281,33 +273,17 @@ export function SettingsDialog() {
     localStorage.setItem(STORAGE_KEY_API_BASE, apiBase.trim() || DEFAULT_API_BASE)
     localStorage.setItem(STORAGE_KEY_MODEL, model.trim() || DEFAULT_MODEL)
     localStorage.setItem(STORAGE_KEY_EMBEDDING_MODEL, embeddingModel.trim() || DEFAULT_EMBEDDING_MODEL)
-    localStorage.setItem(STORAGE_KEY_EMBEDDING_USE_SAME, embUseSame ? "true" : "false")
-    if (embUseSame) {
-      localStorage.removeItem(STORAGE_KEY_EMBEDDING_API_KEY)
-      localStorage.removeItem(STORAGE_KEY_EMBEDDING_API_BASE)
-    } else {
-      localStorage.setItem(STORAGE_KEY_EMBEDDING_API_KEY, embApiKey.trim())
-      localStorage.setItem(STORAGE_KEY_EMBEDDING_API_BASE, embApiBase.trim() || DEFAULT_API_BASE)
-    }
+    localStorage.setItem(STORAGE_KEY_EMBEDDING_API_KEY, embApiKey.trim())
+    localStorage.setItem(STORAGE_KEY_EMBEDDING_API_BASE, embApiBase.trim() || DEFAULT_API_BASE)
 
-    if (useSameKey) {
-      localStorage.removeItem(STORAGE_KEY_TTS_API_KEY)
-      localStorage.removeItem(STORAGE_KEY_TTS_API_BASE)
-    } else {
-      localStorage.setItem(STORAGE_KEY_TTS_API_KEY, ttsApiKey.trim())
-      localStorage.setItem(STORAGE_KEY_TTS_API_BASE, ttsApiBase.trim())
-    }
+    localStorage.setItem(STORAGE_KEY_TTS_API_KEY, ttsApiKey.trim())
+    localStorage.setItem(STORAGE_KEY_TTS_API_BASE, ttsApiBase.trim())
     localStorage.setItem(STORAGE_KEY_TTS_MODEL, ttsModel.trim() || DEFAULT_TTS_MODEL)
     localStorage.setItem(STORAGE_KEY_TTS_VOICE_HOST, ttsVoiceHost)
     localStorage.setItem(STORAGE_KEY_TTS_VOICE_EXPERT, ttsVoiceExpert)
 
-    if (useSameImageKey) {
-      localStorage.removeItem(STORAGE_KEY_IMAGE_API_KEY)
-      localStorage.removeItem(STORAGE_KEY_IMAGE_API_BASE)
-    } else {
-      localStorage.setItem(STORAGE_KEY_IMAGE_API_KEY, imageApiKey.trim())
-      localStorage.setItem(STORAGE_KEY_IMAGE_API_BASE, imageApiBase.trim() || DEFAULT_IMAGE_API_BASE)
-    }
+    localStorage.setItem(STORAGE_KEY_IMAGE_API_KEY, imageApiKey.trim())
+    localStorage.setItem(STORAGE_KEY_IMAGE_API_BASE, imageApiBase.trim() || DEFAULT_IMAGE_API_BASE)
     localStorage.setItem(STORAGE_KEY_IMAGE_MODEL, imageModel.trim() || DEFAULT_IMAGE_MODEL)
 
     // Persona
@@ -475,59 +451,43 @@ export function SettingsDialog() {
               onChange={(e) => setEmbeddingModel(e.target.value)}
             />
 
-            {/* 复用对话 API 开关 */}
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5 mt-2">
-              <Label htmlFor="emb-use-same" className="text-sm font-normal cursor-pointer">
-                使用与 AI 对话相同的 API Key 和地址
-              </Label>
-              <Switch
-                id="emb-use-same"
-                checked={embUseSame}
-                onCheckedChange={setEmbUseSame}
+            {/* 独立 Embedding API */}
+            <div className="space-y-2">
+              <Label htmlFor="emb-api-key">Embedding API Key</Label>
+              <div className="relative">
+                <Input
+                  id="emb-api-key"
+                  type={showEmbKey ? "text" : "password"}
+                  placeholder="sk-..."
+                  value={embApiKey}
+                  onChange={(e) => setEmbApiKey(e.target.value)}
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                  onClick={() => setShowEmbKey(!showEmbKey)}
+                  aria-label={showEmbKey ? "隐藏 Key" : "显示 Key"}
+                >
+                  {showEmbKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="emb-api-base">Embedding API Base URL</Label>
+              <Input
+                id="emb-api-base"
+                type="url"
+                placeholder={DEFAULT_API_BASE}
+                value={embApiBase}
+                onChange={(e) => setEmbApiBase(e.target.value)}
               />
             </div>
 
-            {/* 独立 Embedding API（仅在未勾选时展示） */}
-            {!embUseSame && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="emb-api-key">Embedding API Key</Label>
-                  <div className="relative">
-                    <Input
-                      id="emb-api-key"
-                      type={showEmbKey ? "text" : "password"}
-                      placeholder="sk-..."
-                      value={embApiKey}
-                      onChange={(e) => setEmbApiKey(e.target.value)}
-                      className="pr-10"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
-                      onClick={() => setShowEmbKey(!showEmbKey)}
-                      aria-label={showEmbKey ? "隐藏 Key" : "显示 Key"}
-                    >
-                      {showEmbKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
-                    </Button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="emb-api-base">Embedding API Base URL</Label>
-                  <Input
-                    id="emb-api-base"
-                    type="url"
-                    placeholder={DEFAULT_API_BASE}
-                    value={embApiBase}
-                    onChange={(e) => setEmbApiBase(e.target.value)}
-                  />
-                </div>
-              </>
-            )}
-
             <p className="text-xs text-muted-foreground">
-              用于知识库索引（RAG）。若对话服务商不支持 Embedding（如 DeepSeek、小米蜜馍），请关闭复用并配置支持 Embedding 的服务商（如硅基流动、OpenAI）。
+              用于知识库索引（RAG）。若对话服务商不支持 Embedding（如 DeepSeek、小米蜜馍），请配置支持 Embedding 的服务商（如硅基流动、OpenAI）。
             </p>
           </div>
         </div>
@@ -544,60 +504,44 @@ export function SettingsDialog() {
             用于音频概述的双人对话语音合成。若不配置，将使用浏览器内置朗读。
           </p>
 
-          {/* 复用 AI Key 开关 */}
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-            <Label htmlFor="use-same-key" className="text-sm font-normal cursor-pointer">
-              使用与 AI 对话相同的 API Key 和地址
-            </Label>
-            <Switch
-              id="use-same-key"
-              checked={useSameKey}
-              onCheckedChange={setUseSameKey}
-            />
+          {/* 独立 TTS API Key */}
+          <div className="space-y-2">
+            <Label htmlFor="tts-api-key">TTS API Key</Label>
+            <div className="relative">
+              <Input
+                id="tts-api-key"
+                type={showTtsKey ? "text" : "password"}
+                placeholder="sk-..."
+                value={ttsApiKey}
+                onChange={(e) => setTtsApiKey(e.target.value)}
+                className="pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                onClick={() => setShowTtsKey(!showTtsKey)}
+                aria-label={showTtsKey ? "隐藏 TTS Key" : "显示 TTS Key"}
+              >
+                {showTtsKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
+              </Button>
+            </div>
           </div>
-
-          {/* 独立 TTS API Key（仅在未勾选时展示） */}
-          {!useSameKey && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="tts-api-key">TTS API Key</Label>
-                <div className="relative">
-                  <Input
-                    id="tts-api-key"
-                    type={showTtsKey ? "text" : "password"}
-                    placeholder="sk-..."
-                    value={ttsApiKey}
-                    onChange={(e) => setTtsApiKey(e.target.value)}
-                    className="pr-10"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
-                    onClick={() => setShowTtsKey(!showTtsKey)}
-                    aria-label={showTtsKey ? "隐藏 TTS Key" : "显示 TTS Key"}
-                  >
-                    {showTtsKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="tts-api-base">TTS API Base URL</Label>
-                <Input
-                  id="tts-api-base"
-                  type="url"
-                  placeholder={DEFAULT_API_BASE}
-                  value={ttsApiBase}
-                  onChange={(e) => {
-                    setTtsApiBase(e.target.value)
-                    setTtsApiBaseError("")
-                  }}
-                />
-                {ttsApiBaseError && <p className="text-xs text-destructive">{ttsApiBaseError}</p>}
-              </div>
-            </>
-          )}
+          <div className="space-y-2">
+            <Label htmlFor="tts-api-base">TTS API Base URL</Label>
+            <Input
+              id="tts-api-base"
+              type="url"
+              placeholder={DEFAULT_API_BASE}
+              value={ttsApiBase}
+              onChange={(e) => {
+                setTtsApiBase(e.target.value)
+                setTtsApiBaseError("")
+              }}
+            />
+            {ttsApiBaseError && <p className="text-xs text-destructive">{ttsApiBaseError}</p>}
+          </div>
 
           {/* TTS Model */}
           <div className="space-y-2">
@@ -698,60 +642,44 @@ export function SettingsDialog() {
             用于 AI 生成 PPT 幻灯片图片。推荐使用 GPT-Image-2 Pro 等图像生成模型。
           </p>
 
-          {/* 复用 AI Key 开关 */}
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-            <Label htmlFor="use-same-image-key" className="text-sm font-normal cursor-pointer">
-              使用与 AI 对话相同的 API Key
-            </Label>
-            <Switch
-              id="use-same-image-key"
-              checked={useSameImageKey}
-              onCheckedChange={setUseSameImageKey}
-            />
+          {/* 独立生图 API Key */}
+          <div className="space-y-2">
+            <Label htmlFor="image-api-key">生图 API Key</Label>
+            <div className="relative">
+              <Input
+                id="image-api-key"
+                type={showImageKey ? "text" : "password"}
+                placeholder="sk-..."
+                value={imageApiKey}
+                onChange={(e) => setImageApiKey(e.target.value)}
+                className="pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                onClick={() => setShowImageKey(!showImageKey)}
+                aria-label={showImageKey ? "隐藏生图 Key" : "显示生图 Key"}
+              >
+                {showImageKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
+              </Button>
+            </div>
           </div>
-
-          {/* 独立生图 API Key（仅在未勾选时展示） */}
-          {!useSameImageKey && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="image-api-key">生图 API Key</Label>
-                <div className="relative">
-                  <Input
-                    id="image-api-key"
-                    type={showImageKey ? "text" : "password"}
-                    placeholder="sk-..."
-                    value={imageApiKey}
-                    onChange={(e) => setImageApiKey(e.target.value)}
-                    className="pr-10"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
-                    onClick={() => setShowImageKey(!showImageKey)}
-                    aria-label={showImageKey ? "隐藏生图 Key" : "显示生图 Key"}
-                  >
-                    {showImageKey ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="image-api-base">生图 API Base URL</Label>
-                <Input
-                  id="image-api-base"
-                  type="url"
-                  placeholder={DEFAULT_IMAGE_API_BASE}
-                  value={imageApiBase}
-                  onChange={(e) => {
-                    setImageApiBase(e.target.value)
-                    setImageApiBaseError("")
-                  }}
-                />
-                {imageApiBaseError && <p className="text-xs text-destructive">{imageApiBaseError}</p>}
-              </div>
-            </>
-          )}
+          <div className="space-y-2">
+            <Label htmlFor="image-api-base">生图 API Base URL</Label>
+            <Input
+              id="image-api-base"
+              type="url"
+              placeholder={DEFAULT_IMAGE_API_BASE}
+              value={imageApiBase}
+              onChange={(e) => {
+                setImageApiBase(e.target.value)
+                setImageApiBaseError("")
+              }}
+            />
+            {imageApiBaseError && <p className="text-xs text-destructive">{imageApiBaseError}</p>}
+          </div>
 
           {/* Image Model */}
           <div className="space-y-2">
