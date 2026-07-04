@@ -94,26 +94,39 @@ export async function ingestProject(
   }
 
   // 4. Embedding
+  // [修复] 即使 embedding 失败也继续创建 BM25 索引，确保 RAG 至少有全文检索兜底
   log("正在生成 Embedding（这可能需要几分钟）...")
   const contents = chunks.map((c) => c.content)
-  let lastReportedPercent = -1
-  const embeddings = await embedBatch(contents, config, (done, total) => {
-    // 按 10% 的粒度上报进度，避免批次很多时刷屏
-    const percent = Math.floor((done / total) * 100)
-    if (percent >= lastReportedPercent + 10 || done === total) {
-      lastReportedPercent = percent
-      log(`Embedding 进度：${done}/${total}（${percent}%）`)
-    }
-  })
-  log(`生成了 ${embeddings.length} 个 Embedding 向量`)
+  let embeddings: number[][] = []
+  let embeddingFailed = false
+  try {
+    let lastReportedPercent = -1
+    embeddings = await embedBatch(contents, config, (done, total) => {
+      const percent = Math.floor((done / total) * 100)
+      if (percent >= lastReportedPercent + 10 || done === total) {
+        lastReportedPercent = percent
+        log(`Embedding 进度：${done}/${total}（${percent}%）`)
+      }
+    })
+    log(`生成了 ${embeddings.length} 个 Embedding 向量`)
+  } catch (err) {
+    console.error("[pipeline] Embedding 整体失败，仅创建 BM25 索引:", err)
+    log("Embedding 失败，将仅使用全文搜索（BM25）")
+    embeddingFailed = true
+  }
 
-  // 5. 先清空旧索引，再并行存入向量索引和创建 BM25 索引（两者互不依赖）
-  log("正在存入向量索引和全文搜索索引...")
+  // 5. 先清空旧索引，再存入向量索引和 BM25 索引
+  log("正在存入索引...")
   await deleteIndex(projectId)
-  await Promise.all([
-    addChunks(projectId, chunks, embeddings),
-    createBm25Index(projectId, chunks),
-  ])
+  if (!embeddingFailed && embeddings.length > 0) {
+    await Promise.all([
+      addChunks(projectId, chunks, embeddings),
+      createBm25Index(projectId, chunks),
+    ])
+  } else {
+    // embedding 失败时只创建 BM25 索引
+    await createBm25Index(projectId, chunks)
+  }
   log("索引创建完成")
 
   // 7. 保存索引状态 + 构建知识图谱（两者互不依赖，并行执行）
@@ -161,45 +174,76 @@ export async function queryProject(
   // 检查是否已索引
   const status = await getIndexStatus(projectId)
   if (!status?.indexed) {
+    // [修复] 即使向量索引不存在，也尝试用 BM25 兜底检索
+    // 防止因索引构建失败（如 embedding API 报错）导致 RAG 完全不可用
+    try {
+      const bm25Results = await searchByBm25(projectId, question, 20)
+      if (bm25Results.length > 0) {
+        console.debug(`[pipeline] 向量索引不可用，使用 BM25 兜底检索到 ${bm25Results.length} 个结果`)
+        const context = buildContext(bm25Results, config.maxContextTokens || 12000)
+        return context
+      }
+    } catch {
+      // BM25 索引也不存在，返回空
+    }
     return { text: "", sources: [], totalTokens: 0 }
   }
 
   // 1. 查询分解 + Embedding 并行执行（节省一次串行等待）
-  const [decomposed, directEmbedding] = await Promise.all([
-    decomposeQuery(question, config),
-    embedBatch([question], config), // 先为原始问题生成 embedding，分解完成后按需补充
-  ])
+  let decomposed: { subQueries: string[]; reasoning: string; original: string }
+  let directEmbedding: number[][] = []
+  let vectorSearchAvailable = true
+  try {
+    [decomposed, directEmbedding] = await Promise.all([
+      decomposeQuery(question, config),
+      embedBatch([question], config),
+    ])
+  } catch (err) {
+    // [修复] embedding 失败时降级到纯 BM25 模式，而不是整体报错
+    console.warn("[pipeline] Embedding 失败，降级到纯 BM25 模式:", err)
+    decomposed = { original: question, subQueries: [question], reasoning: "Embedding 失败" }
+    vectorSearchAvailable = false
+  }
   console.debug(`[pipeline] 查询分解为 ${decomposed.subQueries.length} 个子查询:`, decomposed.subQueries)
 
   // 2. 检索 — 批量 Embedding + 并行检索
   const subQueries = decomposed.subQueries
   // 复用已生成的原始问题 embedding，避免重复调用
-  let queryEmbeddings: number[][]
-  if (subQueries.length === 1 && subQueries[0] === question) {
-    queryEmbeddings = directEmbedding
-  } else {
-    // 复用原始问题的 embedding：若原始问题在子查询中，直接使用已生成的 embedding
-    const originalIdx = subQueries.indexOf(question)
-    if (originalIdx >= 0) {
-      const others = subQueries.filter((_, i) => i !== originalIdx)
-      const otherEmbeddings = others.length > 0 ? await embedBatch(others, config) : []
-      queryEmbeddings = []
-      let otherI = 0
-      for (let i = 0; i < subQueries.length; i++) {
-        queryEmbeddings.push(i === originalIdx ? directEmbedding[0] : otherEmbeddings[otherI++])
-      }
+  let queryEmbeddings: number[][] = []
+  if (vectorSearchAvailable) {
+    if (subQueries.length === 1 && subQueries[0] === question) {
+      queryEmbeddings = directEmbedding
     } else {
-      queryEmbeddings = await embedBatch(subQueries, config)
+      const originalIdx = subQueries.indexOf(question)
+      if (originalIdx >= 0) {
+        const others = subQueries.filter((_, i) => i !== originalIdx)
+        const otherEmbeddings = others.length > 0 ? await embedBatch(others, config) : []
+        queryEmbeddings = []
+        let otherI = 0
+        for (let i = 0; i < subQueries.length; i++) {
+          queryEmbeddings.push(i === originalIdx ? directEmbedding[0] : otherEmbeddings[otherI++])
+        }
+      } else {
+        queryEmbeddings = await embedBatch(subQueries, config)
+      }
     }
   }
 
   const perQueryResults = await Promise.all(
     subQueries.map(async (subQuery, i) => {
-      const [vectorResults, bm25Results] = await Promise.all([
-        searchByVector(projectId, queryEmbeddings[i], 30),
-        searchByBm25(projectId, subQuery, 30),
-      ])
-      return simpleRRFFuse([vectorResults, bm25Results], subQueries.length > 1 ? 25 : 20)
+      // [修复] 向量搜索失败时降级到纯 BM25
+      let vectorResults: SearchResult[] = []
+      if (vectorSearchAvailable && queryEmbeddings[i]?.length > 0) {
+        try {
+          vectorResults = await searchByVector(projectId, queryEmbeddings[i], 30)
+        } catch (err) {
+          console.warn(`[pipeline] 向量搜索失败，仅使用 BM25:`, err)
+        }
+      }
+      const bm25Results = await searchByBm25(projectId, subQuery, 30)
+      // 如果向量搜索没有结果，只用 BM25
+      const resultSets = vectorResults.length > 0 ? [vectorResults, bm25Results] : [bm25Results]
+      return simpleRRFFuse(resultSets, subQueries.length > 1 ? 25 : 20)
     })
   )
 

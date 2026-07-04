@@ -12,11 +12,18 @@ import type { Chunk } from "./types"
 
 // ─── 配置 ───
 
-const DEFAULT_CHUNK_SIZE = 800 // tokens（增大块大小保留更多语义上下文）
+// [修复] 将 chunk 大小从 800 降到 450 tokens
+// BERT 系列 embedding 模型（如 bge-large-zh-v1.5）的硬限制是 512 tokens，
+// 其中 CJK 字符在 BERT tokenizer 中每字符 = 1 token，加上 [CLS]/[SEP] 需要 2 tokens，
+// 因此有效内容上限约 510 tokens。设为 450 留出安全余量。
+const DEFAULT_CHUNK_SIZE = 450 // tokens（适配 BERT 系列模型 512 token 上限）
 const DEFAULT_CHUNK_OVERLAP = 0.15 // 15% overlap
 const MIN_CHUNK_SIZE = 30 // 低于此值的碎片块丢弃
 
-// 粗略估算 token 数：英文约 4 字符/token，中文约 1.5 字符/token
+// [修复] token 估算：CJK 按 1:1 计算（BERT tokenizer 每个 CJK 字符 = 1 token）
+// 之前使用 1.5 字符/token 的系数严重低估了实际 token 数，
+// 导致分块后的文本超过 embedding 模型限制（bge-large-zh-v1.5 max 512 tokens），
+// 从而使索引构建整体失败。
 // 使用 charCodeAt 代替正则，显著提升长文本性能
 function isCJKChar(code: number): boolean {
   return (
@@ -36,7 +43,7 @@ function estimateTokens(text: string): number {
       other++
     }
   }
-  return Math.ceil(cjk / 1.5 + other / 4)
+  return Math.ceil(cjk / 1.0 + other / 4)
 }
 
 // ─── 标题解析 ───
@@ -184,7 +191,7 @@ function splitBySentences(text: string, maxTokens: number): string[] {
       if (current) chunks.push(current)
       // 如果单个句子超过 maxTokens，按字符硬切分
       if (estimateTokens(sent) > maxTokens) {
-        const maxChars = maxTokens * 3 // 粗略按 1 token ≈ 3 字符（兼顾中英文）
+        const maxChars = maxTokens * 2 // 粗略按 1 token ≈ 2 字符（CJK 1:1，英文 4:1，取中间值）
         for (let i = 0; i < sent.length; i += maxChars) {
           chunks.push(sent.slice(i, i + maxChars))
         }

@@ -38,7 +38,9 @@ export const STORAGE_KEY_ACTIVE_PROVIDER = "ai-assistant-active-provider"
 
 export const DEFAULT_API_BASE = "https://api.openai.com/v1"
 export const DEFAULT_MODEL = "gpt-4o-mini"
-export const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+export const DEFAULT_EMBEDDING_MODEL = "BAAI/bge-large-zh-v1.5"
+export const DEFAULT_EMBEDDING_API_BASE = "https://api.siliconflow.cn/v1/embeddings"
+export const DEFAULT_EMBEDDING_API_KEY = "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx"
 export const DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
 export const DEFAULT_TTS_VOICE_HOST = "冰糖"
 export const DEFAULT_TTS_VOICE_EXPERT = "苏打"
@@ -155,8 +157,6 @@ export function getConfiguredEmbeddingModel(): string {
  */
 export function getEmbeddingConfig(): EmbeddingConfig | null {
   if (typeof window === "undefined") return null
-  const aiConfig = getAIConfig()
-  if (!aiConfig) return null
 
   const embeddingModel = localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL
 
@@ -166,15 +166,16 @@ export function getEmbeddingConfig(): EmbeddingConfig | null {
   if (embApiKey) {
     return {
       apiKey: embApiKey,
-      apiBase: embApiBase,
+      apiBase: embApiBase || DEFAULT_EMBEDDING_API_BASE,
       embeddingModel,
     }
   }
 
-  // Fall back to chat API config
+  // 使用内置的 embedding API 默认配置（BAAI/bge-large-zh-v1.5 + SiliconFlow）
+  // 这样即使用户没有单独配置 embedding API，也能正常构建索引
   return {
-    apiKey: aiConfig.apiKey,
-    apiBase: aiConfig.apiBase,
+    apiKey: DEFAULT_EMBEDDING_API_KEY,
+    apiBase: DEFAULT_EMBEDDING_API_BASE,
     embeddingModel,
   }
 }

@@ -41,20 +41,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
 
       case "index": {
-        if (!apiKey) {
-          return NextResponse.json(
-            { error: "需要 API Key 来生成 Embedding" },
-            { status: 400 }
-          )
-        }
+        // embedding 有内置默认 API Key（SiliconFlow + bge-large-zh-v1.5），
+        // 不再强制要求用户提供 chat API key 即可构建索引
+        const effectiveApiKey = apiKey || embeddingApiKey || "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx"
 
         const config: RAGConfig = {
-          apiKey,
+          apiKey: effectiveApiKey,
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
-          embeddingModel: embeddingModel || "text-embedding-3-small",
-          embeddingApiKey: embeddingApiKey || undefined,
-          embeddingApiBase: embeddingApiBase || undefined,
+          embeddingModel: embeddingModel || "BAAI/bge-large-zh-v1.5",
+          embeddingApiKey: embeddingApiKey || "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx",
+          embeddingApiBase: embeddingApiBase || "https://api.siliconflow.cn/v1/embeddings",
           maxContextTokens: maxContextTokens || 12000,
         }
 
@@ -111,12 +108,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
 
       case "query": {
-        if (!apiKey) {
-          return NextResponse.json(
-            { error: "需要 API Key 来执行查询" },
-            { status: 400 }
-          )
-        }
         if (!question) {
           return NextResponse.json(
             { error: "缺少查询问题" },
@@ -124,13 +115,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
           )
         }
 
+        const queryApiKey = apiKey || embeddingApiKey || "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx"
         const config: RAGConfig = {
-          apiKey,
+          apiKey: queryApiKey,
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
-          embeddingModel: embeddingModel || "text-embedding-3-small",
-          embeddingApiKey: embeddingApiKey || undefined,
-          embeddingApiBase: embeddingApiBase || undefined,
+          embeddingModel: embeddingModel || "BAAI/bge-large-zh-v1.5",
+          embeddingApiKey: embeddingApiKey || "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx",
+          embeddingApiBase: embeddingApiBase || "https://api.siliconflow.cn/v1/embeddings",
           maxContextTokens: maxContextTokens || 12000,
         }
 

@@ -303,16 +303,20 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       ? fetchWebContent(webIntent, aiMsgId, controller.signal)
       : Promise.resolve(null)
 
-    const ragQueryPromise = (ragEnabled && indexStatus?.indexed && lastUserMsg)
+    // [修复] 去掉 indexStatus?.indexed 的前置条件
+    // 即使向量索引未构建成功，也尝试 RAG 查询——pipeline.queryProject 内部
+    // 会自动降级到 BM25 兜底检索，而非直接跳过让 LLM 无上下文地乱回答
+    const ragQueryPromise = (ragEnabled && lastUserMsg)
       ? (async () => {
           try {
             const recentUserMsgs = userMessages
               .filter((m) => m.role === "user" && m.id !== "welcome")
               .slice(-3)
               .map((m) => m.content)
-            const contextQuery = recentUserMsgs.length > 1
-              ? `${recentUserMsgs[recentUserMsgs.length - 1]}\n\n对话上下文：${recentUserMsgs.slice(0, -1).join("；")}`
-              : lastUserMsg.content
+            // [修复] 只使用当前问题作为 RAG 查询，不混入历史对话上下文
+            // 之前将多条历史消息拼接后整体 embed，会产生"混合意图"的 embedding，
+            // 稀释向量搜索精度，尤其是历史消息涉及不同主题时
+            const contextQuery = recentUserMsgs[recentUserMsgs.length - 1]
 
             const ragRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
               method: "POST",

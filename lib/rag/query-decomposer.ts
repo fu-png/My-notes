@@ -129,14 +129,15 @@ const COMPLEX_INDICATOR_PATTERNS = [
 function isSimpleQuery(question: string): boolean {
   const trimmed = question.trim()
 
-  // 过短的问题（中文 8 字以上才需要判断，英文 20 字以上）
-  // 注意：中文表达简短，之前 15 字阈值会导致很多需要跨文件检索的问题
-  // （如"工具和权限的关系"只有7字）被误判为简单问题而跳过 LLM 分解
+  // [修复] 将 CJK 最小长度从 8 降到 4，英文从 20 降到 10
+  // 中文问题通常很简短，如"工具和权限的关系"只有 7 字，
+  // "钩子和子智能体"只有 6 字，但它们都需要跨文件检索。
+  // 降低阈值让更多短问题能进入复杂度指标判断，而非直接跳过。
   const cjkCount = (trimmed.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length
   if (cjkCount > 0) {
-    if (trimmed.length < 8) return true
+    if (trimmed.length < 4) return true
   } else {
-    if (trimmed.length < 20) return true
+    if (trimmed.length < 10) return true
   }
 
   // 不包含对比、多概念标志词

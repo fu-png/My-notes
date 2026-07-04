@@ -25,8 +25,9 @@ function simpleHash(str: string): string {
 const MAX_RETRIES = 3
 const RETRY_DELAY_MS = 1000
 const RATE_LIMIT_RETRY_DELAY_MS = 3000 // 429 限流专用退避基数（比普通 5xx 更保守）
-const BATCH_SIZE = 50 // 每批最多 50 条
-const MAX_CONCURRENCY = 10 // 同时在途的批次请求数上限
+const BATCH_SIZE = 20 // 每批最多 20 条（降低以适配 SiliconFlow 等服务商的请求体大小限制）
+const MAX_CONCURRENCY = 5 // 同时在途的批次请求数上限（降低以减少限流风险）
+const MAX_TEXT_CHARS = 900 // 单条文本最大字符数（超过则截断，防止超出 embedding 模型 token 限制）
 
 // 查询 embedding 缓存：避免重复 API 调用（相同文本短时间内返回相同结果）
 const embeddingCache = new Map<string, { vector: number[]; cachedAt: number }>()
@@ -82,13 +83,16 @@ export async function embedBatch(
 ): Promise<number[][]> {
   if (texts.length === 0) return []
 
-  const total = texts.length
+  // [修复] 对超长文本进行截断保护，防止单条文本超出 embedding 模型 token 限制
+  const safeTexts = texts.map((t) => t.length > MAX_TEXT_CHARS ? t.slice(0, MAX_TEXT_CHARS) : t)
+
+  const total = safeTexts.length
   const allResults: number[][] = new Array(total)
 
   // 切分批次
   const batches: { start: number; texts: string[] }[] = []
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    batches.push({ start: i, texts: texts.slice(i, i + BATCH_SIZE) })
+  for (let i = 0; i < safeTexts.length; i += BATCH_SIZE) {
+    batches.push({ start: i, texts: safeTexts.slice(i, i + BATCH_SIZE) })
   }
 
   let completedCount = 0
@@ -102,10 +106,18 @@ export async function embedBatch(
       if (batchIndex >= batches.length) return
 
       const batch = batches[batchIndex]
-      const batchResults = await embedBatchWithRetry(batch.texts, config)
-
-      for (let j = 0; j < batchResults.length; j++) {
-        allResults[batch.start + j] = batchResults[j]
+      try {
+        const batchResults = await embedBatchWithRetry(batch.texts, config)
+        for (let j = 0; j < batchResults.length; j++) {
+          allResults[batch.start + j] = batchResults[j]
+        }
+      } catch (err) {
+        // [修复] 逐批次错误捕获：单个批次失败不终止整个索引流程，
+        // 填充零向量作为占位，后续 BM25 仍可检索这些分块
+        console.warn(`[embedding] Batch ${batchIndex} failed, filling with zero vectors:`, err)
+        for (let j = 0; j < batch.texts.length; j++) {
+          allResults[batch.start + j] = [] // 空向量，向量搜索会跳过
+        }
       }
 
       completedCount += batch.texts.length
@@ -128,7 +140,7 @@ async function embedBatchWithRetry(
   // 如果用户已经填了完整的 embedding 端点（以 /embeddings 结尾），直接用；
   // 否则自动拼接 /embeddings，与 OpenAI 兼容 API 的标准路径一致
   const url = baseUrl.endsWith("/embeddings") ? baseUrl : `${baseUrl}/embeddings`
-  const model = config.embeddingModel || "text-embedding-3-small"
+  const model = config.embeddingModel || "BAAI/bge-large-zh-v1.5"
   const embApiKey = config.embeddingApiKey || config.apiKey
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {

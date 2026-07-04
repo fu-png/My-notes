@@ -36,8 +36,11 @@ export function buildContext(
   // 2. 按得分排序（已经排好了，但去重后可能乱序）
   deduped.sort((a, b) => b.score - a.score)
 
-  // 2.5 近重复去重：去除内容高度相似的 chunk（Jaccard 相似度 > 0.6）
-  const dedupedSimilar = removeNearDuplicates(deduped, 0.6)
+  // 2.5 近重复去重：去除内容高度相似的 chunk
+  // [修复] 阈值从 0.6 提高到 0.75，避免误伤跨文件的互补内容
+  // 不同文件讨论相同主题时措辞可能相似（如都描述"工具执行流程"），
+  // 但角度和细节不同，0.6 的阈值会将它们当作重复丢弃
+  const dedupedSimilar = removeNearDuplicates(deduped, 0.75)
 
   // 3. 按 token 预算截断，同时保障文件多样性
   //    策略：两轮选取
@@ -87,8 +90,18 @@ export function buildContext(
   }
 
   // 第二轮：剩余预算按分数贪心填充（跳过已选的）
+  // [优化] 限制单个文件最多占用 5 个 chunk，防止综合章节挤压其他文件
+  const fileChunkCount = new Map<string, number>()
+  for (const r of selected) {
+    const fname = r.chunk.filename
+    fileChunkCount.set(fname, (fileChunkCount.get(fname) || 0) + 1)
+  }
+  const MAX_CHUNKS_PER_FILE = 5
+
   for (const result of dedupedSimilar) {
     if (selectedIds.has(result.chunk.id)) continue
+    const fname = result.chunk.filename
+    if ((fileChunkCount.get(fname) || 0) >= MAX_CHUNKS_PER_FILE) continue
     const chunkTokens = result.chunk.tokenCount + headerOverhead
     if (currentTokens + chunkTokens > safeMax) {
       if (selected.length > 0) continue // 跳过超预算的，尝试后面更小的块
@@ -96,6 +109,7 @@ export function buildContext(
     if (currentTokens + chunkTokens <= safeMax) {
       selected.push(result)
       selectedIds.add(result.chunk.id)
+      fileChunkCount.set(fname, (fileChunkCount.get(fname) || 0) + 1)
       currentTokens += chunkTokens
     }
   }

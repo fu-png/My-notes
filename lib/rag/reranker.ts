@@ -215,7 +215,10 @@ export async function rerankResults(
 
   // MMR（最大边际相关性）多样性重排序：
   // 避免同一文件的多个 chunk 占据所有 top 位置，确保跨文件信息覆盖
-  const finalResults = mmrDiversify(afterFilter, 0.7, afterFilter.length)
+  // [优化] lambda 从 0.7 降到 0.5，增强跨文件多样性
+  // 综合总结类章节（如第15章）会匹配几乎所有查询关键词，
+  // 需要更强的多样性惩罚才能让专门章节的内容浮上来
+  const finalResults = mmrDiversify(afterFilter, 0.5, afterFilter.length)
 
   // 追加未参与 rerank 的剩余结果（保持原序），避免丢失候选池外的长尾结果
   const rerankedIds = new Set(candidates.map((r) => r.chunk.id))
@@ -263,8 +266,9 @@ function mmrDiversify(
 
       // 多样性惩罚：同一文件已选中越多，惩罚越重
       const fileCount = fileSelectionCount.get(r.chunk.filename) || 0
-      // 第1个不惩罚，第2个惩罚0.3，第3个惩罚0.5，以此类推
-      const diversityPenalty = fileCount === 0 ? 0 : Math.min(0.3 + (fileCount - 1) * 0.1, 0.7)
+      // [优化] 加大惩罚力度：第1个不惩罚，第2个惩罚0.5，第3个惩罚0.7，
+      // 第4个及以后惩罚0.9，确保综合章节不会占据过多位置
+      const diversityPenalty = fileCount === 0 ? 0 : Math.min(0.5 + (fileCount - 1) * 0.2, 0.9)
 
       const mmrScore = lambda * relevance - (1 - lambda) * diversityPenalty
 
