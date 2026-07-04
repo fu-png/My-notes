@@ -760,7 +760,7 @@ function SectionEmbedding({
             onChange={(e) => setEmbApiBase(e.target.value)}
             className="h-8 text-sm"
           />
-          <p className="text-[11px] text-muted-foreground">填写到 /v1 即可，无需添加 /embeddings 后缀。留空则使用对话模型的 API Base URL</p>
+          <p className="text-[11px] text-muted-foreground">可填写完整地址（如 https://api.siliconflow.cn/v1/embedding）。留空则使用对话模型的 API Base URL</p>
         </div>
       </div>
 
