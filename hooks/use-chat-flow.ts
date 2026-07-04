@@ -298,7 +298,22 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       }
     }
 
+    // ── 阶段性 loading 文案：让用户知道后台正在干什么 ──
+    const updateStage = (text: string) => {
+      setChatMessages((prev) =>
+        prev.map((m) => m.id === aiMsgId ? { ...m, content: "", loadingStage: text } : m)
+      )
+    }
+
     // 构造并行任务数组 — 使用统一的 AbortController signal
+    const willDoRag = ragEnabled && !!lastUserMsg
+    const willDoWeb = !!webIntent
+    if (willDoRag) {
+      updateStage("正在检索知识库...")
+    } else if (willDoWeb) {
+      updateStage("正在搜索互联网...")
+    }
+
     const webSearchPromise = webIntent
       ? fetchWebContent(webIntent, aiMsgId, controller.signal)
       : Promise.resolve(null)
@@ -306,7 +321,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     // [修复] 去掉 indexStatus?.indexed 的前置条件
     // 即使向量索引未构建成功，也尝试 RAG 查询——pipeline.queryProject 内部
     // 会自动降级到 BM25 兜底检索，而非直接跳过让 LLM 无上下文地乱回答
-    const ragQueryPromise = (ragEnabled && lastUserMsg)
+    const ragQueryPromise = willDoRag
       ? (async () => {
           try {
             const recentUserMsgs = userMessages
@@ -352,6 +367,11 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
     // 用户在预取阶段就点了停止 — 早退出
     if (controller.signal.aborted) return
+
+    // 检索完成 → 切换到"组织回答"阶段
+    if (willDoRag || willDoWeb) {
+      updateStage("正在组织回答...")
+    }
 
     if (webResult) {
       webSources = webResult.sources && webResult.sources.length > 0 ? webResult.sources : undefined

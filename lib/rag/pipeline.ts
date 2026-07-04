@@ -268,8 +268,12 @@ export async function queryProject(
   config: RAGConfig,
   activeFile?: string
 ): Promise<AssembledContext> {
+  const t0 = Date.now()
+  const lap = (label: string) => console.debug(`[pipeline:timing] ${label}: ${Date.now() - t0}ms`)
+
   // 检查是否已索引
   const status = await getIndexStatus(projectId)
+  lap("getIndexStatus")
   if (!status?.indexed) {
     // [修复] 即使向量索引不存在，也尝试用 BM25 兜底检索
     // 防止因索引构建失败（如 embedding API 报错）导致 RAG 完全不可用
@@ -286,7 +290,16 @@ export async function queryProject(
     return { text: "", sources: [], totalTokens: 0 }
   }
 
-  // 1. 查询分解 + Embedding 并行执行（节省一次串行等待）
+  // ── 性能优化：在等待 embedding API 的同时并行预加载索引数据到内存缓存 ──
+  // Vercel Serverless 冷启动时，vectors.json / bm25.json / graph.json 需要从 OSS 读取
+  // 如果串行执行，光 I/O 就要 3-5 秒；并行预加载可以把 I/O 藏在 embedding 网络延迟里
+  const preloadPromise = Promise.all([
+    loadChunksData(projectId).catch(() => []),           // 预热 vectors.json 缓存（chunks 与 vectors 共享存储）
+    searchByBm25(projectId, "", 0).catch(() => []),      // 预热 bm25.json 缓存
+    loadKnowledgeGraph(projectId).catch(() => null),     // 预热 graph.json 缓存
+  ])
+
+  // 1. 查询分解 + Embedding + 数据预加载 三者并行
   let decomposed: { subQueries: string[]; reasoning: string; original: string }
   let directEmbedding: number[][] = []
   let vectorSearchAvailable = true
@@ -294,13 +307,15 @@ export async function queryProject(
     [decomposed, directEmbedding] = await Promise.all([
       decomposeQuery(question, config),
       embedBatch([question], config),
-    ])
+      preloadPromise,  // 不阻塞结果，只确保 I/O 已发起
+    ]) as [typeof decomposed, typeof directEmbedding, unknown]
   } catch (err) {
     // [修复] embedding 失败时降级到纯 BM25 模式，而不是整体报错
     console.warn("[pipeline] Embedding 失败，降级到纯 BM25 模式:", err)
     decomposed = { original: question, subQueries: [question], reasoning: "Embedding 失败" }
     vectorSearchAvailable = false
   }
+  lap("decomposeQuery + embedBatch + preload")
   console.debug(`[pipeline] 查询分解为 ${decomposed.subQueries.length} 个子查询:`, decomposed.subQueries)
 
   // 2. 检索 — 批量 Embedding + 并行检索
@@ -326,6 +341,8 @@ export async function queryProject(
     }
   }
 
+  lap("subQuery embeddings")
+
   const perQueryResults = await Promise.all(
     subQueries.map(async (subQuery, i) => {
       // [修复] 向量搜索失败时降级到纯 BM25
@@ -344,12 +361,13 @@ export async function queryProject(
     })
   )
 
+  lap("vector+bm25 search")
+
   const results = subQueries.length === 1
     ? perQueryResults[0]
     : simpleRRFFuse(perQueryResults, 25)
 
   // 3. Score 阈值过滤：去除得分低于最高分 15% 的结果
-  //    RRF 分数压缩严重，8% 几乎不过滤；提升到 15% 减少reranker处理量
   const filtered = filterByScoreThreshold(results, 0.15)
 
   // 4. 当前打开文件加权提升（×1.3）
@@ -361,33 +379,43 @@ export async function queryProject(
       ).sort((a, b) => b.score - a.score)
     : filtered
 
-  // 5. 重排序：候选 ≤ 3 条时跳过（样本太少无需精排），否则调用 reranker 精排
-  const reranked = boosted.length <= 3
-    ? boosted
-    : await rerankResults(question, boosted, config)
+  // 5. Rerank + Graph RAG 扩展 并行执行（两者互不依赖）
+  //    之前串行：rerank ~2s → graph ~1s = 3s
+  //    并行后：max(rerank, graph) ≈ 2s，省 ~1s
+  const rerankPromise = boosted.length <= 3
+    ? Promise.resolve(boosted)
+    : rerankResults(question, boosted, config)
 
-  // 5.5 Graph RAG 扩展：从检索结果中提取实体，在图谱中查找相邻实体，
-  //     拉取相关文档块作为补充上下文（解决跨文档多跳推理）
-  let withGraphExpansion = reranked
-  try {
-    // 并行加载知识图谱和块数据（两者互不依赖）
-    const [graph, allChunks] = await Promise.all([
-      loadKnowledgeGraph(projectId),
-      loadChunksData(projectId),
-    ])
-    if (graph && graph.entities.size > 0) {
-      const expansion = expandWithGraph(reranked, graph, allChunks, 8)
-      if (expansion.results.length > 0) {
-        console.debug(`[pipeline] Graph RAG 扩展：${expansion.results.length} 个补充块，${expansion.entities.length} 个相关实体`)
-        withGraphExpansion = [...reranked, ...expansion.results]
+  const graphPromise = (async (): Promise<SearchResult[]> => {
+    try {
+      const [graph, allChunks] = await Promise.all([
+        loadKnowledgeGraph(projectId),
+        loadChunksData(projectId),
+      ])
+      if (graph && graph.entities.size > 0) {
+        // 注意：graph expansion 需要 rerank 前的结果（boosted）作为种子
+        const expansion = expandWithGraph(boosted, graph, allChunks, 8)
+        if (expansion.results.length > 0) {
+          console.debug(`[pipeline] Graph RAG 扩展：${expansion.results.length} 个补充块，${expansion.entities.length} 个相关实体`)
+          return expansion.results
+        }
       }
+    } catch (err) {
+      console.error("[pipeline] Graph RAG 扩展失败:", err)
     }
-  } catch (err) {
-    console.error("[pipeline] Graph RAG 扩展失败:", err)
-  }
+    return []
+  })()
+
+  const [reranked, graphResults] = await Promise.all([rerankPromise, graphPromise])
+  lap("rerank + graph (parallel)")
+
+  const withGraphExpansion = graphResults.length > 0
+    ? [...reranked, ...graphResults]
+    : reranked
 
   // 6. 组装上下文
   const context = buildContext(withGraphExpansion, config.maxContextTokens || 12000)
+  lap("TOTAL")
   console.debug(`[pipeline] 组装上下文: ${context.sources.length} 个来源, ${context.totalTokens} tokens`)
 
   return context

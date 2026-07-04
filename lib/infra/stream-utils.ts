@@ -220,10 +220,10 @@ export async function streamIntoMessage(opts: StreamIntoMessageOptions): Promise
       const reasoningSnapshot = fullReasoning
       const parsed = parseReasoningFromContent(snapshot, reasoningSnapshot)
       const rafId = requestAnimationFrame(() => {
-        setChatMessages((prev: Array<{ id: string; content: string; reasoning?: string }>) =>
+        setChatMessages((prev: Array<{ id: string; content: string; reasoning?: string; loadingStage?: string }>) =>
           prev.map((m) =>
             m.id === msgId
-              ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined }
+              ? { ...m, content: parsed.content, reasoning: parsed.reasoning || undefined, loadingStage: undefined }
               : m
           )
         )

@@ -43,6 +43,8 @@ export interface ChatMessage {
   quotedText?: string
   /** 深度思考的推理过程内容 */
   reasoning?: string
+  /** Loading 阶段文案（如"正在检索知识库..."），LLM 首 token 到来后自动清除 */
+  loadingStage?: string
   /** 笔记本指南生成的元信息 */
   generateMeta?: {
     type: string

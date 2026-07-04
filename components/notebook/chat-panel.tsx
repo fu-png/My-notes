@@ -463,9 +463,13 @@ onDelete={onDeleteConversation}
                         />
                       )}
                       {!msg.content && !msg.reasoning && chatLoading && !msg.audioMeta ? (
-                        <div className="px-1 py-2" role="status" aria-label="AI 正在回复">
+                        <div className="flex items-center gap-2 px-1 py-2" role="status" aria-label="AI 正在回复">
                           <IconLoader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
-                          <span className="sr-only">AI 正在回复...</span>
+                          {msg.loadingStage ? (
+                            <span className="text-xs text-muted-foreground">{msg.loadingStage}</span>
+                          ) : (
+                            <span className="sr-only">AI 正在回复...</span>
+                          )}
                         </div>
                       ) : msg.content ? (
                         <MarkdownRenderer content={msg.content} />
