@@ -12,11 +12,10 @@ import type { Chunk } from "./types"
 
 // ─── 配置 ───
 
-// [修复] 将 chunk 大小从 800 降到 450 tokens
-// BERT 系列 embedding 模型（如 bge-large-zh-v1.5）的硬限制是 512 tokens，
+// bge-large-zh-v1.5 官方上下文窗口为 1024 tokens（SiliconFlow 模型信息页标注 "上下文 1K"），
 // 其中 CJK 字符在 BERT tokenizer 中每字符 = 1 token，加上 [CLS]/[SEP] 需要 2 tokens，
-// 因此有效内容上限约 510 tokens。设为 450 留出安全余量。
-const DEFAULT_CHUNK_SIZE = 450 // tokens（适配 BERT 系列模型 512 token 上限）
+// 因此有效内容上限约 1022 tokens。设为 900 留出安全余量（~12%）。
+const DEFAULT_CHUNK_SIZE = 900 // tokens（适配 bge-large-zh-v1.5 的 1024 token 上下文窗口）
 const DEFAULT_CHUNK_OVERLAP = 0.15 // 15% overlap
 const MIN_CHUNK_SIZE = 30 // 低于此值的碎片块丢弃
 
