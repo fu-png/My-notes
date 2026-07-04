@@ -612,7 +612,16 @@ scheduleOSSFetch(() => {
       }
       // 文件列表加载成功后，后台预取所有文件内容
       if (orderedFiles.length > 0) {
-        fileCache.prefetchFiles(orderedFiles.map((f: DocFile) => f.filename))
+        // 如果 API 返回了第一篇文件的完整内容，直接写入缓存
+        if (data.firstFileContent?.filename && data.firstFileContent.content) {
+          fileCache.setFileContent(data.firstFileContent.filename, data.firstFileContent.content)
+          // 预取时跳过已缓存的第一篇
+          fileCache.prefetchFiles(
+            orderedFiles.filter((f: DocFile) => f.filename !== data.firstFileContent.filename).map((f: DocFile) => f.filename)
+          )
+        } else {
+          fileCache.prefetchFiles(orderedFiles.map((f: DocFile) => f.filename))
+        }
       }
     } catch (err) {
       console.error("[fetchFiles] Failed:", err)

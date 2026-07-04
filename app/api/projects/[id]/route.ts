@@ -22,7 +22,7 @@ export async function GET(
       return NextResponse.json({ error: "项目不存在" }, { status: 404 })
     }
 
-    return NextResponse.json({ project: result.meta, files: result.files })
+    return NextResponse.json({ project: result.meta, files: result.files, firstFileContent: result.firstFileContent })
   } catch (error) {
     console.error("[projects/[id]]", error)
     return NextResponse.json({ error: "读取项目失败" }, { status: 500 })

@@ -542,7 +542,11 @@ function extractTitleFromContent(content: string | null, filename: string): stri
 }
 
 /** 获取单个项目详情 */
-export async function getProject(id: string): Promise<{ meta: ProjectMeta; files: { filename: string; title: string; lastModified: number }[] } | null> {
+export async function getProject(id: string): Promise<{
+  meta: ProjectMeta
+  files: { filename: string; title: string; lastModified: number }[]
+  firstFileContent?: { filename: string; content: string; lastModified: number }
+} | null> {
   const metaContent = await readFile(`projects/${id}/meta.json`)
   if (!metaContent) return null
 
@@ -558,24 +562,40 @@ export async function getProject(id: string): Promise<{ meta: ProjectMeta; files
       // 不应出现在文件浏览器中（音频通过聊天消息内的播放器访问）
       .filter((f) => !f.pathname.slice(projectPrefix.length).startsWith(".audio/"))
 
-    const files = await Promise.all(
-      fileList.map(async (f) => {
-        const filename = f.pathname.slice(projectPrefix.length)
-        const isText = /\.(md|txt|json|ya?ml|csv|tsv|xml|html?|js|ts|jsx|tsx|css|py|go|java|rs|sh|toml|ini|env|log)$/i.test(filename)
-        let content: string | null = null
-        if (isText) {
-          // 只读取文件头部 1KB 用于提取标题，避免下载完整文件内容
-          content = await readFileHead(f.pathname, 1024)
-        }
-        return {
-          filename,
-          title: extractTitleFromContent(content, filename.split("/").pop() || filename),
-          lastModified: f.lastModified || Date.now(),
-        }
-      })
-    )
+    // 排序后确定第一个文件，用于预取完整内容
+    const sortedPaths = fileList
+      .map((f) => ({ path: f.pathname, filename: f.pathname.slice(projectPrefix.length), lastModified: f.lastModified || Date.now() }))
+      .sort((a, b) => a.filename.localeCompare(b.filename, "zh", { numeric: true }));
 
-    return { meta: { ...meta, fileCount: files.length }, files }
+    // 并行：读取所有文件头部提取标题 + 读取第一个文件的完整内容
+    const [files, firstFileContent] = await Promise.all([
+      Promise.all(
+        fileList.map(async (f) => {
+          const filename = f.pathname.slice(projectPrefix.length)
+          const isText = /\.(md|txt|json|ya?ml|csv|tsv|xml|html?|js|ts|jsx|tsx|css|py|go|java|rs|sh|toml|ini|env|log)$/i.test(filename)
+          let content: string | null = null
+          if (isText) {
+            // 只读取文件头部 1KB 用于提取标题，避免下载完整文件内容
+            content = await readFileHead(f.pathname, 1024)
+          }
+          return {
+            filename,
+            title: extractTitleFromContent(content, filename.split("/").pop() || filename),
+            lastModified: f.lastModified || Date.now(),
+          }
+        })
+      ),
+      // 预取第一个文件的完整内容
+      sortedPaths.length > 0
+        ? readFile(sortedPaths[0].path).then((content) => ({
+            filename: sortedPaths[0].filename,
+            content: content || "",
+            lastModified: sortedPaths[0].lastModified,
+          }))
+        : Promise.resolve(undefined),
+    ])
+
+    return { meta: { ...meta, fileCount: files.length }, files, firstFileContent }
   } catch {
     return null
   }
