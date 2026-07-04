@@ -563,6 +563,7 @@ export async function getProject(id: string): Promise<{
       .filter((f) => !f.pathname.endsWith("/meta.json"))
       .filter((f) => !f.pathname.endsWith("/chat-history.json"))
       .filter((f) => !f.pathname.slice(projectPrefix.length).startsWith(".audio/"))
+      .filter((f) => !f.pathname.slice(projectPrefix.length).startsWith(".rag/"))
 
     // 直接用文件名作为标题，不做 readFileHead（省掉 N 次 OSS 请求）
     // 客户端加载文件内容时会从 markdown H1 提取真实标题
