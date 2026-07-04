@@ -593,10 +593,15 @@ scheduleOSSFetch(() => {
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
       const data = await res.json()
-      setFiles(applyFileOrder(data.files || []))
+      const orderedFiles = applyFileOrder(data.files || [])
+      setFiles(orderedFiles)
       // 用 API 返回的最新名称覆盖，防止 Router Cache 缓存了旧名称
       if (data.project?.name) {
         setCurrentProjectName(data.project.name)
+      }
+      // 文件列表加载成功后，后台预取所有文件内容
+      if (orderedFiles.length > 0) {
+        fileCache.prefetchFiles(orderedFiles.map((f: DocFile) => f.filename))
       }
     } catch (err) {
       console.error("[fetchFiles] Failed:", err)
@@ -605,7 +610,7 @@ scheduleOSSFetch(() => {
     } finally {
       setLoadingFiles(false)
     }
-  }, [projectId, showToast, applyFileOrder])
+  }, [projectId, showToast, applyFileOrder, fileCache])
 
   const handleReorderFiles = React.useCallback((orderedFilenames: string[]) => {
     localStorage.setItem(fileOrderKey, JSON.stringify(orderedFilenames))
@@ -805,7 +810,7 @@ scheduleOSSFetch(() => {
 
   const selectFile = React.useCallback((filename: string) => {
     // If switching files while editing with unsaved changes, ask for confirmation
-    if (editMode && editContent !== fileContent) {
+    if (editModeRef.current && editContentRef.current !== fileContentRef.current) {
       setPendingFileSwitch(filename)
       return
     }
@@ -813,7 +818,7 @@ scheduleOSSFetch(() => {
     setEditMode(false)
     setSelectedText("") // 切换文件时清除划词
     fileCache.loadFileContent(filename)
-  }, [fileCache, editMode, editContent, fileContent])
+  }, [fileCache])
 
   React.useEffect(() => {
 if (!loadingFiles && files.length > 0 && !activeFile) {

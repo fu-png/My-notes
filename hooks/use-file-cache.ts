@@ -43,6 +43,8 @@ interface UseFileCacheReturn {
   invalidate: (filename: string) => void
   /** Clear entire cache (e.g., on project switch) */
   clearCache: () => void
+  /** Prefetch multiple files in background (for instant switching) */
+  prefetchFiles: (filenames: string[]) => void
 }
 
 export function useFileCache({
@@ -232,6 +234,41 @@ export function useFileCache({
     cacheRef.current.clear()
   }, [])
 
+  const prefetchFiles = React.useCallback(
+    (filenames: string[]) => {
+      const cache = cacheRef.current
+      // 逐个在空闲时预取，避免并发请求过多
+      let index = 0
+      const prefetchNext = () => {
+        if (index >= filenames.length) return
+        const filename = filenames[index++]
+        // 跳过已缓存的文件
+        if (cache.has(filename)) {
+          prefetchNext()
+          return
+        }
+        fetchFile(filename).then((result) => {
+          if (result !== null && !cache.has(filename)) {
+            cache.set(filename, {
+              content: result.content,
+              editContent: result.content,
+              fetchedAt: Date.now(),
+              lastModified: result.lastModified,
+            })
+            evictIfNeeded()
+          }
+          // 下一个文件在空闲时加载
+          const schedule = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb: () => void) => setTimeout(cb, 50)
+          schedule(prefetchNext)
+        })
+      }
+      // 首个预取也延迟到空闲时
+      const schedule = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb: () => void) => setTimeout(cb, 100)
+      schedule(prefetchNext)
+    },
+    [fetchFile, evictIfNeeded]
+  )
+
   return {
     loadFileContent,
     fileContent,
@@ -241,5 +278,6 @@ export function useFileCache({
     setFileContent,
     invalidate,
     clearCache,
+    prefetchFiles,
   }
 }
