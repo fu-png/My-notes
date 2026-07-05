@@ -13,7 +13,8 @@
  */
 
 import type { Chunk, SearchResult } from "./types"
-import { readFile, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
+import { readFile, readFileBuffer, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
+import { gzipSync, gunzipSync } from "node:zlib"
 
 /** 向量数据文件的持久化结构 */
 interface VectorStoreData {
@@ -45,11 +46,19 @@ async function loadVectorStore(projectId: string): Promise<VectorStoreData | nul
   // 清理过期条目
   if (cached) cache.delete(projectId)
 
-  const raw = await readFile(getVectorsPath(projectId))
-  if (!raw) return null
+  // 优先尝试 gzip 压缩版本，回退到未压缩版本（兼容旧数据）
+  const gzBuf = await readFileBuffer(getVectorsPath(projectId) + ".gz")
+  let jsonStr: string
+  if (gzBuf) {
+    jsonStr = gunzipSync(gzBuf).toString("utf-8")
+  } else {
+    const plainRaw = await readFile(getVectorsPath(projectId))
+    if (!plainRaw) return null
+    jsonStr = plainRaw
+  }
 
   try {
-    const data = JSON.parse(raw) as VectorStoreData
+    const data = JSON.parse(jsonStr) as VectorStoreData
     // 超过上限时清除最旧条目（Map 保持插入顺序）
     if (cache.size >= CACHE_MAX_SIZE) {
       const oldestKey = cache.keys().next().value
@@ -64,8 +73,11 @@ async function loadVectorStore(projectId: string): Promise<VectorStoreData | nul
 }
 
 async function saveVectorStore(projectId: string, data: VectorStoreData): Promise<void> {
-  await storageWrite(getVectorsPath(projectId), JSON.stringify(data), {
-    contentType: "application/json",
+  // gzip 压缩后上传，0.85MB JSON → ~100-200KB，显著减少 Vercel ↔ OSS 传输时间
+  const json = JSON.stringify(data)
+  const compressed = gzipSync(Buffer.from(json, "utf-8"), { level: 6 })
+  await storageWrite(getVectorsPath(projectId) + ".gz", compressed, {
+    contentType: "application/gzip",
   })
   // 超过上限时清除最旧条目
   if (cache.size >= CACHE_MAX_SIZE && !cache.has(projectId)) {
@@ -120,7 +132,7 @@ export async function updateChunksByFiles(
   newChunks: Chunk[],
   newVectors: number[][],
   onProgress?: (msg: string) => void
-): Promise<void> {
+): Promise<{ chunks: Chunk[]; vectors: number[][] }> {
   if (newChunks.length !== newVectors.length) {
     throw new Error("newChunks and newVectors must have the same length")
   }
@@ -146,6 +158,9 @@ export async function updateChunksByFiles(
 
   onProgress?.(`正在上传向量数据（${mergedChunks.length} 个文本块）...`)
   await saveVectorStore(projectId, { chunks: mergedChunks, vectors: mergedVectors })
+
+  // 返回合并后的数据，供调用方直接使用（避免再次从 OSS 下载）
+  return { chunks: mergedChunks, vectors: mergedVectors }
 }
 
 /** 向量相似度搜索：暴力计算全部向量的余弦相似度，取 TopK */
@@ -174,7 +189,11 @@ export async function searchByVector(
 /** 删除整个项目的向量索引 */
 export async function deleteIndex(projectId: string): Promise<void> {
   invalidateCache(projectId)
-  await storageDelete(getVectorsPath(projectId))
+  // 同时清理压缩和未压缩版本
+  await Promise.all([
+    storageDelete(getVectorsPath(projectId) + ".gz"),
+    storageDelete(getVectorsPath(projectId)),
+  ])
 }
 
 // ─── chunks.json 持久化（复用 vectors.json 中的 chunks 部分，避免数据重复） ───

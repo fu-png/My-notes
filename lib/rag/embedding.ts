@@ -27,7 +27,8 @@ const RETRY_DELAY_MS = 1000
 const RATE_LIMIT_RETRY_DELAY_MS = 3000 // 429 限流专用退避基数（比普通 5xx 更保守）
 const BATCH_SIZE = 64 // 每批最大条数：较小的批次可在 Vercel 等高延迟环境中
 // 提供更频繁的进度反馈（448 chunks → 7 批次，每批完成都会刷新进度）
-const MAX_CONCURRENCY = 4 // 同时在途的批次请求数上限（4 路并发平衡吞吐与限流风险）
+const MAX_CONCURRENCY = 8 // 同时在途的批次请求数上限：7 个批次全部并发发出，
+// 消除批次间串行等待（Vercel 海外到 SiliconFlow 单次请求延迟高，并发是关键）
 const MAX_TEXT_CHARS = 1800 // 单条文本最大字符数（bge-large-zh-v1.5 上下文 1024 tokens，CJK 1:1 约 1024 字符，留余量取 1800）
 
 // 查询 embedding 缓存：避免重复 API 调用（相同文本短时间内返回相同结果）

@@ -15,7 +15,7 @@ import { buildContext } from "./context-builder"
 import { rerankResults } from "./reranker"
 import { buildRAGSystemPrompt, buildPlainSystemPrompt } from "./prompts"
 import { buildKnowledgeGraph, saveKnowledgeGraph, loadKnowledgeGraph, expandWithGraph } from "./graph-store"
-import type { RAGConfig, AssembledContext, IndexStatus, FileFingerprint, SearchResult } from "./types"
+import type { RAGConfig, AssembledContext, IndexStatus, FileFingerprint, SearchResult, Chunk } from "./types"
 import { readFile, listFiles, writeFile as storageWrite } from "../storage"
 
 // 索引并发锁：防止同一项目的多个索引请求同时执行
@@ -177,58 +177,65 @@ export async function ingestProject(
     }
   }
 
-  // 6. 存入索引（分步骤推送进度，避免用户长时间看不到反馈）
-  //    Vercel 海外服务器到阿里云 OSS 的读写延迟较大（3.5MB JSON 往返可能 30s+），
-  //    每个 OSS 操作前后都推送进度，让用户知道系统仍在正常工作。
+  // 6. 存入索引
+  //    优化策略：
+  //    - gzip 压缩：向量和 BM25 数据压缩后传输（5-10 倍体积缩减）
+  //    - 并行写入：向量存储 + BM25 索引 + 状态信息同时上传（省 2 个 OSS 往返）
+  //    - 消除冗余下载：增量模式直接使用合并后的内存数据
+  let finalChunks: Chunk[]
+
   if (isIncremental) {
-    // 增量模式：局部更新向量存储
+    // 增量模式：先合并向量数据（需要下载旧数据），再并行写入所有索引
+    let allChunks: Chunk[]
     if (!embeddingFailed && newEmbeddings.length > 0) {
       log("正在更新向量索引...")
-      await updateChunksByFiles(projectId, changedFiles, newChunks, newEmbeddings, log)
+      const merged = await updateChunksByFiles(projectId, changedFiles, newChunks, newEmbeddings, log)
+      allChunks = merged.chunks
     } else if (deleted.length > 0) {
       log("正在清理已删除文件的索引...")
-      await updateChunksByFiles(projectId, new Set(deleted), [], [], log)
+      const merged = await updateChunksByFiles(projectId, new Set(deleted), [], [], log)
+      allChunks = merged.chunks
+    } else {
+      allChunks = await loadChunksData(projectId)
     }
 
-    log("正在加载全部文本块...")
-    const allChunks = await loadChunksData(projectId)
-    log(`正在构建全文搜索索引（${allChunks.length} 个文本块）...`)
-    await rebuildBm25Index(projectId, allChunks)
-
-    log("正在保存索引状态...")
-    await saveIndexStatus(projectId, {
-      indexed: true,
-      lastIndexedAt: new Date().toISOString(),
-      totalChunks: allChunks.length,
-      totalFiles: documents.length,
-      fileManifest: currentManifest,
-    })
+    // 并行写入 BM25 索引 + 状态信息（向量已在 updateChunksByFiles 中写入）
+    log(`正在并行写入搜索索引和状态（${allChunks.length} 个文本块）...`)
+    await Promise.all([
+      rebuildBm25Index(projectId, allChunks),
+      saveIndexStatus(projectId, {
+        indexed: true,
+        lastIndexedAt: new Date().toISOString(),
+        totalChunks: allChunks.length,
+        totalFiles: documents.length,
+        fileManifest: currentManifest,
+      }),
+    ])
+    finalChunks = allChunks
   } else {
-    // 全量模式：清空旧索引 + 整体写入
-    await deleteIndex(projectId)
+    // 全量模式：覆盖写入（put 自动覆盖，无需先 delete）
+    // 向量写入 + BM25 构建 + 状态保存 三者并行上传
+    log(`正在并行写入所有索引（${newChunks.length} 个文本块）...`)
+    const writes: Promise<void>[] = []
     if (!embeddingFailed && newEmbeddings.length > 0) {
-      log(`正在写入向量索引（${newChunks.length} 个文本块）...`)
-      await addChunks(projectId, newChunks, newEmbeddings)
+      writes.push(addChunks(projectId, newChunks, newEmbeddings))
     }
-
-    log(`正在构建全文搜索索引（${newChunks.length} 个文本块）...`)
-    await createBm25Index(projectId, newChunks)
-
-    log("正在保存索引状态...")
-    await saveIndexStatus(projectId, {
+    writes.push(createBm25Index(projectId, newChunks))
+    writes.push(saveIndexStatus(projectId, {
       indexed: true,
       lastIndexedAt: new Date().toISOString(),
       totalChunks: newChunks.length,
       totalFiles: documents.length,
       fileManifest: currentManifest,
-    })
+    }))
+    await Promise.all(writes)
+    finalChunks = newChunks
   }
 
   // 知识图谱：后台异步构建，不阻塞索引完成
   ;(async () => {
     try {
-      const allChunks = await loadChunksData(projectId)
-      const graph = buildKnowledgeGraph(allChunks)
+      const graph = buildKnowledgeGraph(finalChunks)
       await saveKnowledgeGraph(projectId, graph)
       console.debug(`[pipeline] 知识图谱构建完成：${graph.entities.size} 实体，${graph.relations.length} 关系`)
     } catch (err) {
@@ -236,11 +243,8 @@ export async function ingestProject(
     }
   })()
 
-  const finalChunkCount = isIncremental
-    ? (await loadChunksData(projectId)).length
-    : newChunks.length
-  log(`索引完成：${documents.length} 个文件，${finalChunkCount} 个文本块`)
-  return { totalChunks: finalChunkCount, totalFiles: documents.length }
+  log(`索引完成：${documents.length} 个文件，${finalChunks.length} 个文本块`)
+  return { totalChunks: finalChunks.length, totalFiles: documents.length }
   } finally {
     resolveLock!()
     indexingLocks.delete(projectId)

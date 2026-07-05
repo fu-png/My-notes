@@ -12,8 +12,9 @@
 
 import MiniSearch from "minisearch"
 import type { Chunk, SearchResult } from "./types"
-import { readFile, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
+import { readFile, readFileBuffer, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
 import { loadChunksData } from "./vector-store"
+import { gzipSync, gunzipSync } from "node:zlib"
 
 // 内存缓存：避免每次搜索都从存储读取和反序列化
 const bm25Cache = new Map<string, { index: MiniSearch<MiniSearchDoc>; loadedAt: number }>()
@@ -71,8 +72,11 @@ export async function createBm25Index(
   chunks: Chunk[]
 ): Promise<void> {
   const ms = buildIndex(chunks)
-  await storageWrite(getBm25Path(projectId), JSON.stringify(ms), {
-    contentType: "application/json",
+  // gzip 压缩后上传，1.89MB JSON → ~200-400KB，显著减少传输时间
+  const json = JSON.stringify(ms)
+  const compressed = gzipSync(Buffer.from(json, "utf-8"), { level: 6 })
+  await storageWrite(getBm25Path(projectId) + ".gz", compressed, {
+    contentType: "application/gzip",
   })
   bm25Cache.delete(projectId)
 }
@@ -83,7 +87,14 @@ async function loadIndex(projectId: string): Promise<MiniSearch<MiniSearchDoc> |
   if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
     return cached.index
   }
-  const json = await readFile(getBm25Path(projectId))
+  // 优先尝试 gzip 压缩版本，回退到未压缩版本（兼容旧数据）
+  let json: string | null = null
+  const gzBuf = await readFileBuffer(getBm25Path(projectId) + ".gz")
+  if (gzBuf) {
+    json = gunzipSync(gzBuf).toString("utf-8")
+  } else {
+    json = await readFile(getBm25Path(projectId))
+  }
   if (!json) return null
   try {
     const index = MiniSearch.loadJSON<MiniSearchDoc>(json, MINISEARCH_OPTIONS)
@@ -145,7 +156,11 @@ export async function rebuildBm25Index(
 
 /** 删除 BM25 索引 */
 export async function deleteBm25Index(projectId: string): Promise<void> {
-  await storageDelete(getBm25Path(projectId))
+  // 同时清理压缩和未压缩版本
+  await Promise.all([
+    storageDelete(getBm25Path(projectId) + ".gz"),
+    storageDelete(getBm25Path(projectId)),
+  ])
   bm25Cache.delete(projectId)
 }
 
