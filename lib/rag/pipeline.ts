@@ -162,7 +162,9 @@ export async function ingestProject(
       let lastReportedPercent = -1
       newEmbeddings = await embedBatch(contents, config, (done, total) => {
         const percent = Math.floor((done / total) * 100)
-        if (percent >= lastReportedPercent + 20 || done === total) {
+        // 每 5% 或完成时汇报一次，Vercel 环境下一次全量索引可能需要 2-3 分钟，
+        // 更频繁的进度推送让用户知道系统仍在正常工作
+        if (percent >= lastReportedPercent + 5 || done === total) {
           lastReportedPercent = percent
           log(`Embedding 进度：${done}/${total}（${percent}%）`)
         }
