@@ -14,7 +14,11 @@ import MiniSearch from "minisearch"
 import type { Chunk, SearchResult } from "./types"
 import { readFile, readFileBuffer, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
 import { loadChunksData } from "./vector-store"
-import { gzipSync, gunzipSync } from "node:zlib"
+import { gzip, gunzip } from "node:zlib"
+import { promisify } from "node:util"
+
+const gzipAsync = promisify(gzip)
+const gunzipAsync = promisify(gunzip)
 
 // 内存缓存：避免每次搜索都从存储读取和反序列化
 const bm25Cache = new Map<string, { index: MiniSearch<MiniSearchDoc>; loadedAt: number }>()
@@ -72,9 +76,9 @@ export async function createBm25Index(
   chunks: Chunk[]
 ): Promise<void> {
   const ms = buildIndex(chunks)
-  // gzip 压缩后上传，1.89MB JSON → ~200-400KB，显著减少传输时间
+  // 异步 gzip 压缩后上传，不阻塞事件循环，让并行写入真正重叠
   const json = JSON.stringify(ms)
-  const compressed = gzipSync(Buffer.from(json, "utf-8"), { level: 6 })
+  const compressed = await gzipAsync(Buffer.from(json, "utf-8"), { level: 6 })
   await storageWrite(getBm25Path(projectId) + ".gz", compressed, {
     contentType: "application/gzip",
   })
@@ -91,7 +95,7 @@ async function loadIndex(projectId: string): Promise<MiniSearch<MiniSearchDoc> |
   let json: string | null = null
   const gzBuf = await readFileBuffer(getBm25Path(projectId) + ".gz")
   if (gzBuf) {
-    json = gunzipSync(gzBuf).toString("utf-8")
+    json = (await gunzipAsync(gzBuf)).toString("utf-8")
   } else {
     json = await readFile(getBm25Path(projectId))
   }

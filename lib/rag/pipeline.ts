@@ -77,21 +77,24 @@ export async function ingestProject(
 
   log(`找到 ${mdFiles.length} 个文件`)
 
-  // 2. 并行读取所有文件内容
-  const fileReadResults = await Promise.all(
-    mdFiles.map(async (file) => {
-      const content = await readFile(file.pathname)
-      if (content && content.trim().length > 0) {
-        const filename = file.pathname.slice(projectPrefix.length)
-        return {
-          filename,
-          title: filename.replace(/\.[^.]+$/, ""),
-          content,
+  // 2. 并行读取所有文件内容 + 同时获取旧索引状态（省一个 OSS 往返）
+  const [fileReadResults, oldStatus] = await Promise.all([
+    Promise.all(
+      mdFiles.map(async (file) => {
+        const content = await readFile(file.pathname)
+        if (content && content.trim().length > 0) {
+          const filename = file.pathname.slice(projectPrefix.length)
+          return {
+            filename,
+            title: filename.replace(/\.[^.]+$/, ""),
+            content,
+          }
         }
-      }
-      return null
-    })
-  )
+        return null
+      })
+    ),
+    getIndexStatus(projectId),
+  ])
   const documents = fileReadResults.filter(
     (d): d is { filename: string; title: string; content: string } => d !== null
   )
@@ -106,8 +109,6 @@ export async function ingestProject(
       size: doc.content.length,
     }
   }
-
-  const oldStatus = await getIndexStatus(projectId)
   const oldManifest = oldStatus?.fileManifest || {}
   const currentFilenames = new Set(documents.map((d) => d.filename))
   const oldFilenames = new Set(Object.keys(oldManifest))

@@ -14,7 +14,11 @@
 
 import type { Chunk, SearchResult } from "./types"
 import { readFile, readFileBuffer, writeFile as storageWrite, deleteFile as storageDelete } from "../storage"
-import { gzipSync, gunzipSync } from "node:zlib"
+import { gzip, gunzip } from "node:zlib"
+import { promisify } from "node:util"
+
+const gzipAsync = promisify(gzip)
+const gunzipAsync = promisify(gunzip)
 
 /** 向量数据文件的持久化结构 */
 interface VectorStoreData {
@@ -50,7 +54,7 @@ async function loadVectorStore(projectId: string): Promise<VectorStoreData | nul
   const gzBuf = await readFileBuffer(getVectorsPath(projectId) + ".gz")
   let jsonStr: string
   if (gzBuf) {
-    jsonStr = gunzipSync(gzBuf).toString("utf-8")
+    jsonStr = (await gunzipAsync(gzBuf)).toString("utf-8")
   } else {
     const plainRaw = await readFile(getVectorsPath(projectId))
     if (!plainRaw) return null
@@ -73,9 +77,9 @@ async function loadVectorStore(projectId: string): Promise<VectorStoreData | nul
 }
 
 async function saveVectorStore(projectId: string, data: VectorStoreData): Promise<void> {
-  // gzip 压缩后上传，0.85MB JSON → ~100-200KB，显著减少 Vercel ↔ OSS 传输时间
+  // 异步 gzip 压缩后上传，不阻塞事件循环，让并行写入真正重叠
   const json = JSON.stringify(data)
-  const compressed = gzipSync(Buffer.from(json, "utf-8"), { level: 6 })
+  const compressed = await gzipAsync(Buffer.from(json, "utf-8"), { level: 6 })
   await storageWrite(getVectorsPath(projectId) + ".gz", compressed, {
     contentType: "application/gzip",
   })

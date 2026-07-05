@@ -11,7 +11,12 @@
  */
 
 import type { Chunk, SearchResult } from "./types"
-import { readFile, writeFile as storageWrite } from "../storage"
+import { readFile, readFileBuffer, writeFile as storageWrite } from "../storage"
+import { gzip, gunzip } from "node:zlib"
+import { promisify } from "node:util"
+
+const gzipAsync = promisify(gzip)
+const gunzipAsync = promisify(gunzip)
 
 // ─── 类型定义 ───
 
@@ -436,15 +441,17 @@ export async function saveKnowledgeGraph(
   projectId: string,
   graph: KnowledgeGraph
 ): Promise<void> {
-  // 序列化 Map → Array
+  // 序列化 Map → Array，不用 pretty-print 减小体积
   const serializable = {
     entities: Array.from(graph.entities.values()),
     relations: graph.relations,
   }
+  const json = JSON.stringify(serializable)
+  const compressed = await gzipAsync(Buffer.from(json, "utf-8"), { level: 6 })
   await storageWrite(
-    `projects/${projectId}/.rag/${GRAPH_FILE}`,
-    JSON.stringify(serializable, null, 2),
-    { contentType: "application/json" }
+    `projects/${projectId}/.rag/${GRAPH_FILE}.gz`,
+    compressed,
+    { contentType: "application/gzip" }
   )
   graphCache.delete(projectId)
 }
@@ -459,7 +466,14 @@ export async function loadKnowledgeGraph(
   }
 
   try {
-    const content = await readFile(`projects/${projectId}/.rag/${GRAPH_FILE}`)
+    // 优先尝试 gzip 压缩版本，回退到未压缩版本（兼容旧数据）
+    let content: string | null = null
+    const gzBuf = await readFileBuffer(`projects/${projectId}/.rag/${GRAPH_FILE}.gz`)
+    if (gzBuf) {
+      content = (await gunzipAsync(gzBuf)).toString("utf-8")
+    } else {
+      content = await readFile(`projects/${projectId}/.rag/${GRAPH_FILE}`)
+    }
     if (!content) return null
 
     const data = JSON.parse(content) as {
