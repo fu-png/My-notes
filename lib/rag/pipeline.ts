@@ -178,18 +178,21 @@ export async function ingestProject(
   }
 
   // 6. 存入索引（分步骤推送进度，避免用户长时间看不到反馈）
+  //    Vercel 海外服务器到阿里云 OSS 的读写延迟较大（3.5MB JSON 往返可能 30s+），
+  //    每个 OSS 操作前后都推送进度，让用户知道系统仍在正常工作。
   if (isIncremental) {
     // 增量模式：局部更新向量存储
     if (!embeddingFailed && newEmbeddings.length > 0) {
       log("正在更新向量索引...")
-      await updateChunksByFiles(projectId, changedFiles, newChunks, newEmbeddings)
+      await updateChunksByFiles(projectId, changedFiles, newChunks, newEmbeddings, log)
     } else if (deleted.length > 0) {
       log("正在清理已删除文件的索引...")
-      await updateChunksByFiles(projectId, new Set(deleted), [], [])
+      await updateChunksByFiles(projectId, new Set(deleted), [], [], log)
     }
 
-    log("正在重建全文搜索索引...")
+    log("正在加载全部文本块...")
     const allChunks = await loadChunksData(projectId)
+    log(`正在构建全文搜索索引（${allChunks.length} 个文本块）...`)
     await rebuildBm25Index(projectId, allChunks)
 
     log("正在保存索引状态...")
@@ -204,11 +207,11 @@ export async function ingestProject(
     // 全量模式：清空旧索引 + 整体写入
     await deleteIndex(projectId)
     if (!embeddingFailed && newEmbeddings.length > 0) {
-      log("正在写入向量索引...")
+      log(`正在写入向量索引（${newChunks.length} 个文本块）...`)
       await addChunks(projectId, newChunks, newEmbeddings)
     }
 
-    log("正在构建全文搜索索引...")
+    log(`正在构建全文搜索索引（${newChunks.length} 个文本块）...`)
     await createBm25Index(projectId, newChunks)
 
     log("正在保存索引状态...")

@@ -110,17 +110,22 @@ export async function addChunks(
  * 增量更新向量存储：删除指定文件的旧 chunks，追加新 chunks
  * 先加载现有数据 → 过滤掉变更文件 → 合并新数据 → 一次性写回
  * 保证原子性：不会出现删了旧的但新的没写入的中间状态
+ *
+ * @param onProgress 可选进度回调，用于在耗时较长的 OSS 读写期间
+ *                   向用户推送细粒度进度（Vercel 海外 ↔ 阿里云 OSS 延迟较大）
  */
 export async function updateChunksByFiles(
   projectId: string,
   changedFilenames: Set<string>,
   newChunks: Chunk[],
-  newVectors: number[][]
+  newVectors: number[][],
+  onProgress?: (msg: string) => void
 ): Promise<void> {
   if (newChunks.length !== newVectors.length) {
     throw new Error("newChunks and newVectors must have the same length")
   }
 
+  onProgress?.("正在加载现有向量数据...")
   const existing = await loadVectorStore(projectId)
 
   // 保留未变更文件的 chunks 和 vectors
@@ -139,6 +144,7 @@ export async function updateChunksByFiles(
   const mergedChunks = [...keptChunks, ...newChunks]
   const mergedVectors = [...keptVectors, ...newVectors]
 
+  onProgress?.(`正在上传向量数据（${mergedChunks.length} 个文本块）...`)
   await saveVectorStore(projectId, { chunks: mergedChunks, vectors: mergedVectors })
 }
 
