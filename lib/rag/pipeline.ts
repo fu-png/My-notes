@@ -270,6 +270,7 @@ export async function queryProject(
 ): Promise<AssembledContext> {
   const t0 = Date.now()
   const lap = (label: string) => console.debug(`[pipeline:timing] ${label}: ${Date.now() - t0}ms`)
+  const warnings: string[] = []  // 收集降级警告，返回给前端展示
 
   // 检查是否已索引
   const status = await getIndexStatus(projectId)
@@ -311,7 +312,9 @@ export async function queryProject(
     ]) as [typeof decomposed, typeof directEmbedding, unknown]
   } catch (err) {
     // [修复] embedding 失败时降级到纯 BM25 模式，而不是整体报错
+    const errMsg = err instanceof Error ? err.message : String(err)
     console.warn("[pipeline] Embedding 失败，降级到纯 BM25 模式:", err)
+    warnings.push(`Embedding 模型调用失败 (${errMsg})，已降级为全文检索`)
     decomposed = { original: question, subQueries: [question], reasoning: "Embedding 失败" }
     vectorSearchAvailable = false
   }
@@ -326,17 +329,24 @@ export async function queryProject(
     if (subQueries.length === 1 && subQueries[0] === question) {
       queryEmbeddings = directEmbedding
     } else {
-      const originalIdx = subQueries.indexOf(question)
-      if (originalIdx >= 0) {
-        const others = subQueries.filter((_, i) => i !== originalIdx)
-        const otherEmbeddings = others.length > 0 ? await embedBatch(others, config) : []
-        queryEmbeddings = []
-        let otherI = 0
-        for (let i = 0; i < subQueries.length; i++) {
-          queryEmbeddings.push(i === originalIdx ? directEmbedding[0] : otherEmbeddings[otherI++])
+      try {
+        const originalIdx = subQueries.indexOf(question)
+        if (originalIdx >= 0) {
+          const others = subQueries.filter((_, i) => i !== originalIdx)
+          const otherEmbeddings = others.length > 0 ? await embedBatch(others, config) : []
+          queryEmbeddings = []
+          let otherI = 0
+          for (let i = 0; i < subQueries.length; i++) {
+            queryEmbeddings.push(i === originalIdx ? directEmbedding[0] : otherEmbeddings[otherI++])
+          }
+        } else {
+          queryEmbeddings = await embedBatch(subQueries, config)
         }
-      } else {
-        queryEmbeddings = await embedBatch(subQueries, config)
+      } catch (err) {
+        console.warn("[pipeline] 子查询 Embedding 失败，仅使用原始问题向量:", err)
+        warnings.push("子查询向量化失败，检索精度可能下降")
+        // 降级：仅用原始问题的 embedding 做向量搜索
+        queryEmbeddings = subQueries.map(() => directEmbedding[0])
       }
     }
   }
@@ -386,8 +396,8 @@ export async function queryProject(
   // 5. Rerank + Graph RAG 扩展 并行执行（两者互不依赖）
   //    之前串行：rerank ~2s → graph ~1s = 3s
   //    并行后：max(rerank, graph) ≈ 2s，省 ~1s
-  const rerankPromise = boosted.length <= 3
-    ? Promise.resolve(boosted)
+  const rerankPromise: Promise<import("./reranker").RerankOutput> = boosted.length <= 3
+    ? Promise.resolve({ results: boosted })
     : rerankResults(question, boosted, config)
 
   const graphPromise = (async (): Promise<SearchResult[]> => {
@@ -410,9 +420,15 @@ export async function queryProject(
     return []
   })()
 
-  const [reranked, graphResults] = await Promise.all([rerankPromise, graphPromise])
+  const [rerankOutput, graphResults] = await Promise.all([rerankPromise, graphPromise])
   lap("rerank + graph (parallel)")
 
+  // 收集 reranker 降级警告
+  if (rerankOutput.fallbackReason) {
+    warnings.push(rerankOutput.fallbackReason)
+  }
+
+  const reranked = rerankOutput.results
   const withGraphExpansion = graphResults.length > 0
     ? [...reranked, ...graphResults]
     : reranked
@@ -422,6 +438,10 @@ export async function queryProject(
   lap("TOTAL")
   console.debug(`[pipeline] 组装上下文: ${context.sources.length} 个来源, ${context.totalTokens} tokens`)
 
+  // 附加降级警告信息
+  if (warnings.length > 0) {
+    context.warnings = warnings
+  }
   return context
 }
 

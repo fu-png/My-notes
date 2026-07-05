@@ -67,6 +67,8 @@ export interface AssembledContext {
   sources: ContextSource[]
   /** 总 token 数 */
   totalTokens: number
+  /** 降级警告信息（如 Embedding/Reranker 失败），前端可展示给用户 */
+  warnings?: string[]
 }
 
 /** 上下文来源（用于引用展示） */

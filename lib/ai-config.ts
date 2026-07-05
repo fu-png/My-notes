@@ -13,6 +13,7 @@ export const STORAGE_KEY_MODEL = "ai-assistant-model"
 export const STORAGE_KEY_EMBEDDING_MODEL = "ai-assistant-embedding-model"
 export const STORAGE_KEY_EMBEDDING_API_KEY = "ai-embedding-api-key"
 export const STORAGE_KEY_EMBEDDING_API_BASE = "ai-embedding-api-base"
+export const STORAGE_KEY_RERANK_MODEL = "ai-rerank-model"
 
 // TTS 配置
 export const STORAGE_KEY_TTS_API_KEY = "ai-tts-api-key"
@@ -38,9 +39,10 @@ export const STORAGE_KEY_ACTIVE_PROVIDER = "ai-assistant-active-provider"
 
 export const DEFAULT_API_BASE = "https://api.openai.com/v1"
 export const DEFAULT_MODEL = "gpt-4o-mini"
-export const DEFAULT_EMBEDDING_MODEL = "BAAI/bge-large-zh-v1.5"
+export const DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
 export const DEFAULT_EMBEDDING_API_BASE = "https://api.siliconflow.cn/v1/embeddings"
-export const DEFAULT_EMBEDDING_API_KEY = "sk-ebxhsvnivkfeoozfsrrdwbquvjjcdwwsfaiiketszdymvbnx"
+export const DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+export const DEFAULT_EMBEDDING_API_KEY = "sk-nlhsijtvqicguodpqsdddlcbqejbebacvscozuoljqjsciua"
 export const DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
 export const DEFAULT_TTS_VOICE_HOST = "冰糖"
 export const DEFAULT_TTS_VOICE_EXPERT = "苏打"
@@ -92,6 +94,7 @@ export interface EmbeddingConfig {
   apiKey: string
   apiBase: string
   embeddingModel: string
+  rerankModel: string
 }
 
 export interface TTSConfig {
@@ -150,6 +153,12 @@ export function getConfiguredEmbeddingModel(): string {
   return localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL
 }
 
+/** Get the configured reranker model name */
+export function getConfiguredRerankModel(): string {
+  if (typeof window === "undefined") return DEFAULT_RERANK_MODEL
+  return localStorage.getItem(STORAGE_KEY_RERANK_MODEL) || DEFAULT_RERANK_MODEL
+}
+
 /**
  * Get the full embedding config for RAG.
  * If "use same key" is enabled (default), reuses the chat API key/base.
@@ -159,6 +168,7 @@ export function getEmbeddingConfig(): EmbeddingConfig | null {
   if (typeof window === "undefined") return null
 
   const embeddingModel = localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL
+  const rerankModel = localStorage.getItem(STORAGE_KEY_RERANK_MODEL) || DEFAULT_RERANK_MODEL
 
   const embApiKey = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_KEY) || ""
   const embApiBase = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || ""
@@ -168,15 +178,17 @@ export function getEmbeddingConfig(): EmbeddingConfig | null {
       apiKey: embApiKey,
       apiBase: embApiBase || DEFAULT_EMBEDDING_API_BASE,
       embeddingModel,
+      rerankModel,
     }
   }
 
-  // 使用内置的 embedding API 默认配置（BAAI/bge-large-zh-v1.5 + SiliconFlow）
+  // 使用内置的 embedding API 默认配置（BAAI/bge-m3 + SiliconFlow）
   // 这样即使用户没有单独配置 embedding API，也能正常构建索引
   return {
     apiKey: DEFAULT_EMBEDDING_API_KEY,
     apiBase: DEFAULT_EMBEDDING_API_BASE,
     embeddingModel,
+    rerankModel,
   }
 }
 

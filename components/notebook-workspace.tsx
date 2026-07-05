@@ -493,6 +493,7 @@ scheduleOSSFetch(() => {
             embeddingModel: embConfig?.embeddingModel || getConfiguredEmbeddingModel(),
             embeddingApiKey: embConfig?.apiKey,
             embeddingApiBase: embConfig?.apiBase,
+            rerankModel: embConfig?.rerankModel,
             stream: true,
           }),
         })
@@ -532,6 +533,7 @@ scheduleOSSFetch(() => {
 
         if (!success) {
           console.warn("[autoIndex] stream ended without success")
+          showToast("error", "知识索引构建异常：连接意外中断，请重试")
         }
       } catch (err: unknown) {
         console.warn("[autoIndex]", err)

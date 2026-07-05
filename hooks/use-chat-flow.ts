@@ -346,16 +346,32 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
                 embeddingModel: getEmbeddingConfig()?.embeddingModel || getConfiguredEmbeddingModel(),
                 embeddingApiKey: getEmbeddingConfig()?.apiKey,
                 embeddingApiBase: getEmbeddingConfig()?.apiBase,
+                rerankModel: getEmbeddingConfig()?.rerankModel,
                 activeFile: activeFile || undefined,
               }),
             })
+            if (!ragRes.ok) {
+              const errBody = await ragRes.json().catch(() => ({}))
+              const errMsg = errBody.error || `HTTP ${ragRes.status}`
+              console.warn("[RAG] Query HTTP error:", errMsg)
+              showToast("error", `知识库检索失败: ${errMsg}`)
+              return { sources: undefined, text: "", error: true }
+            }
             const ragData = await ragRes.json()
+            // 如果后端返回了降级警告（如 Embedding/Reranker 失败），用 toast 提示用户
+            if (ragData.context?.warnings?.length > 0) {
+              for (const w of ragData.context.warnings) {
+                showToast("error", w)
+              }
+            }
             if (ragData.context?.sources?.length > 0) {
               return { sources: ragData.context.sources, text: ragData.context.text }
             }
           } catch (err) {
             if (err instanceof DOMException && err.name === "AbortError") return null
+            const errMsg = err instanceof Error ? err.message : "未知错误"
             console.warn("[RAG] Query failed, falling back to plain mode:", err)
+            showToast("error", `知识库检索异常: ${errMsg}`)
             return { sources: undefined, text: "", error: true }
           }
           return null

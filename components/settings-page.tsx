@@ -45,11 +45,13 @@ import {
   STORAGE_KEY_EMBEDDING_MODEL,
   STORAGE_KEY_EMBEDDING_API_KEY,
   STORAGE_KEY_EMBEDDING_API_BASE,
+  STORAGE_KEY_RERANK_MODEL,
   STORAGE_KEY_PERSONA,
   STORAGE_KEY_USER_NAME,
   DEFAULT_API_BASE,
   DEFAULT_MODEL,
   DEFAULT_EMBEDDING_MODEL,
+  DEFAULT_RERANK_MODEL,
   DEFAULT_TTS_MODEL,
   DEFAULT_TTS_VOICE_HOST,
   DEFAULT_TTS_VOICE_EXPERT,
@@ -131,6 +133,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       embeddingModel: DEFAULT_EMBEDDING_MODEL,
       embApiKey: "",
       embApiBase: "",
+      rerankModel: DEFAULT_RERANK_MODEL,
       ttsApiKey: "",
       ttsApiBase: "",
       ttsModel: DEFAULT_TTS_MODEL,
@@ -183,6 +186,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     config.embeddingModel = localStorage.getItem(STORAGE_KEY_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL
     config.embApiKey = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_KEY) || ""
     config.embApiBase = localStorage.getItem(STORAGE_KEY_EMBEDDING_API_BASE) || ""
+    config.rerankModel = localStorage.getItem(STORAGE_KEY_RERANK_MODEL) || DEFAULT_RERANK_MODEL
 
     // TTS
     const savedTtsKey = localStorage.getItem(STORAGE_KEY_TTS_API_KEY) || ""
@@ -213,6 +217,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
   const [embeddingModel, setEmbeddingModel] = React.useState(loadedConfig.embeddingModel)
   const [embApiKey, setEmbApiKey] = React.useState(loadedConfig.embApiKey)
   const [embApiBase, setEmbApiBase] = React.useState(loadedConfig.embApiBase)
+  const [rerankModel, setRerankModel] = React.useState(loadedConfig.rerankModel)
   const [showEmbKey, setShowEmbKey] = React.useState(false)
 
   // TTS 配置
@@ -340,6 +345,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     localStorage.setItem(STORAGE_KEY_EMBEDDING_MODEL, embeddingModel.trim() || DEFAULT_EMBEDDING_MODEL)
     localStorage.setItem(STORAGE_KEY_EMBEDDING_API_KEY, embApiKey.trim())
     localStorage.setItem(STORAGE_KEY_EMBEDDING_API_BASE, embApiBase.trim())
+    localStorage.setItem(STORAGE_KEY_RERANK_MODEL, rerankModel.trim() || DEFAULT_RERANK_MODEL)
 
     // TTS
     localStorage.setItem(STORAGE_KEY_TTS_API_KEY, ttsApiKey.trim())
@@ -447,6 +453,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                 embeddingModel={embeddingModel} setEmbeddingModel={setEmbeddingModel}
                 embApiKey={embApiKey} setEmbApiKey={setEmbApiKey}
                 embApiBase={embApiBase} setEmbApiBase={setEmbApiBase}
+                rerankModel={rerankModel} setRerankModel={setRerankModel}
                 showEmbKey={showEmbKey} setShowEmbKey={setShowEmbKey}
               />
             )}
@@ -719,11 +726,13 @@ function SectionEmbedding({
   embeddingModel, setEmbeddingModel,
   embApiKey, setEmbApiKey,
   embApiBase, setEmbApiBase,
+  rerankModel, setRerankModel,
   showEmbKey, setShowEmbKey,
 }: {
   embeddingModel: string; setEmbeddingModel: (v: string) => void
   embApiKey: string; setEmbApiKey: (v: string) => void
   embApiBase: string; setEmbApiBase: (v: string) => void
+  rerankModel: string; setRerankModel: (v: string) => void
   showEmbKey: boolean; setShowEmbKey: (v: boolean) => void
 }) {
   return (
@@ -764,11 +773,20 @@ placeholder="https://api.siliconflow.cn/v1/embeddings"
         </div>
       </div>
 
-      <FieldGroup label="Embedding 模型" desc="推荐 text-embedding-3-small，也支持 text-embedding-3-large、text-embedding-ada-002 等">
+      <FieldGroup label="Embedding 模型" desc="推荐 BAAI/bge-m3，也支持 text-embedding-3-small、text-embedding-ada-002 等">
         <Input
           placeholder={DEFAULT_EMBEDDING_MODEL}
           value={embeddingModel}
           onChange={(e) => setEmbeddingModel(e.target.value)}
+          className="h-8 text-sm"
+        />
+      </FieldGroup>
+
+      <FieldGroup label="Reranker 模型" desc="用于对检索结果重排序，提升 RAG 准确率。推荐 BAAI/bge-reranker-v2-m3，与 Embedding API 共用同一服务商配置">
+        <Input
+          placeholder={DEFAULT_RERANK_MODEL}
+          value={rerankModel}
+          onChange={(e) => setRerankModel(e.target.value)}
           className="h-8 text-sm"
         />
       </FieldGroup>

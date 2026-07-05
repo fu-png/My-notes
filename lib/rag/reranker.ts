@@ -173,12 +173,18 @@ async function rerankViaChatModel(
  * @param config RAG 配置
  * @returns 重排序后的结果（低分结果已过滤）
  */
+export interface RerankOutput {
+  results: SearchResult[]
+  /** 如果发生了降级（API 失败），说明原因 */
+  fallbackReason?: string
+}
+
 export async function rerankResults(
   question: string,
   results: SearchResult[],
   config: RAGConfig
-): Promise<SearchResult[]> {
-  if (results.length <= 3) return results
+): Promise<RerankOutput> {
+  if (results.length <= 3) return { results }
 
   // 取 Top-N 候选
   const candidates = results.slice(0, MAX_CANDIDATES)
@@ -186,9 +192,13 @@ export async function rerankResults(
   // 优先走专用 rerank API，失败则降级到 chat 模型 JSON 方案，再失败则保留原序
   let scores = await rerankViaAPI(question, candidates, config)
   let usedFallback = false
+  let fallbackReason: string | undefined
   if (!scores) {
     scores = await rerankViaChatModel(question, candidates, config)
-    usedFallback = true
+    if (scores) {
+      usedFallback = true
+      fallbackReason = "Reranker API 调用失败，已降级为对话模型重排序"
+    }
   }
 
   if (!scores || scores.length === 0) {
@@ -196,6 +206,7 @@ export async function rerankResults(
     console.warn("[reranker] All API rerank strategies failed, using local keyword reranker")
     scores = localKeywordRerank(question, candidates)
     usedFallback = true
+    fallbackReason = "Reranker 模型不可用，已降级为本地关键词匹配"
   }
 
   // 构建 ID → score 映射
@@ -247,7 +258,7 @@ export async function rerankResults(
     `[reranker] (${usedFallback ? "chat-fallback" : "rerank-api"}) Reranked ${candidates.length} candidates, kept ${finalResults.length} after filtering`
   )
 
-  return [...finalResults, ...remaining]
+  return { results: [...finalResults, ...remaining], fallbackReason }
 }
 
 /**

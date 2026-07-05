@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const body = await request.json()
-    const { action, apiKey, apiBase, model, embeddingModel, embeddingApiKey, embeddingApiBase, question, maxContextTokens, stream, activeFile } = body
+    const { action, apiKey, apiBase, model, embeddingModel, embeddingApiKey, embeddingApiBase, rerankModel, question, maxContextTokens, stream, activeFile } = body
 
     if (!projectId) {
       return NextResponse.json({ error: "缺少项目 ID" }, { status: 400 })
@@ -49,9 +49,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
           apiKey: effectiveApiKey,
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
-          embeddingModel: embeddingModel || "BAAI/bge-large-zh-v1.5",
+          embeddingModel: embeddingModel || "BAAI/bge-m3",
           embeddingApiKey: embeddingApiKey || "sk-nlhsijtvqicguodpqsdddlcbqejbebacvscozuoljqjsciua",
           embeddingApiBase: embeddingApiBase || "https://api.siliconflow.cn/v1/embeddings",
+          rerankModel: rerankModel || "BAAI/bge-reranker-v2-m3",
           maxContextTokens: maxContextTokens || 12000,
         }
 
@@ -120,9 +121,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
           apiKey: queryApiKey,
           apiBase: apiBase || "https://api.openai.com/v1",
           chatModel: model || "gpt-4o-mini",
-          embeddingModel: embeddingModel || "BAAI/bge-large-zh-v1.5",
+          embeddingModel: embeddingModel || "BAAI/bge-m3",
           embeddingApiKey: embeddingApiKey || "sk-nlhsijtvqicguodpqsdddlcbqejbebacvscozuoljqjsciua",
           embeddingApiBase: embeddingApiBase || "https://api.siliconflow.cn/v1/embeddings",
+          rerankModel: rerankModel || "BAAI/bge-reranker-v2-m3",
           maxContextTokens: maxContextTokens || 12000,
         }
 
