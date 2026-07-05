@@ -548,6 +548,96 @@ scheduleOSSFetch(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
+  // 手动触发全量重建索引：先删除旧索引数据，再执行全量索引
+  const triggerFullReindex = React.useCallback(async () => {
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 AI API Key")
+      return
+    }
+    if (!isEmbeddingConfigured()) {
+      showToast("error", "请先配置 Embedding 模型")
+      return
+    }
+
+    setIndexing(true)
+    setIndexProgress("正在清除旧索引...")
+
+    try {
+      // 1. 删除旧索引
+      const delRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete" }),
+      })
+      if (!delRes.ok) {
+        const data = await delRes.json().catch(() => ({}))
+        throw new Error(data.error || `删除索引失败: HTTP ${delRes.status}`)
+      }
+
+      setIndexProgress("正在全量重建索引...")
+
+      // 2. 全量索引（旧索引已清除，pipeline 会自动走全量路径）
+      const embConfig = getEmbeddingConfig()
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "index",
+          apiKey: config.apiKey,
+          apiBase: config.apiBase,
+          model: getConfiguredModel(),
+          embeddingModel: embConfig?.embeddingModel || getConfiguredEmbeddingModel(),
+          embeddingApiKey: embConfig?.apiKey,
+          embeddingApiBase: embConfig?.apiBase,
+          rerankModel: embConfig?.rerankModel,
+          stream: true,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `索引失败: HTTP ${res.status}`)
+      }
+
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error("无法读取响应流")
+
+      const { parseSSEStream } = await import("@/lib/infra/stream-utils")
+      let success = false
+
+      for await (const event of parseSSEStream(reader)) {
+        if (typeof event.progress === "string") {
+          setIndexProgress(event.progress)
+        }
+        if (event.done === true) {
+          if (event.success === true) {
+            success = true
+            setRagEnabled(true)
+            fetchIndexStatus()
+            if (showSources) fetchSourcesData()
+            showToast("success", "全量索引重建完成")
+          } else {
+            const errMsg = typeof event.error === "string" ? event.error : "索引失败"
+            throw new Error(errMsg)
+          }
+        }
+      }
+
+      if (!success) {
+        throw new Error("连接意外中断，请重试")
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "未知错误"
+      console.warn("[fullReindex]", err)
+      showToast("error", `全量索引重建失败: ${msg}`)
+    } finally {
+      setIndexing(false)
+      setIndexProgress("")
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, showSources])
+
   // 将 triggerAutoIndex 注入 ref，供 ai-config-changed 监听器使用
   React.useEffect(() => {
     triggerAutoIndexRef.current = triggerAutoIndex
@@ -1562,7 +1652,7 @@ queueMicrotask(() => selectFile(target))
           onDeleteConversation={deleteConversation}
           onFetchSourcesData={fetchSourcesData}
           onChatScroll={handleChatScroll}
-          onBuildIndex={() => triggerAutoIndex()}
+          onBuildIndex={triggerFullReindex}
           onGenerate={handleGenerate}
           onSaveGenerated={handleSaveGenerated}
           onCopyGenerated={handleCopyGenerated}

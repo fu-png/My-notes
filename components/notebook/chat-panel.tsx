@@ -354,7 +354,9 @@ export const ChatPanel = React.memo(function ChatPanel({
           sourcesLoading={sourcesLoading}
           sourcesData={sourcesData}
           indexStatus={indexStatus}
+          indexing={indexing}
           onClose={() => onSetShowSources(false)}
+          onFullReindex={onBuildIndex}
         />
       ) : showHistory ? (
 <HistoryPanel
@@ -851,12 +853,16 @@ const SourcesPanel = React.memo(function SourcesPanel({
   sourcesLoading,
   sourcesData,
   indexStatus,
+  indexing,
   onClose,
+  onFullReindex,
 }: {
   sourcesLoading: boolean
   sourcesData: ChatPanelProps["sourcesData"]
   indexStatus: ChatPanelProps["indexStatus"]
+  indexing: boolean
   onClose: () => void
+  onFullReindex: () => void
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -910,16 +916,46 @@ const SourcesPanel = React.memo(function SourcesPanel({
                 </Collapsible>
               ))}
             </div>
-            {indexStatus?.lastIndexedAt && (
-              <p className="mt-3 text-[11px] text-muted-foreground/60">
-                上次索引: {new Date(indexStatus.lastIndexedAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-              </p>
-            )}
+            <div className="mt-3 flex items-center justify-between">
+              {indexStatus?.lastIndexedAt && (
+                <p className="text-[11px] text-muted-foreground/60">
+                  上次索引: {new Date(indexStatus.lastIndexedAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto h-7 gap-1.5 text-[11px]"
+                onClick={onFullReindex}
+                disabled={indexing}
+              >
+                {indexing ? (
+                  <IconLoader2 className="size-3 animate-spin" />
+                ) : (
+                  <IconRefresh className="size-3" />
+                )}
+                {indexing ? "索引中..." : "全量重建索引"}
+              </Button>
+            </div>
           </>
         ) : (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <IconDatabase className="mb-2 size-8 opacity-30" />
             <p className="text-sm">尚未建立索引</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 h-7 gap-1.5 text-[11px]"
+              onClick={onFullReindex}
+              disabled={indexing}
+            >
+              {indexing ? (
+                <IconLoader2 className="size-3 animate-spin" />
+              ) : (
+                <IconRefresh className="size-3" />
+              )}
+              {indexing ? "索引中..." : "构建索引"}
+            </Button>
           </div>
         )}
       </div>
