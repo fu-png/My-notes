@@ -61,6 +61,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
           const encoder = new TextEncoder()
           const readable = new ReadableStream({
             async start(controller) {
+              // SSE 心跳：每 10 秒发送一个 SSE 注释行，防止 Vercel 网关 / CDN
+              // 因长时间无数据而断开连接（OSS 上传几 MB 的向量数据可能耗时 30s+）
+              const heartbeat = setInterval(() => {
+                try {
+                  controller.enqueue(encoder.encode(": heartbeat\n\n"))
+                } catch {
+                  // controller 已关闭，忽略
+                }
+              }, 10_000)
+
               try {
                 const result = await ingestProject(projectId, config, (msg) => {
                   controller.enqueue(
@@ -81,6 +91,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                   )
                 )
               } finally {
+                clearInterval(heartbeat)
                 controller.close()
               }
             },
