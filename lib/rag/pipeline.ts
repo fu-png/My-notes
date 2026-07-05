@@ -175,64 +175,49 @@ export async function ingestProject(
     }
   }
 
-  // 6. 存入索引
-  log("正在存入索引...")
-  const indexPromises: Promise<void>[] = []
-
+  // 6. 存入索引（分步骤推送进度，避免用户长时间看不到反馈）
   if (isIncremental) {
     // 增量模式：局部更新向量存储
     if (!embeddingFailed && newEmbeddings.length > 0) {
-      indexPromises.push(updateChunksByFiles(projectId, changedFiles, newChunks, newEmbeddings))
+      log("正在更新向量索引...")
+      await updateChunksByFiles(projectId, changedFiles, newChunks, newEmbeddings)
     } else if (deleted.length > 0) {
-      // 即使 embedding 失败，也要删除已删除文件的旧 chunks
-      indexPromises.push(updateChunksByFiles(projectId, new Set(deleted), [], []))
+      log("正在清理已删除文件的索引...")
+      await updateChunksByFiles(projectId, new Set(deleted), [], [])
     }
+
+    log("正在重建全文搜索索引...")
+    const allChunks = await loadChunksData(projectId)
+    await rebuildBm25Index(projectId, allChunks)
+
+    log("正在保存索引状态...")
+    await saveIndexStatus(projectId, {
+      indexed: true,
+      lastIndexedAt: new Date().toISOString(),
+      totalChunks: allChunks.length,
+      totalFiles: documents.length,
+      fileManifest: currentManifest,
+    })
   } else {
     // 全量模式：清空旧索引 + 整体写入
     await deleteIndex(projectId)
     if (!embeddingFailed && newEmbeddings.length > 0) {
-      indexPromises.push(addChunks(projectId, newChunks, newEmbeddings))
+      log("正在写入向量索引...")
+      await addChunks(projectId, newChunks, newEmbeddings)
     }
+
+    log("正在构建全文搜索索引...")
+    await createBm25Index(projectId, newChunks)
+
+    log("正在保存索引状态...")
+    await saveIndexStatus(projectId, {
+      indexed: true,
+      lastIndexedAt: new Date().toISOString(),
+      totalChunks: newChunks.length,
+      totalFiles: documents.length,
+      fileManifest: currentManifest,
+    })
   }
-
-  // BM25 索引：用合并后的全量 chunks 重建（CPU 操作，毫秒级）
-  // 增量模式下需要先拿到合并后的完整 chunks 列表
-  const bm25Promise = (async () => {
-    if (isIncremental) {
-      // 等向量存储更新完成后，从中获取合并后的全量 chunks
-      await Promise.all(indexPromises)
-      const allChunks = await loadChunksData(projectId)
-      await rebuildBm25Index(projectId, allChunks)
-    } else {
-      await createBm25Index(projectId, newChunks)
-    }
-  })()
-
-  // 保存索引状态（含文件指纹快照）
-  const statusPromise = (async () => {
-    // 增量模式下需要等向量存储完成才能获取准确的 totalChunks
-    if (isIncremental) {
-      await Promise.all(indexPromises)
-      const allChunks = await loadChunksData(projectId)
-      await saveIndexStatus(projectId, {
-        indexed: true,
-        lastIndexedAt: new Date().toISOString(),
-        totalChunks: allChunks.length,
-        totalFiles: documents.length,
-        fileManifest: currentManifest,
-      })
-    } else {
-      await saveIndexStatus(projectId, {
-        indexed: true,
-        lastIndexedAt: new Date().toISOString(),
-        totalChunks: newChunks.length,
-        totalFiles: documents.length,
-        fileManifest: currentManifest,
-      })
-    }
-  })()
-
-  await Promise.all([...indexPromises, bm25Promise, statusPromise])
 
   // 知识图谱：后台异步构建，不阻塞索引完成
   ;(async () => {
