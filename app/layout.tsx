@@ -1,4 +1,4 @@
-import { Geist_Mono, Inter } from "next/font/google"
+import { Geist_Mono, Inter, Instrument_Serif } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -9,6 +9,13 @@ const inter = Inter({subsets:['latin'],variable:'--font-sans'})
 const fontMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
+})
+
+const fontSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-serif",
+  style: ["normal", "italic"],
 })
 
 export const metadata = {
@@ -28,7 +35,7 @@ export default function RootLayout({
     <html
       lang="zh-CN"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", inter.variable)}
+      className={cn("antialiased", fontMono.variable, "font-sans", inter.variable, fontSerif.variable)}
     >
       <body>
         {/* Skip-to-content 链接（WCAG 2.4.1 键盘可访问性要求） */}
