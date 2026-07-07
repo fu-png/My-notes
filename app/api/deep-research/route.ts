@@ -152,7 +152,7 @@ async function runResearch(jobId: string, initialState: ReturnType<typeof create
   })
 
   for await (const update of resultStream) {
-    const nodeNames = Object.keys(update)
+    const nodeNames = Object.keys(update) as (keyof typeof update)[]
     for (const nodeName of nodeNames) {
       const nodeOutput = update[nodeName] as Record<string, unknown>
       Object.assign(finalState, nodeOutput)
