@@ -34,7 +34,7 @@ interface UsePptFlowOptions {
 interface UsePptFlowReturn {
   pptSession: PptSession | null
   setPptSession: React.Dispatch<React.SetStateAction<PptSession | null>>
-  startPptFlow: (userText: string) => void
+  startPptFlow: (userText: string, sourceContent?: string) => void
   handlePptCancel: () => void
   handlePptStyleSelect: (styleId: string) => void
   handlePptSlideCountSelect: (count: number) => void
@@ -43,6 +43,46 @@ interface UsePptFlowReturn {
   handlePptRetrySlide: (msgId: string, slideIndex: number) => Promise<void>
   handlePptRegenerateOutline: () => void
   pptAbortRef: React.RefObject<AbortController | null>
+}
+
+// ─── Greeting Generator ──────────────────────────────────────────────────────
+
+/**
+ * 根据用户输入和上下文内容，生成自然多样的 PPT 开场白。
+ * 当 sourceContent 存在时，说明用户是在 AI 回答之后说"做成PPT"，
+ * 开场白应体现"我理解你要把刚才的内容做成PPT"。
+ */
+function generatePptGreeting(userText: string, sourceContent?: string): string {
+  const lower = userText.toLowerCase()
+
+  // 场景1：用户在 AI 回答后说"做成PPT"/"转成PPT"，有上下文内容
+  if (sourceContent) {
+    // 从 sourceContent 中提取简短的主题描述（取前50个字符做摘要）
+    const topicSnippet = sourceContent.replace(/[#*>\n\r]+/g, " ").trim().slice(0, 50)
+    const contextGreetings = [
+      `没问题，我把刚才的内容整理成 PPT。先选一个视觉风格吧：`,
+      `好的，基于刚才的回答来生成 PPT。先选个风格：`,
+      `收到，把「${topicSnippet}${sourceContent.length > 50 ? "..." : ""}」这部分内容做成 PPT。请先选择风格：`,
+    ]
+    return contextGreetings[Math.floor(Math.random() * contextGreetings.length)]
+  }
+
+  // 场景2：用户提到了具体内容（如"基于选中内容..."）
+  if (/基于|关于|针对|围绕/.test(lower)) {
+    const topicGreetings = [
+      `好的，马上为你制作。先选一个视觉风格吧：`,
+      `收到，我来为你生成这份 PPT。请先选择风格：`,
+    ]
+    return topicGreetings[Math.floor(Math.random() * topicGreetings.length)]
+  }
+
+  // 场景3：通用 PPT 生成请求
+  const defaultGreetings = [
+    `好的，我来帮你制作 PPT。先选一个视觉风格吧：`,
+    `没问题，我会基于笔记内容为你生成 PPT。先选个风格：`,
+    `收到，来做一份 PPT 吧。请先选择视觉风格：`,
+  ]
+  return defaultGreetings[Math.floor(Math.random() * defaultGreetings.length)]
 }
 
 // ─── Hook Implementation ────────────────────────────────────────────────────
@@ -94,7 +134,7 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
   // ─── Public Handlers ────────────────────────────────────────────────────────
 
   /** Start PPT flow — called when intent detected or guide button clicked */
-  const startPptFlow = (userText: string) => {
+  const startPptFlow = (userText: string, sourceContent?: string) => {
     const aiMsgId = `ppt-${Date.now()}`
     const userMsg: ChatMessage = {
       id: `user-ppt-${Date.now()}`,
@@ -102,15 +142,18 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
       content: userText,
       timestamp: new Date(),
     }
+    // 根据上下文生成自然的开场白
+    const greeting = generatePptGreeting(userText, sourceContent)
     const aiMsg: ChatMessage = {
       id: aiMsgId,
       role: "assistant",
-      content: "好的！我将基于整个笔记本的所有文档为你生成 PPT 演示文稿。每页幻灯片将由 AI 生图模型渲染为高清图片。\n\n请先选择一个视觉风格：",
+      content: greeting,
       timestamp: new Date(),
       pptMeta: {
         step: "style-select",
         userIntent: userText,
         stylePreset: "corporate",
+        sourceContent,
       },
     }
     setChatMessages((prev) => [...prev, userMsg, aiMsg])
@@ -143,10 +186,15 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     if (!pptSession) return
     const preset = PPT_STYLE_PRESETS.find((p) => p.id === styleId)
     const newMsgId = `ppt-${Date.now()}`
+    const styleResponses = [
+      `「${preset?.name}」风格不错，${preset?.colors}色调会很有质感。接下来确定一下页数吧，3-15 页都可以，默认 8 页。`,
+      `好的，选了「${preset?.name}」，${preset?.colors}的配色方案。你希望做几页？3-15 页之间，默认 8 页。`,
+      `已选「${preset?.name}」风格。需要几页幻灯片？支持 3-15 页，推荐 8 页左右。`,
+    ]
     const aiMsg: ChatMessage = {
       id: newMsgId,
       role: "assistant",
-      content: `已选择「${preset?.name}」风格（${preset?.colors}）。\n\n需要生成几页幻灯片？（3-15 页，默认 8 页）`,
+      content: styleResponses[Math.floor(Math.random() * styleResponses.length)],
       timestamp: new Date(),
       pptMeta: {
         step: "slide-count",
@@ -163,10 +211,15 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
   const handlePptSlideCountSelect = (count: number) => {
     if (!pptSession) return
     const newMsgId = `ppt-${Date.now()}`
+    const countResponses = [
+      `${count} 页，了解。还有什么特别的要求吗？比如「突出技术架构」「强调数据对比」之类的。没有的话直接点「跳过」就好。`,
+      `好，${count} 页幻灯片。有额外的风格偏好或内容侧重点吗？可以告诉我，也可以直接「跳过」开始生成。`,
+      `OK，${count} 页。最后一步——你对内容呈现有什么特殊要求吗？比如配色、重点章节、图表风格等。没有就直接跳过吧。`,
+    ]
     const aiMsg: ChatMessage = {
       id: newMsgId,
       role: "assistant",
-      content: `好的，${count} 页。\n\n你还有其他风格偏好或内容要求吗？比如「突出技术架构部分」「使用蓝色主题」「加入数据图表」等。如果没有，直接点击「跳过」开始生成。`,
+      content: countResponses[Math.floor(Math.random() * countResponses.length)],
       timestamp: new Date(),
       pptMeta: {
         step: "custom-prompt",
@@ -192,12 +245,21 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
     const preset = PPT_STYLE_PRESETS.find((p) => p.id === pptSession.stylePreset)
     const outlineMsgId = `ppt-outline-${Date.now()}`
 
+    const outlineStartResponses = customPrompt
+      ? [
+          `收到，按你的要求来。正在生成大纲...\n\n> ${customPrompt}`,
+          `明白，正在结合你的要求生成 PPT 大纲...\n\n> ${customPrompt}`,
+          `好的，正在根据这些要求规划大纲...\n\n> ${customPrompt}`,
+        ]
+      : [
+          "正在分析内容并生成大纲...",
+          "好的，马上为你规划 PPT 结构...",
+          "正在梳理内容，生成大纲中...",
+        ]
     const aiMsg: ChatMessage = {
       id: outlineMsgId,
       role: "assistant",
-      content: customPrompt
-        ? `好的，正在根据你的要求生成 PPT 大纲...\n\n> ${customPrompt}`
-        : "好的，正在生成 PPT 大纲...",
+      content: outlineStartResponses[Math.floor(Math.random() * outlineStartResponses.length)],
       timestamp: new Date(),
       pptMeta: {
         step: "generating-outline",
@@ -418,10 +480,15 @@ export function usePptFlow(options: UsePptFlowOptions): UsePptFlowReturn {
       status: "pending" as const,
     }))
 
+    const imageStartResponses = [
+      `大纲确认，开始生成 ${editedOutline.slides.length} 页幻灯片图片，稍等片刻...`,
+      `好的，${editedOutline.slides.length} 页幻灯片正在同时渲染中...`,
+      `大纲没问题，正在并发生成 ${editedOutline.slides.length} 页高清幻灯片...`,
+    ]
     const aiMsg: ChatMessage = {
       id: imagesMsgId,
       role: "assistant",
-      content: `大纲已确认！正在生成幻灯片图片（共 ${editedOutline.slides.length} 页，全部并发生成中）...`,
+      content: imageStartResponses[Math.floor(Math.random() * imageStartResponses.length)],
       timestamp: new Date(),
       pptMeta: {
         step: "generating-images",

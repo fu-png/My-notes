@@ -45,6 +45,14 @@ export interface ChatMessage {
   reasoning?: string
   /** Loading 阶段文案（如"正在检索知识库..."），LLM 首 token 到来后自动清除 */
   loadingStage?: string
+  /** 深度研究的各阶段执行详情（时间线展示） */
+  researchSteps?: {
+    phase: string
+    step: string
+    progress: number
+    detail?: import("@/lib/deep-research/types").ResearchStepDetail
+    timestamp: number
+  }[]
   /** 笔记本指南生成的元信息 */
   generateMeta?: {
     type: string
@@ -66,6 +74,8 @@ export interface ChatMessage {
     slideCount?: number
     customPrompt?: string
     userIntent?: string
+    /** 用户触发 PPT 时，上一轮 AI 回答的内容（用于大纲生成的上下文） */
+    sourceContent?: string
     outline?: PptOutline
     slideImages?: SlideImage[]
     streamingText?: string

@@ -28,6 +28,7 @@ import {
   IconWorld,
   IconBrain,
   IconPresentation,
+  IconMicroscope,
   IconAlertCircle,
   IconEye,
 } from "@tabler/icons-react"
@@ -68,6 +69,8 @@ const MarkdownRenderer = dynamic(() => import("@/components/markdown-renderer").
   loading: () => <div className="animate-pulse h-4 w-full bg-muted rounded" />,
 })
 
+import { ResearchTimeline } from "@/components/notebook/research-timeline"
+
 // ─── Props ───
 
 export interface ChatPanelProps {
@@ -85,6 +88,7 @@ export interface ChatPanelProps {
   providerList: ProviderInfo[]
   onSwitchProvider: (providerId: string) => void
   deepThinkMode: boolean
+  deepResearchMode: boolean
 
   // Conversation history
   conversations: Conversation[]
@@ -135,6 +139,7 @@ export interface ChatPanelProps {
   onSendMessage: () => void
   onStopGeneration: () => void
   onToggleDeepThink: () => void
+  onToggleDeepResearch: () => void
   selectedText: string
   onClearSelectedText: () => void
   onStartNewConversation: () => void
@@ -197,6 +202,7 @@ export const ChatPanel = React.memo(function ChatPanel({
   providerList,
   onSwitchProvider,
   deepThinkMode,
+  deepResearchMode,
   conversations,
   activeConversationId,
   showHistory,
@@ -224,6 +230,7 @@ export const ChatPanel = React.memo(function ChatPanel({
   onSendMessage,
   onStopGeneration,
   onToggleDeepThink,
+  onToggleDeepResearch,
   selectedText,
   onClearSelectedText,
   onStartNewConversation,
@@ -256,7 +263,7 @@ export const ChatPanel = React.memo(function ChatPanel({
   if (!showAI) return null
 
   return (
-    <div ref={aiPanelRef} className="relative hidden shrink-0 flex-col overflow-hidden border-l bg-background md:flex" style={{ width: aiPanelWidth }}>
+    <div ref={aiPanelRef} className="relative hidden shrink flex-col overflow-hidden border-l bg-background md:flex" style={{ width: aiPanelWidth, minWidth: 200 }}>
       {/* Resize handle */}
       <div
         className="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 focus:bg-primary/20 focus:outline-none"
@@ -464,7 +471,16 @@ onDelete={onDeleteConversation}
                           defaultOpen={chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id || !msg.content}
                         />
                       )}
-                      {!msg.content && !msg.reasoning && chatLoading && !msg.audioMeta ? (
+                      {/* 深度研究时间线 */}
+                      {msg.researchSteps && msg.researchSteps.length > 0 && (
+                        <div className="mb-2">
+                          <ResearchTimeline
+                            steps={msg.researchSteps}
+                            isRunning={chatLoading && msg.id === chatMessages[chatMessages.length - 1]?.id && !!msg.loadingStage}
+                          />
+                        </div>
+                      )}
+                      {!msg.content && !msg.reasoning && !msg.researchSteps?.length && chatLoading && !msg.audioMeta ? (
                         <div className="flex items-center gap-2 px-1 py-2" role="status" aria-label="AI 正在回复">
                           <IconLoader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
                           {msg.loadingStage ? (
@@ -706,6 +722,21 @@ onDelete={onDeleteConversation}
                     </TooltipTrigger>
                     <TooltipContent side="top">
                       {deepThinkMode ? "深度思考已开启，点击关闭" : "开启深度思考模式"}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-1">
+                        <IconMicroscope className={`size-3 ${deepResearchMode ? "text-primary" : "text-muted-foreground/70"}`} />
+                        <Switch
+                          size="sm"
+                          checked={deepResearchMode}
+                          onCheckedChange={onToggleDeepResearch}
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {deepResearchMode ? "Deep Research 已开启，发送后将启动深度研究" : "开启 Deep Research 模式"}
                     </TooltipContent>
                   </Tooltip>
                   <span className="ml-2 text-[11px] text-muted-foreground/70">

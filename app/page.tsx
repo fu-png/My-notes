@@ -13,31 +13,83 @@ import {
   IconMessageChatbot,
   IconSearch,
   IconBook,
-  IconFolderOpen,
   IconHeadphones,
   IconPresentation,
+  IconMicroscope,
+  IconLoader2,
+  IconMapRoute,
+  IconWorldSearch,
+  IconBrain,
+  IconFileText,
+  IconDeviceFloppy,
+  IconLanguage,
+  IconCode,
+  IconPencil,
+  IconFocus2,
+  IconPlus,
+  IconRobot,
+  IconSparkles,
 } from "@tabler/icons-react"
 
 export default function Home() {
   const router = useRouter()
   const [noteInput, setNoteInput] = useState("")
   const [isCreating, setIsCreating] = useState(false)
+  const [researchProgress, setResearchProgress] = useState<{ step: string; progress: number } | null>(null)
 
-  const handleCreateNote = async () => {
+  // 从 localStorage 读取 API 配置
+  const getApiConfig = () => {
+    try {
+      // 优先从 providers 列表中读取当前激活的 provider
+      const activeId = localStorage.getItem("ai-assistant-active-provider")
+      const providersRaw = localStorage.getItem("ai-assistant-providers")
+      if (activeId && providersRaw) {
+        const providers = JSON.parse(providersRaw)
+        const active = providers.find((p: { id: string }) => p.id === activeId)
+        if (active?.apiKey) {
+          return { apiKey: active.apiKey, apiBase: active.apiBase, model: active.model }
+        }
+      }
+      // 回退到独立的 key
+      const apiKey = localStorage.getItem("ai-assistant-api-key") || ""
+      const apiBase = localStorage.getItem("ai-assistant-api-base") || "https://api.openai.com/v1"
+      const model = localStorage.getItem("ai-assistant-model") || "gpt-4o-mini"
+      if (apiKey) {
+        return { apiKey, apiBase, model }
+      }
+    } catch {}
+    return { apiKey: "", apiBase: "https://api.openai.com/v1", model: "gpt-4o-mini" }
+  }
+
+  const handleResearch = async () => {
     const name = noteInput.trim()
     if (!name || isCreating) return
+
     setIsCreating(true)
+    setResearchProgress({ step: "正在创建研究项目…", progress: 0 })
+
     try {
-      const res = await fetch("/api/projects", {
+      const { apiKey, apiBase, model } = getApiConfig()
+
+      const res = await fetch("/api/deep-research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ query: name, apiKey, apiBase, model }),
       })
-      if (res.ok) {
-        const data = await res.json()
-        router.push(`/docs/projects/${data.project.id}`)
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setResearchProgress(null)
+        alert(err.error || "研究请求失败")
+        setIsCreating(false)
+        return
       }
+
+      const data = await res.json()
+      // 立即跳转到项目详情页，带上 jobId 让详情页订阅进度
+      router.push(`/docs/projects/${data.projectId}?research=${data.jobId}&q=${encodeURIComponent(name)}`)
     } catch {
+      setResearchProgress(null)
       setIsCreating(false)
     }
   }
@@ -56,9 +108,9 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="relative min-h-svh w-full bg-white dark:bg-neutral-950">
+    <div className="relative w-full bg-white dark:bg-neutral-950">
       {/* ══════════════════════ HERO SECTION ══════════════════════ */}
-      <section className="relative min-h-svh w-full">
+      <section className="relative w-full" style={{ minHeight: "calc(100svh - 68px)" }}>
         {/* Video background layer */}
         <div className="pointer-events-none absolute inset-0 z-0" style={{ top: "300px" }}>
           <video
@@ -109,13 +161,13 @@ export default function Home() {
         </nav>
 
         {/* Hero content */}
-        <div className="relative z-10 flex min-h-svh flex-col items-center justify-center px-6 text-center">
+        <div className="relative z-10 flex flex-col items-center justify-center px-6 pt-28 pb-12 text-center" style={{ minHeight: "calc(100svh - 68px)" }}>
           {/* Headline */}
           <h1
             className="max-w-7xl font-normal text-black dark:text-white"
             style={{
               fontFamily: "var(--font-serif), serif",
-              fontSize: "clamp(3rem, 9vw, 7rem)",
+              fontSize: "clamp(2.5rem, 7vw, 5.5rem)",
               lineHeight: 1.0,
               letterSpacing: "-3px",
             }}
@@ -130,16 +182,17 @@ export default function Home() {
           </h1>
 
           {/* Description */}
-          <p className="mt-10 max-w-xl animate-fade-rise-delay text-base leading-relaxed text-[#888] dark:text-neutral-400 sm:text-lg">
+          <p className="mt-8 max-w-xl animate-fade-rise-delay text-base leading-relaxed text-[#888] dark:text-neutral-400 sm:text-lg">
             AI 驱动的个人笔记与知识管理平台
             <br className="hidden sm:block" />
             让灵感不再流失，让知识自然生长
           </p>
 
           {/* AI Input Box */}
-          <div className="mt-14 w-full max-w-xl animate-fade-rise-delay-2">
+          <div className="mt-10 w-full max-w-xl animate-fade-rise-delay-2">
+            {/* Input */}
             <div className="flex items-center gap-2 border border-neutral-200 bg-white px-4 py-3 shadow-lg transition-all focus-within:border-neutral-400 focus-within:shadow-xl dark:border-neutral-700 dark:bg-neutral-900 dark:focus-within:border-neutral-500">
-              <IconMessageChatbot className="size-5 shrink-0 text-neutral-400" strokeWidth={1.5} />
+              <IconMicroscope className="size-5 shrink-0 text-neutral-400" strokeWidth={1.5} />
               <input
                 type="text"
                 value={noteInput}
@@ -147,23 +200,46 @@ export default function Home() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault()
-                    handleCreateNote()
+                    handleResearch()
                   }
                 }}
-                placeholder="输入笔记标题，按 Enter 创建..."
+                placeholder="输入想学习的方向，AI 自动规划路径并生成笔记..."
                 className="flex-1 bg-transparent text-sm text-black outline-none placeholder:text-neutral-400 dark:text-white dark:placeholder:text-neutral-500"
                 disabled={isCreating}
               />
               <button
-                onClick={handleCreateNote}
+                onClick={handleResearch}
                 disabled={!noteInput.trim() || isCreating}
                 className="flex size-8 shrink-0 items-center justify-center bg-black text-white transition-all hover:bg-neutral-800 disabled:opacity-30 dark:bg-white dark:text-black dark:hover:bg-neutral-200"
               >
-                <IconArrowRight className="size-4" />
+                {isCreating ? (
+                  <IconLoader2 className="size-4 animate-spin" />
+                ) : (
+                  <IconArrowRight className="size-4" />
+                )}
               </button>
             </div>
+
+            {/* Research Progress */}
+            {researchProgress && (
+              <div className="mt-4 border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+                <div className="mb-2 flex items-center gap-2">
+                  <IconLoader2 className="size-4 animate-spin text-black dark:text-white" />
+                  <span className="text-xs text-black dark:text-white">{researchProgress.step}</span>
+                </div>
+                <div className="h-1 w-full overflow-hidden bg-neutral-200 dark:bg-neutral-700">
+                  <div
+                    className="h-full bg-black transition-all duration-500 dark:bg-white"
+                    style={{ width: `${researchProgress.progress}%` }}
+                  />
+                </div>
+                <span className="mt-1 block text-right text-xs text-neutral-400">{researchProgress.progress}%</span>
+              </div>
+            )}
+
+            {/* Hint */}
             <p className="mt-3 text-center text-xs text-neutral-400">
-              输入笔记标题，即刻开始记录你的想法
+              输入学习方向，AI 自动搜索、规划路径、生成学习笔记
             </p>
           </div>
         </div>
@@ -171,8 +247,8 @@ export default function Home() {
 
       {/* ─── Trusted By Brand Logos ─── */}
       <section className="border-y border-neutral-100 bg-white dark:border-neutral-800 dark:bg-neutral-950">
-        <div className="mx-auto max-w-7xl px-6 py-10">
-          <div className="flex flex-wrap items-center justify-center gap-x-16 gap-y-8 md:flex-nowrap md:justify-between">
+<div className="mx-auto max-w-7xl px-6 py-5">
+<div className="flex flex-wrap items-center justify-center gap-x-16 gap-y-4 md:flex-nowrap md:justify-between">
             {[
               { name: "Vercel", svg: <svg viewBox="0 0 24 24" className="h-5 w-auto fill-current"><path d="M12 4l8 14H4z" /></svg> },
               { name: "OpenAI", svg: <svg viewBox="0 0 24 24" className="h-5 w-auto fill-current"><path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .393-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.495 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v3l-2.597 1.5-2.607-1.5z" /></svg> },
@@ -263,7 +339,7 @@ export default function Home() {
               { icon: IconMessageChatbot, title: "AI 智能对话", desc: "基于上下文的 AI 对话，帮助你深入思考、整理灵感，让笔记更有深度。" },
               { icon: IconSearch, title: "RAG 知识检索", desc: "结合向量搜索和 BM25 的混合检索引擎，在海量笔记中精准定位所需内容。" },
               { icon: IconBook, title: "沉浸阅读模式", desc: "专为长文阅读设计的沉浸式排版，让你专注于知识的消化吸收。" },
-              { icon: IconFolderOpen, title: "项目化管理", desc: "用项目组织你的笔记和文件，清晰的层级结构让知识管理更有条理。" },
+              { icon: IconMicroscope, title: "深度研究", desc: "输入任意主题，AI 自动规划学习路径、搜索权威资料、生成结构化深度研究报告。" },
               { icon: IconHeadphones, title: "音频内容生成", desc: "将笔记转化为音频内容，支持多种场景的知识输出和分享。" },
               { icon: IconPresentation, title: "PPT 智能生成", desc: "一键将笔记内容转化为专业的演示文稿，高效完成知识展示。" },
             ].map(({ icon: Icon, title, desc }) => (
@@ -277,6 +353,169 @@ export default function Home() {
                 </CardHeader>
               </Card>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Agents Showcase ─── */}
+      <section className="bg-neutral-50 px-6 py-24 dark:bg-neutral-900/30">
+        <div className="mx-auto max-w-6xl">
+          {/* Section Header */}
+          <div className="mb-20 text-center">
+            <Badge variant="outline" className="mb-4">智能体架构</Badge>
+            <h2
+              className="mb-4 text-4xl font-normal tracking-tight text-black dark:text-white sm:text-5xl"
+              style={{ fontFamily: "var(--font-serif), serif" }}
+            >
+              <em className="text-[#999]" style={{ fontStyle: "italic" }}>多智能体</em>协同引擎
+            </h2>
+            <p className="mx-auto max-w-2xl text-base text-neutral-500 dark:text-neutral-400">
+              基于 LangGraph 构建的多智能体系统，内置 8 个专业智能体覆盖研究、写作、编码全场景，同时支持自定义扩展。
+            </p>
+          </div>
+
+          {/* ── Part 1: Deep Research Pipeline ── */}
+          <div className="mb-24">
+            <div className="mb-10 flex items-center gap-3">
+              <div className="flex size-8 items-center justify-center bg-black text-white dark:bg-white dark:text-black">
+                <IconMicroscope className="size-4" strokeWidth={2} />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-black dark:text-white">Deep Research 研究管线</h3>
+                <p className="text-xs text-neutral-400">五个智能体自动接力，从规划到交付，完成一次完整的深度研究</p>
+              </div>
+            </div>
+
+            {/* Pipeline Flow */}
+            <div className="relative">
+              {/* 水平连接线 */}
+              <div className="absolute left-0 right-0 top-[39px] hidden h-px bg-neutral-200 dark:bg-neutral-700 lg:block" />
+
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  { icon: IconMapRoute, name: "研究规划师", tag: "Plan", desc: "拆解主题，规划学习路径与子问题" },
+                  { icon: IconWorldSearch, name: "资料搜索师", tag: "Search", desc: "逐阶段深度搜索权威资料" },
+                  { icon: IconBrain, name: "研究评估师", tag: "Reflect", desc: "评估覆盖度，识别知识盲区" },
+                  { icon: IconFileText, name: "知识整理师", tag: "Synthesize", desc: "整合素材，生成深度研究报告" },
+                  { icon: IconDeviceFloppy, name: "归档保存师", tag: "Save", desc: "持久化报告与参考来源文档" },
+                ].map(({ icon: Icon, name, tag, desc }, i) => (
+                  <div key={name} className="group relative">
+                    {/* 节点 */}
+                    <div className="relative z-10 mb-4 flex size-[78px] items-center justify-center border-2 border-neutral-200 bg-white shadow-sm transition-all group-hover:border-black group-hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:group-hover:border-white">
+                      <Icon className="size-7 text-neutral-600 transition-colors group-hover:text-black dark:text-neutral-400 dark:group-hover:text-white" strokeWidth={1.5} />
+                      {/* 序号 */}
+                      <span className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center bg-black text-[10px] font-bold text-white dark:bg-white dark:text-black">
+                        {i + 1}
+                      </span>
+                    </div>
+                    {/* 箭头（非最后一个） */}
+                    {i < 4 && (
+                      <div className="absolute left-[78px] top-[31px] hidden text-neutral-300 dark:text-neutral-600 lg:block">
+                        <IconArrowRight className="size-4" />
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-sm font-medium text-black dark:text-white">{name}</h4>
+                        <Badge variant="secondary" className="text-[9px] font-mono">{tag}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-neutral-400 dark:text-neutral-500">{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Part 2: Built-in Agents ── */}
+          <div className="mb-24">
+            <div className="mb-10 flex items-center gap-3">
+              <div className="flex size-8 items-center justify-center bg-black text-white dark:bg-white dark:text-black">
+                <IconRobot className="size-4" strokeWidth={2} />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-black dark:text-white">内置智能体</h3>
+                <p className="text-xs text-neutral-400">开箱即用的专业智能体，覆盖翻译、编码、写作、意图识别等高频场景</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { icon: IconLanguage, name: "翻译助手", desc: "多语言翻译，保持专业术语准确，支持上下文感知的智能翻译。" },
+                { icon: IconCode, name: "代码助手", desc: "代码生成、解释和调试，理解项目上下文并提供最佳实践建议。" },
+                { icon: IconPencil, name: "写作助手", desc: "文章润色、改写和创意写作，根据场景自适应调整文风与表达。" },
+                { icon: IconFocus2, name: "意图识别", desc: "分析用户意图，智能路由到最合适的智能体执行任务。" },
+              ].map(({ icon: Icon, name, desc }) => (
+                <Card key={name} className="group border-neutral-200 bg-white transition-all hover:border-neutral-300 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-600">
+                  <CardHeader>
+                    <div className="mb-2 flex items-center gap-3">
+                      <div className="flex size-10 items-center justify-center bg-neutral-100 transition-all group-hover:bg-black group-hover:text-white dark:bg-neutral-800 dark:group-hover:bg-white dark:group-hover:text-black">
+                        <Icon className="size-5" strokeWidth={1.5} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-sm">{name}</CardTitle>
+                        <Badge variant="outline" className="text-[9px] text-neutral-400">内置</Badge>
+                      </div>
+                    </div>
+                    <CardDescription className="text-xs leading-relaxed">{desc}</CardDescription>
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Part 3: Custom Agents ── */}
+          <div className="relative overflow-hidden border-2 border-dashed border-neutral-200 bg-white p-10 dark:border-neutral-700 dark:bg-neutral-900/50 lg:p-14">
+            {/* 装饰 */}
+            <div className="absolute -right-6 -top-6 size-32 bg-gradient-to-bl from-neutral-100 to-transparent dark:from-neutral-800/30" />
+            <div className="absolute -bottom-6 -left-6 size-32 bg-gradient-to-tr from-neutral-100 to-transparent dark:from-neutral-800/30" />
+
+            <div className="relative flex flex-col items-center gap-8 lg:flex-row lg:items-start lg:gap-16">
+              {/* 左侧说明 */}
+              <div className="flex-1 text-center lg:text-left">
+                <div className="mb-4 inline-flex items-center gap-2">
+                  <IconSparkles className="size-5 text-neutral-400" strokeWidth={1.5} />
+                  <span className="text-xs font-medium tracking-wider text-neutral-400 uppercase">Extensible</span>
+                </div>
+                <h3
+                  className="mb-3 text-2xl font-normal text-black dark:text-white sm:text-3xl"
+                  style={{ fontFamily: "var(--font-serif), serif" }}
+                >
+                  自定义你的专属智能体
+                </h3>
+                <p className="mb-4 text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
+                  除了内置智能体，你可以创建完全自定义的专属智能体。定义专属的系统提示词、知识库绑定和行为模式，让 AI 精准匹配你的工作流。无论是领域专家、项目顾问还是学科导师，都能按需定制。
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
+                  {["自定义提示词", "知识库绑定", "行为模式配置", "无限扩展"].map((tag) => (
+                    <Badge key={tag} variant="secondary" className="text-[11px]">{tag}</Badge>
+                  ))}
+                </div>
+              </div>
+
+              {/* 右侧示意 */}
+              <div className="flex shrink-0 flex-col gap-3">
+                {[
+                  { name: "论文审稿助手", desc: "学术论文结构审查与修改建议" },
+                  { name: "产品需求分析师", desc: "PRD 文档生成与需求拆解" },
+                  { name: "面试模拟官", desc: "技术面试模拟与反馈评估" },
+                ].map(({ name, desc }) => (
+                  <div key={name} className="flex items-center gap-3 border border-neutral-200 bg-neutral-50 px-5 py-3.5 transition-colors hover:bg-white dark:border-neutral-700 dark:bg-neutral-800/50 dark:hover:bg-neutral-800">
+                    <div className="flex size-8 items-center justify-center border border-dashed border-neutral-300 dark:border-neutral-600">
+                      <IconRobot className="size-4 text-neutral-400" strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-black dark:text-white">{name}</p>
+                      <p className="text-[11px] text-neutral-400">{desc}</p>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-center gap-2 border border-dashed border-neutral-300 px-5 py-3.5 text-neutral-400 transition-colors hover:border-black hover:text-black dark:border-neutral-600 dark:hover:border-white dark:hover:text-white">
+                  <IconPlus className="size-4" strokeWidth={1.5} />
+                  <span className="text-sm">创建新的智能体</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

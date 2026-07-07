@@ -16,6 +16,21 @@ import {
   IconTrash,
   IconSparkles,
   IconBrain,
+  IconClipboardText,
+  IconBulb,
+  IconNotes,
+  IconListDetails,
+  IconTimeline,
+  IconMessage,
+  IconLanguage,
+  IconCode,
+  IconWriting,
+  IconUser,
+  IconStars,
+  IconPresentation,
+  IconMicrophone,
+  IconRoute,
+  IconSearch,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,6 +63,8 @@ import {
   STORAGE_KEY_RERANK_MODEL,
   STORAGE_KEY_PERSONA,
   STORAGE_KEY_USER_NAME,
+  STORAGE_KEY_AGENTS,
+  STORAGE_KEY_ACTIVE_AGENT,
   DEFAULT_API_BASE,
   DEFAULT_MODEL,
   DEFAULT_EMBEDDING_MODEL,
@@ -59,6 +76,8 @@ import {
   DEFAULT_IMAGE_MODEL,
   PROVIDER_PRESETS as BASE_PROVIDER_PRESETS,
   TTS_VOICE_OPTIONS,
+  BUILTIN_AGENTS,
+  type AgentConfig,
 } from "@/lib/ai-config"
 
 // 本地补充 MiMo 服务商预设（ai-config 中未包含）
@@ -108,6 +127,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "偏好设置",
     items: [
+      { id: "agents", label: "智能体库", icon: IconStars },
       { id: "persona", label: "AI 个性", icon: IconSparkles },
       { id: "appearance", label: "外观", icon: IconPalette },
     ],
@@ -237,6 +257,19 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
   // AI 个性 / Persona
   const [personaPrompt, setPersonaPrompt] = React.useState(loadedConfig.personaPrompt)
   const [userName, setUserName] = React.useState(loadedConfig.userName)
+
+  // 智能体库
+  const [customAgents, setCustomAgents] = React.useState<AgentConfig[]>(() => {
+    if (typeof window === "undefined") return []
+    const raw = localStorage.getItem(STORAGE_KEY_AGENTS)
+    if (!raw) return []
+    try { return JSON.parse(raw) as AgentConfig[] } catch { return [] }
+  })
+  const [activeAgentId, setActiveAgentId] = React.useState<string>(() => {
+    if (typeof window === "undefined") return ""
+    return localStorage.getItem(STORAGE_KEY_ACTIVE_AGENT) || ""
+  })
+  const [editingAgentId, setEditingAgentId] = React.useState<string | null>(null)
 
   // ESC 关闭
   React.useEffect(() => {
@@ -371,6 +404,14 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       localStorage.removeItem(STORAGE_KEY_USER_NAME)
     }
 
+    // 智能体库
+    localStorage.setItem(STORAGE_KEY_AGENTS, JSON.stringify(customAgents))
+    if (activeAgentId) {
+      localStorage.setItem(STORAGE_KEY_ACTIVE_AGENT, activeAgentId)
+    } else {
+      localStorage.removeItem(STORAGE_KEY_ACTIVE_AGENT)
+    }
+
     setSaved(true)
     window.dispatchEvent(new CustomEvent("ai-config-changed"))
     setTimeout(() => setSaved(false), 2000)
@@ -473,6 +514,16 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                 imageApiBase={imageApiBase} setImageApiBase={setImageApiBase}
                 imageModel={imageModel} setImageModel={setImageModel}
                 showImageKey={showImageKey} setShowImageKey={setShowImageKey}
+              />
+            )}
+            {activeSection === "agents" && (
+              <SectionAgents
+                customAgents={customAgents}
+                setCustomAgents={setCustomAgents}
+                activeAgentId={activeAgentId}
+                setActiveAgentId={setActiveAgentId}
+                editingAgentId={editingAgentId}
+                setEditingAgentId={setEditingAgentId}
               />
             )}
             {activeSection === "persona" && (
@@ -1030,6 +1081,342 @@ function FieldGroup({
         {desc && <p className="mt-0.5 text-[11px] text-muted-foreground">{desc}</p>}
       </div>
       {children}
+    </div>
+  )
+}
+
+// ─── Section: 智能体库 ───
+
+const AGENT_ICONS: Record<string, React.ElementType> = {
+  IconClipboardText, IconBulb, IconNotes, IconListDetails,
+  IconTimeline, IconMessage, IconLanguage, IconCode, IconWriting,
+  IconRobot, IconUser, IconSparkles, IconBrain,
+  IconPresentation, IconMicrophone, IconRoute, IconSearch,
+}
+
+function getAgentIcon(iconName: string): React.ElementType {
+  return AGENT_ICONS[iconName] || IconRobot
+}
+
+function SectionAgents({
+  customAgents, setCustomAgents,
+  activeAgentId, setActiveAgentId,
+  editingAgentId, setEditingAgentId,
+}: {
+  customAgents: AgentConfig[]
+  setCustomAgents: React.Dispatch<React.SetStateAction<AgentConfig[]>>
+  activeAgentId: string
+  setActiveAgentId: (id: string) => void
+  editingAgentId: string | null
+  setEditingAgentId: (id: string | null) => void
+}) {
+  const [agentTab, setAgentTab] = React.useState<"all" | "builtin" | "custom">("all")
+
+  const addAgent = () => {
+    const newAgent: AgentConfig = {
+      id: `agent-custom-${Date.now().toString(36)}`,
+      name: "",
+      description: "",
+      systemPrompt: "",
+      icon: "IconRobot",
+      category: "自定义",
+      builtin: false,
+      createdAt: Date.now(),
+    }
+    setCustomAgents(prev => [...prev, newAgent])
+    setEditingAgentId(newAgent.id)
+  }
+
+  const removeAgent = (id: string) => {
+    setCustomAgents(prev => prev.filter(a => a.id !== id))
+    if (activeAgentId === id) setActiveAgentId("")
+    if (editingAgentId === id) setEditingAgentId(null)
+  }
+
+  const updateAgent = (id: string, updates: Partial<AgentConfig>) => {
+    setCustomAgents(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a))
+  }
+
+  return (
+    <div className="space-y-5">
+      <p className="text-[13px] text-muted-foreground">
+        管理智能体库。内置智能体由系统提供，你也可以创建自定义智能体来定制 AI 的行为和专业领域。选中一个智能体后，它将在对话中作为默认助手。
+      </p>
+
+      {/* 当前激活状态 */}
+      {activeAgentId && (
+        <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          {(() => {
+            const active = [...BUILTIN_AGENTS, ...customAgents].find(a => a.id === activeAgentId)
+            if (!active) return null
+            const Icon = getAgentIcon(active.icon)
+            return (
+              <>
+                <Icon className="size-4 text-primary" />
+                <span className="text-[13px]">
+                  当前激活：<span className="font-medium">{active.name}</span>
+                </span>
+                <button
+                  className="ml-auto text-[12px] text-muted-foreground hover:text-foreground"
+                  onClick={() => setActiveAgentId("")}
+                >
+                  取消激活
+                </button>
+              </>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* Tab 分类 */}
+      <div className="flex items-center gap-1 border-b">
+        {([
+          { key: "all", label: "全部", count: BUILTIN_AGENTS.length + customAgents.length },
+          { key: "builtin", label: "内置智能体", count: BUILTIN_AGENTS.length },
+          { key: "custom", label: "自定义智能体", count: customAgents.length },
+        ] as const).map(tab => (
+          <button
+            key={tab.key}
+            className={`relative px-3 py-1.5 text-[13px] transition-colors ${
+              agentTab === tab.key
+                ? "text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setAgentTab(tab.key)}
+          >
+            {tab.label}
+            <span className="ml-1 text-[11px] text-muted-foreground/60">{tab.count}</span>
+            {agentTab === tab.key && (
+              <span className="absolute inset-x-0 -bottom-px h-0.5 bg-primary" />
+            )}
+          </button>
+        ))}
+        <div className="ml-auto pb-1">
+          <Button size="sm" variant="outline" className="gap-1 h-7" onClick={addAgent}>
+            <IconPlus className="size-3.5" />
+            新建
+          </Button>
+        </div>
+      </div>
+
+      {/* 智能体列表 */}
+      <div className="space-y-1.5">
+        {(agentTab === "all" || agentTab === "builtin")
+          ? BUILTIN_AGENTS.map(agent => (
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                isActive={activeAgentId === agent.id}
+                isExpanded={editingAgentId === agent.id}
+                onActivate={() => setActiveAgentId(activeAgentId === agent.id ? "" : agent.id)}
+                onToggleExpand={() => setEditingAgentId(editingAgentId === agent.id ? null : agent.id)}
+              />
+            ))
+          : null}
+        {(agentTab === "all" || agentTab === "custom")
+          ? customAgents.length === 0
+            ? (
+              <div className="rounded-lg border border-dashed py-6 text-center">
+                <IconRobot className="mx-auto size-6 text-muted-foreground/40" />
+                <p className="mt-2 text-[13px] text-muted-foreground">还没有自定义智能体</p>
+                <p className="text-[11px] text-muted-foreground/60">点击右上方"新建"按钮创建一个专属智能体</p>
+              </div>
+            )
+            : customAgents.map(agent => (
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                isActive={activeAgentId === agent.id}
+                isExpanded={editingAgentId === agent.id}
+                onActivate={() => setActiveAgentId(activeAgentId === agent.id ? "" : agent.id)}
+                onToggleExpand={() => setEditingAgentId(editingAgentId === agent.id ? null : agent.id)}
+                onRemove={() => removeAgent(agent.id)}
+                onUpdate={(updates) => updateAgent(agent.id, updates)}
+              />
+            ))
+          : null}
+      </div>
+    </div>
+  )
+}
+
+// ─── Agent Card ───
+
+function AgentCard({
+  agent, isActive, isExpanded,
+  onActivate, onToggleExpand, onRemove, onUpdate,
+}: {
+  agent: AgentConfig
+  isActive: boolean
+  isExpanded?: boolean
+  onActivate: () => void
+  onToggleExpand?: () => void
+  onRemove?: () => void
+  onUpdate?: (updates: Partial<AgentConfig>) => void
+}) {
+  const Icon = getAgentIcon(agent.icon)
+  const isCustom = !agent.builtin
+
+  return (
+    <div className={`rounded-lg border transition-colors ${
+      isActive ? "border-primary/40 bg-primary/5" : "hover:bg-muted/30"
+    } ${isExpanded ? "bg-muted/20" : ""}`}>
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-3 py-2.5">
+        <button
+          className={`flex size-8 shrink-0 items-center justify-center rounded-md transition-colors ${
+            isActive ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+          }`}
+          onClick={onActivate}
+          title={isActive ? "取消激活" : "设为默认助手"}
+        >
+          <Icon className="size-4" />
+        </button>
+
+        <div
+          className="min-w-0 flex-1 cursor-pointer"
+          onClick={onToggleExpand}
+          role="button"
+        >
+          <div className="flex items-center gap-2">
+            <span className="truncate text-[13px] font-medium">{agent.name || "未命名智能体"}</span>
+            {isActive && (
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                激活中
+              </span>
+            )}
+            {!isCustom && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">内置</span>
+            )}
+          </div>
+          <p className="truncate text-[11px] text-muted-foreground">
+            {agent.description || "无描述"}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          {isCustom && onRemove && (
+            <button
+              className="rounded p-1 text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              onClick={(e) => { e.stopPropagation(); onRemove() }}
+              title="删除"
+            >
+              <IconTrash className="size-3.5" />
+            </button>
+          )}
+          {onToggleExpand && (
+            <button
+              className="rounded p-1 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); onToggleExpand() }}
+              title={isCustom ? "编辑" : "查看"}
+            >
+              <svg
+                className={`size-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded content (custom agents only) */}
+      {isCustom && isExpanded && onUpdate && (
+        <div className="space-y-3 border-t px-3 pb-3 pt-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[12px] text-muted-foreground">名称</Label>
+              <Input
+                placeholder="智能体名称"
+                value={agent.name}
+                onChange={(e) => onUpdate({ name: e.target.value })}
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[12px] text-muted-foreground">分类</Label>
+              <Input
+                placeholder="如：开发辅助、内容创作"
+                value={agent.category}
+                onChange={(e) => onUpdate({ category: e.target.value })}
+                className="h-8 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[12px] text-muted-foreground">描述</Label>
+            <Input
+              placeholder="简要描述智能体的用途"
+              value={agent.description}
+              onChange={(e) => onUpdate({ description: e.target.value })}
+              className="h-8 text-sm"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[12px] text-muted-foreground">系统提示词 (System Prompt)</Label>
+            <Textarea
+              placeholder="定义智能体的角色、能力、回答风格等。例如：你是一位资深前端工程师，擅长 React、TypeScript 和 CSS。回答时请提供代码示例并解释原理。"
+              value={agent.systemPrompt}
+              onChange={(e) => onUpdate({ systemPrompt: e.target.value })}
+              rows={5}
+              className="resize-none text-sm"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[12px] text-muted-foreground">图标</Label>
+            <div className="flex flex-wrap gap-1">
+              {Object.entries(AGENT_ICONS).map(([name, IconComp]) => (
+                <button
+                  key={name}
+                  className={`flex size-8 items-center justify-center rounded-md transition-colors ${
+                    agent.icon === name
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                      : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                  }`}
+                  onClick={() => onUpdate({ icon: name })}
+                  title={name}
+                >
+                  <IconComp className="size-4" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isExpanded && !isCustom && (
+        <div className="space-y-3 border-t px-3 pb-3 pt-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[12px] text-muted-foreground">名称</Label>
+              <div className="rounded-md border bg-muted/30 px-2.5 py-1.5 text-[13px]">{agent.name}</div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[12px] text-muted-foreground">分类</Label>
+              <div className="rounded-md border bg-muted/30 px-2.5 py-1.5 text-[13px]">{agent.category}</div>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[12px] text-muted-foreground">描述</Label>
+            <div className="rounded-md border bg-muted/30 px-2.5 py-1.5 text-[13px]">{agent.description}</div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[12px] text-muted-foreground">系统提示词 (System Prompt)</Label>
+            <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">{agent.systemPrompt}</div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[12px] text-muted-foreground">图标</Label>
+            <div className="flex items-center gap-2">
+              {(() => { const I = getAgentIcon(agent.icon); return <I className="size-4 text-muted-foreground" /> })()}
+              <span className="text-[12px] text-muted-foreground">{agent.icon}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

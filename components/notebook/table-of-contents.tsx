@@ -147,7 +147,7 @@ export function TableOfContents({ content }: { content: string }) {
   return (
     <>
       {/* Desktop: sidebar collapsible TOC */}
-      <Collapsible open={open} onOpenChange={setOpen} className="sticky top-0 hidden h-fit shrink-0 md:block">
+      <Collapsible open={open} onOpenChange={setOpen} className="sticky top-0 hidden h-fit shrink md:block overflow-hidden">
         <div className={`flex flex-col border-r transition-all ${open ? "w-64" : "w-10"}`}>
           {/* 标题栏 */}
           <div className={`flex items-center border-b px-2 py-[9px] ${open ? "justify-between" : "justify-center"}`}>

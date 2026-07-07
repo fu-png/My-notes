@@ -1,0 +1,2045 @@
+{
+  "timestamp": "2026-07-06T17:34:25.136Z",
+  "config": {
+    "model": "mimo-v2.5-pro",
+    "apiBase": "https://api.xiaomimimo.com/v1"
+  },
+  "overall": {
+    "total": 60,
+    "ruleAccuracy": 0.35,
+    "llmAccuracy": 0.9833333333333333,
+    "llmErrorCount": 0,
+    "avgLlmLatencyMs": 953.7833333333333
+  },
+  "byDifficulty": {
+    "hard": {
+      "total": 38,
+      "ruleCorrect": 10,
+      "llmCorrect": 37
+    },
+    "medium": {
+      "total": 22,
+      "ruleCorrect": 11,
+      "llmCorrect": 22
+    }
+  },
+  "byCategory": {
+    "adversarial_ppt": {
+      "total": 5,
+      "ruleCorrect": 5,
+      "llmCorrect": 5
+    },
+    "adversarial_web_search": {
+      "total": 5,
+      "ruleCorrect": 2,
+      "llmCorrect": 5
+    },
+    "mixed_intent": {
+      "total": 5,
+      "ruleCorrect": 2,
+      "llmCorrect": 5
+    },
+    "generate_confusion": {
+      "total": 7,
+      "ruleCorrect": 0,
+      "llmCorrect": 7
+    },
+    "casual_needs_rag_boundary": {
+      "total": 5,
+      "ruleCorrect": 0,
+      "llmCorrect": 5
+    },
+    "ellipsis_ambiguous": {
+      "total": 3,
+      "ruleCorrect": 3,
+      "llmCorrect": 3
+    },
+    "url_edge_cases": {
+      "total": 3,
+      "ruleCorrect": 3,
+      "llmCorrect": 3
+    },
+    "coder_boundary": {
+      "total": 3,
+      "ruleCorrect": 0,
+      "llmCorrect": 3
+    },
+    "translate_boundary": {
+      "total": 2,
+      "ruleCorrect": 0,
+      "llmCorrect": 2
+    },
+    "deep_research_boundary": {
+      "total": 3,
+      "ruleCorrect": 2,
+      "llmCorrect": 3
+    },
+    "negation_tricky": {
+      "total": 2,
+      "ruleCorrect": 0,
+      "llmCorrect": 2
+    },
+    "colloquial": {
+      "total": 3,
+      "ruleCorrect": 0,
+      "llmCorrect": 2
+    },
+    "comparison_vs_websearch": {
+      "total": 2,
+      "ruleCorrect": 1,
+      "llmCorrect": 2
+    },
+    "long_compound_sentence": {
+      "total": 2,
+      "ruleCorrect": 1,
+      "llmCorrect": 2
+    },
+    "greeting_variants": {
+      "total": 2,
+      "ruleCorrect": 0,
+      "llmCorrect": 2
+    },
+    "podcast_boundary": {
+      "total": 1,
+      "ruleCorrect": 0,
+      "llmCorrect": 1
+    },
+    "writer_boundary": {
+      "total": 2,
+      "ruleCorrect": 0,
+      "llmCorrect": 2
+    },
+    "faq_vs_chat": {
+      "total": 1,
+      "ruleCorrect": 0,
+      "llmCorrect": 1
+    },
+    "ppt_session_context": {
+      "total": 2,
+      "ruleCorrect": 1,
+      "llmCorrect": 2
+    },
+    "numbers_and_dates": {
+      "total": 1,
+      "ruleCorrect": 1,
+      "llmCorrect": 1
+    },
+    "pure_chat_knowledge": {
+      "total": 1,
+      "ruleCorrect": 0,
+      "llmCorrect": 1
+    }
+  },
+  "llmFixedRuleErrors": [
+    {
+      "id": "A06",
+      "text": "https://github.com/anthropics/claude-code 这个仓库大概是做什么的，不用打开链接，凭你了解说说",
+      "expected": {
+        "type": "chat"
+      },
+      "ruleGot": "type=web_search action=github query=\"anthropics/claude-co\"",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A07",
+      "text": "查一下我上次让你总结的那份文档里提到的三个风险点分别是什么",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=web_search action=search query=\"我上次让你总结的那份文档里提到的三个风险\"",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A09",
+      "text": "搜索引擎的工作原理是什么",
+      "expected": {
+        "type": "chat"
+      },
+      "ruleGot": "type=web_search action=search query=\"引擎的工作原理是什么\"",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A12",
+      "text": "把这段Python代码翻译成中文注释版本",
+      "expected": {
+        "type": "coder"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=coder"
+    },
+    {
+      "id": "A13",
+      "text": "用英文帮我重新写一遍这段产品介绍，语气更专业一些",
+      "expected": {
+        "type": "writer"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=writer"
+    },
+    {
+      "id": "A14",
+      "text": "把这篇英文文档翻译成中文",
+      "expected": {
+        "type": "translate"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=translate"
+    },
+    {
+      "id": "A16",
+      "text": "帮我把这份文档的时间线和关键节点梳理出来",
+      "expected": {
+        "type": "timeline"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=timeline"
+    },
+    {
+      "id": "A17",
+      "text": "把这个项目常见的问题和答案整理一下，方便新人查阅",
+      "expected": {
+        "type": "faq"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=faq"
+    },
+    {
+      "id": "A18",
+      "text": "帮我写一份新人上手这个项目的操作步骤文档",
+      "expected": {
+        "type": "guide"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=guide"
+    },
+    {
+      "id": "A19",
+      "text": "列一下这本书的章节结构和大纲",
+      "expected": {
+        "type": "outline"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=outline"
+    },
+    {
+      "id": "A20",
+      "text": "帮我总结一下这份文档的核心内容",
+      "expected": {
+        "type": "summary"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=summary"
+    },
+    {
+      "id": "A21",
+      "text": "给管理层准备一份简短的项目进展汇报，控制在一页以内",
+      "expected": {
+        "type": "briefing"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=briefing"
+    },
+    {
+      "id": "A22",
+      "text": "把这篇技术文章做成两个人对话讨论的音频脚本",
+      "expected": {
+        "type": "podcast"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=podcast"
+    },
+    {
+      "id": "A23",
+      "text": "这个方案你怎么看，靠谱吗",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A24",
+      "text": "好的，谢谢你的解答",
+      "expected": {
+        "type": "chat",
+        "needsRAG": false
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=false"
+    },
+    {
+      "id": "A25",
+      "text": "嗯，那AutoCompact具体是怎么触发的呢",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A26",
+      "text": "明白了",
+      "expected": {
+        "type": "chat",
+        "needsRAG": false
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=false"
+    },
+    {
+      "id": "A27",
+      "text": "什么是上下文压缩机制",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A34",
+      "text": "这段函数为什么会报空指针异常，帮我看看",
+      "expected": {
+        "type": "coder"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=coder"
+    },
+    {
+      "id": "A35",
+      "text": "什么是空指针异常，为什么会发生",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A36",
+      "text": "帮我把这个正则表达式写得更简洁一点，同时保持匹配效果不变",
+      "expected": {
+        "type": "coder"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=coder"
+    },
+    {
+      "id": "A37",
+      "text": "outline 和 summary 这两个词在这套系统里具体怎么翻译更准确",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A38",
+      "text": "Translate this paragraph into Japanese please",
+      "expected": {
+        "type": "translate"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=translate"
+    },
+    {
+      "id": "A39",
+      "text": "关于多智能体编排这个方向，你有什么资料推荐吗",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=web_search action=search query=\"多智能体编排 资料推荐 学习资料\""
+    },
+    {
+      "id": "A42",
+      "text": "先别翻译，帮我看看这段代码里的翻译函数写得对不对",
+      "expected": {
+        "type": "coder"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=coder"
+    },
+    {
+      "id": "A43",
+      "text": "不用做PPT了，先帮我把大纲写出来就行",
+      "expected": {
+        "type": "outline"
+      },
+      "ruleGot": "type=ppt",
+      "llmGot": "type=outline"
+    },
+    {
+      "id": "A45",
+      "text": "给我掰扯掰扯这个概念到底是咋回事",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A46",
+      "text": "整个PPT呗，就按刚才说的内容",
+      "expected": {
+        "type": "ppt"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=ppt"
+    },
+    {
+      "id": "A47",
+      "text": "对比一下这份文档里提到的两种缓存策略各自的优缺点",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A50",
+      "text": "刚才聊到的那个断路器机制，麻烦帮我查一下业内其他Agent框架是怎么设计类似容错方案的",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=web_search action=search query=\"Agent框架 断路器机制 容错方案 设\""
+    },
+    {
+      "id": "A51",
+      "text": "hey，在吗",
+      "expected": {
+        "type": "chat",
+        "needsRAG": false
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=false"
+    },
+    {
+      "id": "A52",
+      "text": "你好，能帮我看看这份合同里的违约条款怎么理解吗",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    },
+    {
+      "id": "A53",
+      "text": "把这篇论文改编成两个主持人聊天吐槽的形式，轻松一点",
+      "expected": {
+        "type": "podcast"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=podcast"
+    },
+    {
+      "id": "A54",
+      "text": "帮我把这段话写得更简洁有力一些",
+      "expected": {
+        "type": "writer"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=writer"
+    },
+    {
+      "id": "A55",
+      "text": "这段开头写得有点弱，帮我续写后面两段，保持风格一致",
+      "expected": {
+        "type": "writer"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=writer"
+    },
+    {
+      "id": "A56",
+      "text": "用户最近老问同一个问题，能不能帮我把常见问题做成一份清单",
+      "expected": {
+        "type": "faq"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=faq"
+    },
+    {
+      "id": "A58",
+      "text": "再帮我做一份PPT，这次是关于季度总结的",
+      "expected": {
+        "type": "ppt"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=ppt"
+    },
+    {
+      "id": "A60",
+      "text": "协调器模式和普通多智能体架构有什么本质区别",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    }
+  ],
+  "llmRegressed": [],
+  "bothWrong": [
+    {
+      "id": "A44",
+      "text": "这玩意儿最近咋样了，有啥新动静没",
+      "note": "口语化表达，无标准关键词但语义上是询问最新动态",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "ruleGot": "type=chat",
+      "llmGot": "type=chat needsRAG=true"
+    }
+  ],
+  "details": [
+    {
+      "id": "A01",
+      "category": "adversarial_ppt",
+      "difficulty": "hard",
+      "text": "PPT里第3页的内容是什么意思，能解释一下吗",
+      "note": "含PPT关键词但是提问/查询语境，不应触发ppt生成（queryIndicators应排除）",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 820
+      }
+    },
+    {
+      "id": "A02",
+      "category": "adversarial_ppt",
+      "difficulty": "hard",
+      "text": "PPT制作有哪些常见的排版错误？",
+      "note": "含关键词+动词'制作'的近义表达，但整体是知识问答而非生成请求",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": true,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 632
+      }
+    },
+    {
+      "id": "A03",
+      "category": "adversarial_ppt",
+      "difficulty": "hard",
+      "text": "帮我把这份周报做成可以讲的样子，主要讲三个部分：进展、风险、下一步计划",
+      "note": "无PPT/幻灯片字面关键词，但'做成可以讲的'是隐晦PPT生成意图",
+      "expected": {
+        "type": "ppt"
+      },
+      "rule": {
+        "intent": {
+          "type": "ppt",
+          "userText": "帮我把这份周报做成可以讲的样子，主要讲三个部分：进展、风险、下一步计划"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "ppt",
+          "userText": "帮我把这份周报做成可以讲的样子，主要讲三个部分：进展、风险、下一步计划"
+        },
+        "pass": true,
+        "latencyMs": 826
+      }
+    },
+    {
+      "id": "A04",
+      "category": "adversarial_ppt",
+      "difficulty": "medium",
+      "text": "不需要生成PPT，我只是想了解一下PPT自动生成工具的技术原理",
+      "note": "显式否定生成PPT意图，规则的hasKeyword+hasAction会误判为ppt",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": true,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 760
+      }
+    },
+    {
+      "id": "A05",
+      "category": "adversarial_ppt",
+      "difficulty": "medium",
+      "text": "把这份市场分析报告转成幻灯片，20页左右，风格简洁商务",
+      "note": "标准ppt生成意图，附带格式要求",
+      "expected": {
+        "type": "ppt"
+      },
+      "rule": {
+        "intent": {
+          "type": "ppt",
+          "userText": "把这份市场分析报告转成幻灯片，20页左右，风格简洁商务"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "ppt",
+          "userText": "把这份市场分析报告转成幻灯片，20页左右，风格简洁商务"
+        },
+        "pass": true,
+        "latencyMs": 1042
+      }
+    },
+    {
+      "id": "A06",
+      "category": "adversarial_web_search",
+      "difficulty": "hard",
+      "text": "https://github.com/anthropics/claude-code 这个仓库大概是做什么的，不用打开链接，凭你了解说说",
+      "note": "含URL但用户明确要求不要抓取，规则会强制走web_search（已知局限，标注为高难度对抗案例）",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "github",
+          "query": "anthropics/claude-code"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 659
+      }
+    },
+    {
+      "id": "A07",
+      "category": "adversarial_web_search",
+      "difficulty": "hard",
+      "text": "查一下我上次让你总结的那份文档里提到的三个风险点分别是什么",
+      "note": "含'查一下'前缀但对象是历史文档/RAG知识库，不是网络搜索",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "我上次让你总结的那份文档里提到的三个风险点分别是什么"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 1085
+      }
+    },
+    {
+      "id": "A08",
+      "category": "adversarial_web_search",
+      "difficulty": "medium",
+      "text": "2025年大模型Agent方向有哪些新趋势和进展？",
+      "note": "隐式最新趋势模式，应触发implicitPatterns",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "2025年大模型Agent方向有哪些新趋势和进展？"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "2025年大模型Agent方向有哪些新趋势和进展？"
+        },
+        "pass": true,
+        "latencyMs": 879
+      }
+    },
+    {
+      "id": "A09",
+      "category": "adversarial_web_search",
+      "difficulty": "hard",
+      "text": "搜索引擎的工作原理是什么",
+      "note": "包含'搜索'但不是搜索前缀（不在句首），且是知识性提问",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "引擎的工作原理是什么"
+        },
+        "pass": false,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 925
+      }
+    },
+    {
+      "id": "A10",
+      "category": "adversarial_web_search",
+      "difficulty": "medium",
+      "text": "帮我查一下这周北京的天气",
+      "note": "标准搜索前缀+实时信息需求",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "一下这周北京的天气"
+        },
+        "pass": true,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "一下这周北京的天气"
+        },
+        "pass": true,
+        "latencyMs": 1426
+      }
+    },
+    {
+      "id": "A11",
+      "category": "mixed_intent",
+      "difficulty": "hard",
+      "text": "搜一下Claude Code最新版本的更新日志，然后帮我整理成PPT",
+      "note": "复合意图：搜索+生成PPT，两个规则都会命中，需要判断最终落点（生成PPT是最终目的）",
+      "expected": {
+        "type": "ppt"
+      },
+      "rule": {
+        "intent": {
+          "type": "ppt",
+          "userText": "搜一下Claude Code最新版本的更新日志，然后帮我整理成PPT"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "ppt",
+          "userText": "搜一下Claude Code最新版本的更新日志，然后帮我整理成PPT"
+        },
+        "pass": true,
+        "latencyMs": 1448
+      }
+    },
+    {
+      "id": "A12",
+      "category": "mixed_intent",
+      "difficulty": "hard",
+      "text": "把这段Python代码翻译成中文注释版本",
+      "note": "含'翻译'但对象是代码注释，属于coder而非translate",
+      "expected": {
+        "type": "coder"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "coder"
+        },
+        "pass": true,
+        "latencyMs": 982
+      }
+    },
+    {
+      "id": "A13",
+      "category": "mixed_intent",
+      "difficulty": "hard",
+      "text": "用英文帮我重新写一遍这段产品介绍，语气更专业一些",
+      "note": "涉及语言转换但核心诉求是润色改写，而非逐句翻译，属于writer而非translate",
+      "expected": {
+        "type": "writer"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "writer"
+        },
+        "pass": true,
+        "latencyMs": 911
+      }
+    },
+    {
+      "id": "A14",
+      "category": "mixed_intent",
+      "difficulty": "medium",
+      "text": "把这篇英文文档翻译成中文",
+      "note": "标准翻译意图对照组",
+      "expected": {
+        "type": "translate"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "translate"
+        },
+        "pass": true,
+        "latencyMs": 990
+      }
+    },
+    {
+      "id": "A15",
+      "category": "mixed_intent",
+      "difficulty": "hard",
+      "text": "深入研究一下这个代码库的架构设计，顺便看看有没有性能优化空间",
+      "note": "含deep_research关键词+coder相关内容，deep_research应优先于coder",
+      "expected": {
+        "type": "deep_research"
+      },
+      "rule": {
+        "intent": {
+          "type": "deep_research",
+          "query": "深入研究一下这个代码库的架构设计，顺便看看有没有性能优化空间"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "deep_research",
+          "query": "代码库的架构设计与性能优化空间"
+        },
+        "pass": true,
+        "latencyMs": 1213
+      }
+    },
+    {
+      "id": "A16",
+      "category": "generate_confusion",
+      "difficulty": "hard",
+      "text": "帮我把这份文档的时间线和关键节点梳理出来",
+      "note": "无'timeline'字面词，需理解'时间线和关键节点'对应timeline类型",
+      "expected": {
+        "type": "timeline"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "timeline"
+        },
+        "pass": true,
+        "latencyMs": 817
+      }
+    },
+    {
+      "id": "A17",
+      "category": "generate_confusion",
+      "difficulty": "hard",
+      "text": "把这个项目常见的问题和答案整理一下，方便新人查阅",
+      "note": "无'FAQ'字面词，'问题和答案'对应faq类型",
+      "expected": {
+        "type": "faq"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "faq"
+        },
+        "pass": true,
+        "latencyMs": 539
+      }
+    },
+    {
+      "id": "A18",
+      "category": "generate_confusion",
+      "difficulty": "hard",
+      "text": "帮我写一份新人上手这个项目的操作步骤文档",
+      "note": "'操作步骤文档'对应guide而非outline",
+      "expected": {
+        "type": "guide"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "guide"
+        },
+        "pass": true,
+        "latencyMs": 933
+      }
+    },
+    {
+      "id": "A19",
+      "category": "generate_confusion",
+      "difficulty": "hard",
+      "text": "列一下这本书的章节结构和大纲",
+      "note": "'章节结构和大纲'对应outline而非summary",
+      "expected": {
+        "type": "outline"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "outline"
+        },
+        "pass": true,
+        "latencyMs": 721
+      }
+    },
+    {
+      "id": "A20",
+      "category": "generate_confusion",
+      "difficulty": "medium",
+      "text": "帮我总结一下这份文档的核心内容",
+      "note": "标准summary对照组",
+      "expected": {
+        "type": "summary"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "summary"
+        },
+        "pass": true,
+        "latencyMs": 613
+      }
+    },
+    {
+      "id": "A21",
+      "category": "generate_confusion",
+      "difficulty": "hard",
+      "text": "给管理层准备一份简短的项目进展汇报，控制在一页以内",
+      "note": "'简短汇报/一页以内'对应briefing而非summary",
+      "expected": {
+        "type": "briefing"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "briefing"
+        },
+        "pass": true,
+        "latencyMs": 1248
+      }
+    },
+    {
+      "id": "A22",
+      "category": "generate_confusion",
+      "difficulty": "medium",
+      "text": "把这篇技术文章做成两个人对话讨论的音频脚本",
+      "note": "podcast标准意图",
+      "expected": {
+        "type": "podcast"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "podcast"
+        },
+        "pass": true,
+        "latencyMs": 1241
+      }
+    },
+    {
+      "id": "A23",
+      "category": "casual_needs_rag_boundary",
+      "difficulty": "hard",
+      "text": "这个方案你怎么看，靠谱吗",
+      "note": "看似闲聊句式，但'这个方案'指代文档内容，需要RAG而非纯闲聊",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 748
+      }
+    },
+    {
+      "id": "A24",
+      "category": "casual_needs_rag_boundary",
+      "difficulty": "medium",
+      "text": "好的，谢谢你的解答",
+      "note": "标准闲聊收尾",
+      "expected": {
+        "type": "chat",
+        "needsRAG": false
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": false
+        },
+        "pass": true,
+        "latencyMs": 1907
+      }
+    },
+    {
+      "id": "A25",
+      "category": "casual_needs_rag_boundary",
+      "difficulty": "hard",
+      "text": "嗯，那AutoCompact具体是怎么触发的呢",
+      "note": "以'嗯'开头容易被casualPatterns误判为纯闲聊，实际是知识问答",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 1555
+      }
+    },
+    {
+      "id": "A26",
+      "category": "casual_needs_rag_boundary",
+      "difficulty": "medium",
+      "text": "明白了",
+      "note": "确认类闲聊",
+      "expected": {
+        "type": "chat",
+        "needsRAG": false
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": false
+        },
+        "pass": true,
+        "latencyMs": 1162
+      }
+    },
+    {
+      "id": "A27",
+      "category": "casual_needs_rag_boundary",
+      "difficulty": "hard",
+      "text": "什么是上下文压缩机制",
+      "note": "'什么是X'典型知识问答，不应被隐式搜索模式误触发",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 813
+      }
+    },
+    {
+      "id": "A28",
+      "category": "ellipsis_ambiguous",
+      "difficulty": "hard",
+      "text": "继续",
+      "note": "极短省略表达，缺乏上下文，规则和LLM均难以判断具体类型，兜底为chat",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 559
+      }
+    },
+    {
+      "id": "A29",
+      "category": "ellipsis_ambiguous",
+      "difficulty": "hard",
+      "text": "再来一个",
+      "note": "省略号式请求，无明确领域词",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": false
+        },
+        "pass": true,
+        "latencyMs": 833
+      }
+    },
+    {
+      "id": "A30",
+      "category": "ellipsis_ambiguous",
+      "difficulty": "medium",
+      "text": "这个呢？",
+      "note": "指代不明的追问",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": false
+        },
+        "pass": true,
+        "latencyMs": 629
+      }
+    },
+    {
+      "id": "A31",
+      "category": "url_edge_cases",
+      "difficulty": "medium",
+      "text": "https://www.bilibili.com/video/BV1xx411c7abc 这个视频讲了什么",
+      "note": "b站链接识别",
+      "expected": {
+        "type": "web_search",
+        "action": "bilibili"
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "bilibili",
+          "url": "https://www.bilibili.com/video/BV1xx411c7abc"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "web_search",
+          "action": "bilibili",
+          "url": "https://www.bilibili.com/video/BV1xx411c7abc"
+        },
+        "pass": true,
+        "latencyMs": 1642
+      }
+    },
+    {
+      "id": "A32",
+      "category": "url_edge_cases",
+      "difficulty": "medium",
+      "text": "https://youtu.be/dQw4w9WgXcQ 帮我看看这个视频的内容摘要",
+      "note": "youtube短链接识别",
+      "expected": {
+        "type": "web_search",
+        "action": "youtube"
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "youtube",
+          "url": "https://youtu.be/dQw4w9WgXcQ"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "web_search",
+          "action": "youtube",
+          "url": "https://youtu.be/dQw4w9WgXcQ"
+        },
+        "pass": true,
+        "latencyMs": 1107
+      }
+    },
+    {
+      "id": "A33",
+      "category": "url_edge_cases",
+      "difficulty": "hard",
+      "text": "刚才那个github链接对应的项目适合初学者用来学习Agent架构吗",
+      "note": "指代'刚才那个链接'但本轮消息中无实际URL，规则应回退到chat（无法处理指代消解，属于合理局限）",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 571
+      }
+    },
+    {
+      "id": "A34",
+      "category": "coder_boundary",
+      "difficulty": "medium",
+      "text": "这段函数为什么会报空指针异常，帮我看看",
+      "note": "标准代码调试意图",
+      "expected": {
+        "type": "coder"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "coder"
+        },
+        "pass": true,
+        "latencyMs": 807
+      }
+    },
+    {
+      "id": "A35",
+      "category": "coder_boundary",
+      "difficulty": "hard",
+      "text": "什么是空指针异常，为什么会发生",
+      "note": "泛化概念提问而非具体代码调试，容易被误判为coder",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 851
+      }
+    },
+    {
+      "id": "A36",
+      "category": "coder_boundary",
+      "difficulty": "hard",
+      "text": "帮我把这个正则表达式写得更简洁一点，同时保持匹配效果不变",
+      "note": "无'代码'字样但明确是代码改写请求",
+      "expected": {
+        "type": "coder"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "coder"
+        },
+        "pass": true,
+        "latencyMs": 895
+      }
+    },
+    {
+      "id": "A37",
+      "category": "translate_boundary",
+      "difficulty": "hard",
+      "text": "outline 和 summary 这两个词在这套系统里具体怎么翻译更准确",
+      "note": "含'翻译'字样但实际是术语准确性讨论，非翻译执行请求",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 550
+      }
+    },
+    {
+      "id": "A38",
+      "category": "translate_boundary",
+      "difficulty": "medium",
+      "text": "Translate this paragraph into Japanese please",
+      "note": "英文表达的标准翻译请求",
+      "expected": {
+        "type": "translate"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "translate"
+        },
+        "pass": true,
+        "latencyMs": 918
+      }
+    },
+    {
+      "id": "A39",
+      "category": "deep_research_boundary",
+      "difficulty": "hard",
+      "text": "关于多智能体编排这个方向，你有什么资料推荐吗",
+      "note": "无deep_research关键词，'资料推荐'更接近隐式搜索意图而非系统研究",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "多智能体编排 资料推荐 学习资料"
+        },
+        "pass": true,
+        "latencyMs": 903
+      }
+    },
+    {
+      "id": "A40",
+      "category": "deep_research_boundary",
+      "difficulty": "medium",
+      "text": "帮我系统学习一下Transformer架构的原理，从基础开始",
+      "note": "'系统学习'关键词命中deep_research",
+      "expected": {
+        "type": "deep_research"
+      },
+      "rule": {
+        "intent": {
+          "type": "deep_research",
+          "query": "帮我系统学习一下Transformer架构的原理，从基础开始"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "deep_research",
+          "query": "Transformer架构的原理，从基础开始"
+        },
+        "pass": true,
+        "latencyMs": 619
+      }
+    },
+    {
+      "id": "A41",
+      "category": "deep_research_boundary",
+      "difficulty": "hard",
+      "text": "我想全面了解一下我们这个项目的技术债务分布情况，能不能做个专题分析",
+      "note": "'全面了解'+'专题分析'隐含deep_research，且与coder场景交织",
+      "expected": {
+        "type": "deep_research"
+      },
+      "rule": {
+        "intent": {
+          "type": "deep_research",
+          "query": "我想全面了解一下我们这个项目的技术债务分布情况，能不能做个专题分析"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "deep_research",
+          "query": "项目技术债务分布情况专题分析"
+        },
+        "pass": true,
+        "latencyMs": 867
+      }
+    },
+    {
+      "id": "A42",
+      "category": "negation_tricky",
+      "difficulty": "hard",
+      "text": "先别翻译，帮我看看这段代码里的翻译函数写得对不对",
+      "note": "显式否定翻译动作，'翻译函数'是代码审查对象而非翻译请求本身",
+      "expected": {
+        "type": "coder"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "coder"
+        },
+        "pass": true,
+        "latencyMs": 973
+      }
+    },
+    {
+      "id": "A43",
+      "category": "negation_tricky",
+      "difficulty": "hard",
+      "text": "不用做PPT了，先帮我把大纲写出来就行",
+      "note": "否定ppt意图后转向outline，测试是否会被PPT关键词残留误导",
+      "expected": {
+        "type": "outline"
+      },
+      "rule": {
+        "intent": {
+          "type": "ppt",
+          "userText": "不用做PPT了，先帮我把大纲写出来就行"
+        },
+        "pass": false,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "outline"
+        },
+        "pass": true,
+        "latencyMs": 1302
+      }
+    },
+    {
+      "id": "A44",
+      "category": "colloquial",
+      "difficulty": "hard",
+      "text": "这玩意儿最近咋样了，有啥新动静没",
+      "note": "口语化表达，无标准关键词但语义上是询问最新动态",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": false,
+        "latencyMs": 696
+      }
+    },
+    {
+      "id": "A45",
+      "category": "colloquial",
+      "difficulty": "hard",
+      "text": "给我掰扯掰扯这个概念到底是咋回事",
+      "note": "方言口语化表达，实际是概念解释知识问答",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 705
+      }
+    },
+    {
+      "id": "A46",
+      "category": "colloquial",
+      "difficulty": "medium",
+      "text": "整个PPT呗，就按刚才说的内容",
+      "note": "口语化'整个PPT'仍应识别为ppt生成",
+      "expected": {
+        "type": "ppt"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "ppt",
+          "userText": "整个PPT呗，就按刚才说的内容"
+        },
+        "pass": true,
+        "latencyMs": 839
+      }
+    },
+    {
+      "id": "A47",
+      "category": "comparison_vs_websearch",
+      "difficulty": "hard",
+      "text": "对比一下这份文档里提到的两种缓存策略各自的优缺点",
+      "note": "含'对比'但比较对象是文档内容而非外部实时信息，不应触发implicitPatterns的对比模式",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 901
+      }
+    },
+    {
+      "id": "A48",
+      "category": "comparison_vs_websearch",
+      "difficulty": "medium",
+      "text": "GPT-5和Claude 4哪个编程能力更强，网上怎么评价的",
+      "note": "外部产品对比+口碑评测，应触发implicitPatterns",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "GPT-5和Claude 4哪个编程能力更强，网上怎么评价的"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "GPT-5和Claude 4哪个编程能力更强，网上怎么评价的"
+        },
+        "pass": true,
+        "latencyMs": 801
+      }
+    },
+    {
+      "id": "A49",
+      "category": "long_compound_sentence",
+      "difficulty": "hard",
+      "text": "我们下周要给客户做产品汇报，麻烦先帮我把现有的需求文档提炼成要点，然后按这些要点做一份适合对外讲解的演示文稿",
+      "note": "长句复合任务，前半段像summary，但最终交付物是'演示文稿'，应识别为ppt",
+      "expected": {
+        "type": "ppt"
+      },
+      "rule": {
+        "intent": {
+          "type": "ppt",
+          "userText": "我们下周要给客户做产品汇报，麻烦先帮我把现有的需求文档提炼成要点，然后按这些要点做一份适合对外讲解的演示文稿"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "ppt",
+          "userText": "我们下周要给客户做产品汇报，麻烦先帮我把现有的需求文档提炼成要点，然后按这些要点做一份适合对外讲解的演示文稿"
+        },
+        "pass": true,
+        "latencyMs": 1874
+      }
+    },
+    {
+      "id": "A50",
+      "category": "long_compound_sentence",
+      "difficulty": "hard",
+      "text": "刚才聊到的那个断路器机制，麻烦帮我查一下业内其他Agent框架是怎么设计类似容错方案的",
+      "note": "长句，前半段引用历史上下文（RAG特征），后半段明确要外部行业信息，最终应判定为web_search",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "Agent框架 断路器机制 容错方案 设计"
+        },
+        "pass": true,
+        "latencyMs": 1004
+      }
+    },
+    {
+      "id": "A51",
+      "category": "greeting_variants",
+      "difficulty": "medium",
+      "text": "hey，在吗",
+      "note": "英文问候变体",
+      "expected": {
+        "type": "chat",
+        "needsRAG": false
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": false
+        },
+        "pass": true,
+        "latencyMs": 548
+      }
+    },
+    {
+      "id": "A52",
+      "category": "greeting_variants",
+      "difficulty": "hard",
+      "text": "你好，能帮我看看这份合同里的违约条款怎么理解吗",
+      "note": "问候语开头但紧跟具体知识问答需求，不应被casualPatterns整体判定为纯闲聊",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 918
+      }
+    },
+    {
+      "id": "A53",
+      "category": "podcast_boundary",
+      "difficulty": "hard",
+      "text": "把这篇论文改编成两个主持人聊天吐槽的形式，轻松一点",
+      "note": "无'播客'字样，'两个主持人聊天'隐含podcast格式",
+      "expected": {
+        "type": "podcast"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 1
+      },
+      "llm": {
+        "intent": {
+          "type": "podcast"
+        },
+        "pass": true,
+        "latencyMs": 824
+      }
+    },
+    {
+      "id": "A54",
+      "category": "writer_boundary",
+      "difficulty": "medium",
+      "text": "帮我把这段话写得更简洁有力一些",
+      "note": "标准润色请求",
+      "expected": {
+        "type": "writer"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "writer"
+        },
+        "pass": true,
+        "latencyMs": 980
+      }
+    },
+    {
+      "id": "A55",
+      "category": "writer_boundary",
+      "difficulty": "hard",
+      "text": "这段开头写得有点弱，帮我续写后面两段，保持风格一致",
+      "note": "续写场景，无'润色'字样",
+      "expected": {
+        "type": "writer"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "writer"
+        },
+        "pass": true,
+        "latencyMs": 875
+      }
+    },
+    {
+      "id": "A56",
+      "category": "faq_vs_chat",
+      "difficulty": "hard",
+      "text": "用户最近老问同一个问题，能不能帮我把常见问题做成一份清单",
+      "note": "间接描述FAQ整理需求，无'FAQ'字面词",
+      "expected": {
+        "type": "faq"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "faq"
+        },
+        "pass": true,
+        "latencyMs": 1029
+      }
+    },
+    {
+      "id": "A57",
+      "category": "ppt_session_context",
+      "difficulty": "medium",
+      "text": "帮我把第三页的标题改一下，换成更简短的",
+      "note": "在hasPptSession=true上下文中，PPT编辑指令不应再触发新的ppt意图检测（context.hasPptSession跳过规则判断）",
+      "expected": {
+        "type": "chat"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 967
+      }
+    },
+    {
+      "id": "A58",
+      "category": "ppt_session_context",
+      "difficulty": "hard",
+      "text": "再帮我做一份PPT，这次是关于季度总结的",
+      "note": "已修正标注：句子明确表达'再做一份...这次是关于X的'，即新主题的新PPT，应判为ppt而非chat。规则层因hasPptSession短路统一判为chat，反而是规则的局限——此处正确答案要求识别'新主题'信号，是LLM应该纠正规则的场景",
+      "expected": {
+        "type": "ppt"
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "ppt",
+          "userText": "再帮我做一份PPT，这次是关于季度总结的"
+        },
+        "pass": true,
+        "latencyMs": 765
+      }
+    },
+    {
+      "id": "A59",
+      "category": "numbers_and_dates",
+      "difficulty": "medium",
+      "text": "帮我搜一下今年AI芯片市场的最新数据",
+      "note": "搜索前缀+最新数据双重信号",
+      "expected": {
+        "type": "web_search",
+        "action": "search"
+      },
+      "rule": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "一下今年AI芯片市场的最新数据"
+        },
+        "pass": true,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "web_search",
+          "action": "search",
+          "query": "一下今年AI芯片市场的最新数据"
+        },
+        "pass": true,
+        "latencyMs": 1630
+      }
+    },
+    {
+      "id": "A60",
+      "category": "pure_chat_knowledge",
+      "difficulty": "medium",
+      "text": "协调器模式和普通多智能体架构有什么本质区别",
+      "note": "文档内概念对比，属于RAG知识问答而非外部搜索",
+      "expected": {
+        "type": "chat",
+        "needsRAG": true
+      },
+      "rule": {
+        "intent": {
+          "type": "chat"
+        },
+        "pass": false,
+        "latencyMs": 0
+      },
+      "llm": {
+        "intent": {
+          "type": "chat",
+          "needsRAG": true
+        },
+        "pass": true,
+        "latencyMs": 950
+      }
+    }
+  ]
+}

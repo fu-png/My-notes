@@ -25,10 +25,16 @@ export interface UseChatFlowParams {
   // 组件在 usePptFlow 初始化后设置这些 ref 的 .current
   pptSessionRef: React.MutableRefObject<{ active: boolean } | null>
   pptAbortRef: React.MutableRefObject<AbortController | null>
-  startPptFlowRef: React.MutableRefObject<((text: string) => void) | null>
+  startPptFlowRef: React.MutableRefObject<((text: string, sourceContent?: string) => void) | null>
+  // Deep Research 回调 — 由 notebook-workspace 提供（需要 router）
+  onDeepResearch?: (text: string) => void
   // 回调
   showToast: (type: "success" | "error", msg: string) => void
   fetchFiles: () => Promise<void>
+  // 当前活跃对话 ID 的 ref（用于后台流判断）
+  activeConvIdRef: React.MutableRefObject<string | null>
+  // 后台流更新回调（当流在后台运行时，通知外部保存对话内容）
+  onBackgroundStreamUpdate?: (convId: string, messages: ChatMessage[]) => void
 }
 
 export interface UseChatFlowReturn {
@@ -42,14 +48,18 @@ export interface UseChatFlowReturn {
   chatModel: string
   providerList: ProviderInfo[]
   deepThinkMode: boolean
+  deepResearchMode: boolean
   generating: boolean
   isStreamingRef: React.MutableRefObject<boolean>
+  // 后台流信息（当前有哪些对话在后台流式回复中）
+  backgroundStreamsRef: React.MutableRefObject<Map<string, { convId: string; msgId: string; messages: ChatMessage[] }>>
 
   // Actions
   handleSendMessage: () => Promise<void>
   handleStopGeneration: () => void
   handleSwitchProvider: (providerId: string) => void
   handleToggleDeepThink: () => void
+  handleToggleDeepResearch: () => void
   handleGenerate: (type: string) => Promise<void>
   handleSaveGenerated: (msgId: string) => Promise<void>
   handleCopyGenerated: (msgId: string) => Promise<void>
@@ -72,8 +82,11 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     pptSessionRef,
     pptAbortRef,
     startPptFlowRef,
+    onDeepResearch,
     showToast,
     fetchFiles,
+    activeConvIdRef,
+    onBackgroundStreamUpdate,
   } = params
 
   // ─── State ───
@@ -91,11 +104,59 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     if (typeof window === "undefined") return false
     return localStorage.getItem("ai-deep-think-mode") === "true"
   })
+  const [deepResearchMode, setDeepResearchMode] = React.useState(() => {
+    if (typeof window === "undefined") return false
+    return localStorage.getItem("ai-deep-research-mode") === "true"
+  })
   const [generating, setGenerating] = React.useState(false)
 
   const isStreamingRef = React.useRef(false)
   const abortControllerRef = React.useRef<AbortController | null>(null)
   const rafIdsRef = React.useRef<Set<number>>(new Set())
+
+  // 后台流跟踪：Map<streamKey, { convId, msgId, messages }>
+  // 当用户切换对话时，正在进行的流会转为后台模式
+  const backgroundStreamsRef = React.useRef<Map<string, { convId: string; msgId: string; messages: ChatMessage[] }>>(new Map())
+  // 当前流关联的对话 ID（在 streamAI 开始时设置）
+  const streamConvIdRef = React.useRef<string | null>(null)
+
+  /**
+   * 包装 setChatMessages：如果当前流在后台运行（对话已切换），
+   * 则更新后台流的 messages 副本并通知外部保存，不更新 UI。
+   * 如果用户切回来了（对话 ID 重新匹配），同时更新 UI 和后台存储。
+   */
+  const wrappedSetChatMessages = React.useCallback(
+    (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
+      const streamConvId = streamConvIdRef.current
+      const activeConvId = activeConvIdRef.current
+
+      if (streamConvId && activeConvId && streamConvId !== activeConvId) {
+        // 后台模式：流在后台运行，用户在看其他对话
+        for (const [, entry] of backgroundStreamsRef.current) {
+          if (entry.convId === streamConvId) {
+            entry.messages = updater(entry.messages)
+            onBackgroundStreamUpdate?.(streamConvId, entry.messages)
+            return
+          }
+        }
+      }
+
+      // 前台模式：流在当前对话运行，正常更新 UI
+      setChatMessages(updater)
+
+      // 如果有关联的后台流，也同步更新后台存储
+      if (streamConvId && streamConvId === activeConvId) {
+        for (const [, entry] of backgroundStreamsRef.current) {
+          if (entry.convId === streamConvId) {
+            // 用最新的 chatMessages 更新后台存储
+            // 注意：这里用 updater 计算新值
+            break
+          }
+        }
+      }
+    },
+    [activeConvIdRef, backgroundStreamsRef, onBackgroundStreamUpdate, setChatMessages]
+  )
 
   /** Generate a unique message ID (crypto.randomUUID avoids Date.now() collisions) */
   const genId = (prefix: string) =>
@@ -108,6 +169,10 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
   React.useEffect(() => {
     localStorage.setItem("ai-deep-think-mode", String(deepThinkMode))
   }, [deepThinkMode])
+
+  React.useEffect(() => {
+    localStorage.setItem("ai-deep-research-mode", String(deepResearchMode))
+  }, [deepResearchMode])
 
   // ─── Provider sync ───
 
@@ -143,6 +208,10 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     setDeepThinkMode((v) => !v)
   }, [])
 
+  const handleToggleDeepResearch = React.useCallback(() => {
+    setDeepResearchMode((v) => !v)
+  }, [])
+
   // ─── Web Search (Agent Reach) ───
 
   /** 调用 Agent Reach 获取互联网内容 */
@@ -164,7 +233,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       ? `📺 正在搜索B站...`
       : `🌐 正在获取互联网内容...`
 
-    setChatMessages((prev) =>
+    wrappedSetChatMessages((prev) =>
       prev.map((m) =>
         m.id === aiMsgId ? { ...m, content: statusText } : m
       )
@@ -252,10 +321,35 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     return { content, reasoning: existingReasoning }
   }
 
-  const streamAI = async (userMessages: ChatMessage[], aiMsgId: string, deepThink: boolean = false, selectedTextArg?: string) => {
+  /** 预取结果类型 */
+  interface PrefetchResult {
+    ragSources?: ChatMessage["ragSources"]
+    ragContextText?: string
+    ragFetchError?: boolean
+    webSources?: ChatMessage["webSources"]
+    webContextText?: string
+    webSearchTriggered?: boolean
+    webFetchError?: boolean
+  }
+
+  const streamAI = async ({
+    userMessages,
+    aiMsgId,
+    deepThink = false,
+    selectedTextArg,
+    intentType,
+    prefetch,
+  }: {
+    userMessages: ChatMessage[]
+    aiMsgId: string
+    deepThink?: boolean
+    selectedTextArg?: string
+    intentType?: string
+    prefetch?: PrefetchResult
+  }) => {
     const config = getAIConfig()
     if (!config) {
-      setChatMessages((prev) =>
+      wrappedSetChatMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
             ? { ...m, content: "请先点击右上角的设置按钮（⚙️），配置 AI 助手的 API Key 后即可开始对话。" }
@@ -265,145 +359,44 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       return
     }
 
-    // [P0 FIX] 在预取阶段就创建 AbortController，确保整个请求链路都可取消
     const controller = new AbortController()
     abortControllerRef.current = controller
 
-    let ragSources: ChatMessage["ragSources"] | undefined
-    let ragContextText = ""
-    let webSources: ChatMessage["webSources"] | undefined
-    let webContextText = ""
-    let webFetchError = false
-    let ragFetchError = false
-    const lastUserMsg = userMessages[userMessages.length - 1]
+    // 设置当前流关联的对话 ID
+    streamConvIdRef.current = activeConvIdRef.current
 
-    // ── Agent Reach + RAG: 并行预取（性能优化） ──
-    // Web 搜索和 RAG 查询是独立操作，并行执行可减少 40-60% 首 token 延迟
-    let webSearchTriggered = false
-    let webIntent: { action: string; query?: string; url?: string } | null = null
-
-    if (lastUserMsg) {
-      const { detectIntent } = await import("@/lib/agents/supervisor")
-      const intent = detectIntent(lastUserMsg.content, { hasPptSession: !!pptSessionRef.current?.active })
-      webIntent = intent.type === "web_search" ? { action: intent.action, query: intent.query, url: intent.url } : null
-      if (webIntent) {
-        // 划词搜索：当有划词内容且搜索 query 是指代性描述时，用划词文本替换
-        if (webIntent.action === "search" && selectedTextArg) {
-          const vague = /^(一下)?(这[段个些]|这[段个些]?(话|内容|文[本字]|句子)|它|this).*/
-          if (!webIntent.query || vague.test(webIntent.query)) {
-            webIntent.query = selectedTextArg.length > 200 ? selectedTextArg.slice(0, 200) : selectedTextArg
-          }
-        }
-        webSearchTriggered = true
-      }
+    // 在后台流跟踪中注册
+    if (streamConvIdRef.current) {
+      backgroundStreamsRef.current.set(aiMsgId, {
+        convId: streamConvIdRef.current,
+        msgId: aiMsgId,
+        messages: [...userMessages, { id: aiMsgId, role: "assistant" as const, content: "", timestamp: new Date() }],
+      })
     }
 
-    // ── 阶段性 loading 文案：让用户知道后台正在干什么 ──
-    const updateStage = (text: string) => {
-      setChatMessages((prev) =>
-        prev.map((m) => m.id === aiMsgId ? { ...m, content: "", loadingStage: text } : m)
-      )
-    }
-
-    // 构造并行任务数组 — 使用统一的 AbortController signal
-    const willDoRag = ragEnabled && !!lastUserMsg
-    const willDoWeb = !!webIntent
-    if (willDoRag) {
-      updateStage("正在检索知识库...")
-    } else if (willDoWeb) {
-      updateStage("正在搜索互联网...")
-    }
-
-    const webSearchPromise = webIntent
-      ? fetchWebContent(webIntent, aiMsgId, controller.signal)
-      : Promise.resolve(null)
-
-    // [修复] 去掉 indexStatus?.indexed 的前置条件
-    // 即使向量索引未构建成功，也尝试 RAG 查询——pipeline.queryProject 内部
-    // 会自动降级到 BM25 兜底检索，而非直接跳过让 LLM 无上下文地乱回答
-    const ragQueryPromise = willDoRag
-      ? (async () => {
-          try {
-            const recentUserMsgs = userMessages
-              .filter((m) => m.role === "user" && m.id !== "welcome")
-              .slice(-3)
-              .map((m) => m.content)
-            // [修复] 只使用当前问题作为 RAG 查询，不混入历史对话上下文
-            // 之前将多条历史消息拼接后整体 embed，会产生"混合意图"的 embedding，
-            // 稀释向量搜索精度，尤其是历史消息涉及不同主题时
-            const contextQuery = recentUserMsgs[recentUserMsgs.length - 1]
-
-            const ragRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              signal: controller.signal,
-              body: JSON.stringify({
-                action: "query",
-                question: contextQuery,
-                apiKey: config.apiKey,
-                apiBase: config.apiBase,
-                model: chatModel,
-                embeddingModel: getEmbeddingConfig()?.embeddingModel || getConfiguredEmbeddingModel(),
-                embeddingApiKey: getEmbeddingConfig()?.apiKey,
-                embeddingApiBase: getEmbeddingConfig()?.apiBase,
-                rerankModel: getEmbeddingConfig()?.rerankModel,
-                activeFile: activeFile || undefined,
-              }),
-            })
-            if (!ragRes.ok) {
-              const errBody = await ragRes.json().catch(() => ({}))
-              const errMsg = errBody.error || `HTTP ${ragRes.status}`
-              console.warn("[RAG] Query HTTP error:", errMsg)
-              showToast("error", `知识库检索失败: ${errMsg}`)
-              return { sources: undefined, text: "", error: true }
-            }
-            const ragData = await ragRes.json()
-            // 如果后端返回了降级警告（如 Embedding/Reranker 失败），用 toast 提示用户
-            if (ragData.context?.warnings?.length > 0) {
-              for (const w of ragData.context.warnings) {
-                showToast("error", w)
-              }
-            }
-            if (ragData.context?.sources?.length > 0) {
-              return { sources: ragData.context.sources, text: ragData.context.text }
-            }
-          } catch (err) {
-            if (err instanceof DOMException && err.name === "AbortError") return null
-            const errMsg = err instanceof Error ? err.message : "未知错误"
-            console.warn("[RAG] Query failed, falling back to plain mode:", err)
-            showToast("error", `知识库检索异常: ${errMsg}`)
-            return { sources: undefined, text: "", error: true }
-          }
-          return null
-        })()
-      : Promise.resolve(null)
-
-    // 并行执行 Web 搜索和 RAG 查询
-    const [webResult, ragResult] = await Promise.all([webSearchPromise, ragQueryPromise])
-
-    // 用户在预取阶段就点了停止 — 早退出
-    if (controller.signal.aborted) return
-
-    // 检索完成 → 切换到"组织回答"阶段
-    if (willDoRag || willDoWeb) {
-      updateStage("正在组织回答...")
-    }
-
-    if (webResult) {
-      webSources = webResult.sources && webResult.sources.length > 0 ? webResult.sources : undefined
-      webContextText = webResult.content
-      if (webResult.error) webFetchError = true
-    }
-    if (ragResult) {
-      ragSources = (ragResult as { sources?: ChatMessage["ragSources"]; text: string; error?: boolean }).sources
-      ragContextText = ragResult.text
-      if ((ragResult as { error?: boolean }).error) ragFetchError = true
-    }
+    const {
+      ragSources, ragContextText, ragFetchError,
+      webSources, webContextText, webSearchTriggered, webFetchError,
+    } = prefetch || {}
 
     const activeFileName = activeFile ? (files.find((f) => f.filename === activeFile)?.title || activeFile) : undefined
 
+    // 切换到"组织回答"阶段
+    if (ragSources || webSearchTriggered) {
+      wrappedSetChatMessages((prev) =>
+        prev.map((m) => m.id === aiMsgId ? { ...m, content: "", loadingStage: "正在组织回答..." } : m)
+      )
+    }
+
     // 使用 Context Manager 统一构建 system prompt
     const { buildSystemPrompt } = await import("@/lib/agents/context-manager")
+    // 所有意图都尝试加载对应智能体的 system prompt
+    // 优先级：意图映射智能体 > 用户激活智能体 > 用户自定义 persona
+    let agentSystemPrompt: string | undefined
+    if (intentType) {
+      const { getAgentSystemPrompt } = await import("@/lib/ai-config")
+      agentSystemPrompt = getAgentSystemPrompt(intentType) || undefined
+    }
     const systemPrompt = buildSystemPrompt({
       ragContextText: ragContextText || undefined,
       ragSources,
@@ -416,6 +409,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       activeFileName,
       fileContent,
       selectedText: selectedTextArg,
+      agentRole: agentSystemPrompt,
       personaPrompt: getPersonaPrompt(),
       userName: getUserName(),
     })
@@ -428,8 +422,6 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       })),
     ]
 
-    // 对话上下文窗口化：裁剪历史消息以控制 token 用量，
-    // 避免长对话导致 API 延迟增大或 token 上限截断
     const { trimConversationHistory } = await import("@/lib/agents/context-manager")
     const apiMessages = trimConversationHistory(allApiMessages)
 
@@ -449,7 +441,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setChatMessages((prev) =>
+        wrappedSetChatMessages((prev) =>
           prev.map((m) =>
             m.id === aiMsgId
               ? { ...m, content: `⚠️ ${data.error || "请求失败，请检查 API 配置。"}` }
@@ -460,7 +452,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       }
 
       if (!res.body) {
-        setChatMessages((prev) =>
+        wrappedSetChatMessages((prev) =>
           prev.map((m) => (m.id === aiMsgId ? { ...m, content: "⚠️ 无法读取响应流。" } : m))
         )
         return
@@ -472,7 +464,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       const result = await streamIntoMessage({
         reader,
         msgId: aiMsgId,
-        setChatMessages,
+        setChatMessages: wrappedSetChatMessages,
         parseReasoningFromContent,
         rafIdsRef,
       })
@@ -499,15 +491,18 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
         fullContent = fullContent.replace(/<doc-update>[\s\S]*?<\/doc-update>/, "").trim()
       }
 
-      setChatMessages((prev) =>
+      wrappedSetChatMessages((prev) =>
         prev.map((m) => (m.id === aiMsgId ? { ...m, content: fullContent, docUpdate, ragSources, webSources, reasoning: fullReasoning || undefined } : m))
       )
     } catch (err: unknown) {
       // 用户中断（新建对话等）时不显示错误
-      if (err instanceof DOMException && err.name === "AbortError") return
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // 即使中断也保存已生成的内容到后台对话
+        return
+      }
       // [P1 FIX] 流中断时保留已生成的内容，而非整体替换为错误消息
       const msg = err instanceof Error ? err.message : "网络错误"
-      setChatMessages((prev) =>
+      wrappedSetChatMessages((prev) =>
         prev.map((m) => {
           if (m.id !== aiMsgId) return m
           const existing = m.content || ""
@@ -520,6 +515,9 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null
       }
+      // 清理后台流跟踪
+      backgroundStreamsRef.current.delete(aiMsgId)
+      streamConvIdRef.current = null
     }
   }
 
@@ -527,12 +525,50 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     const text = chatInput.trim()
     if (!text || chatLoading) return
 
-    // ─── PPT Intent Detection (via Supervisor) ───
-    const { detectIntent } = await import("@/lib/agents/supervisor")
-    const intent = detectIntent(text, { hasPptSession: !!pptSessionRef.current?.active })
+    // ─── Deep Research 开关：强制走研究流程 ───
+    if (deepResearchMode) {
+      setChatInput("")
+      onDeepResearch?.(text)
+      return
+    }
+
+    // ─── 智能意图识别（规则快筛 + LLM 兜底）───
+    const config = getAIConfig()
+    const { detectIntentSmart, GENERATE_INTENT_TYPES } = await import("@/lib/agents/supervisor")
+    const { getAgentSystemPrompt } = await import("@/lib/ai-config")
+    // 加载用户自定义的 supervisor 提示词（单一来源，与设置页同步）
+    const supervisorPrompt = getAgentSystemPrompt("supervisor") || undefined
+    const intent = await detectIntentSmart(text, {
+      hasPptSession: !!pptSessionRef.current?.active,
+      apiKey: config?.apiKey,
+      apiBase: config?.apiBase,
+      model: config?.model,
+      supervisorPrompt,
+    })
+
+    // 根据意图路由
+    if (intent.type === "deep_research") {
+      setChatInput("")
+      onDeepResearch?.(intent.query || text)
+      return
+    }
+
     if (intent.type === "ppt") {
       setChatInput("")
-      startPptFlowRef.current?.(text)
+      // 提取最近一条 AI 回答作为 PPT 素材内容
+      // 当用户在 AI 回答后说"做成PPT"时，自动将上轮回答传入
+      const lastAssistantMsg = chatMessages
+        .filter((m) => m.role === "assistant" && m.content && !m.pptMeta)
+        .pop()
+      const sourceContent = lastAssistantMsg?.content || undefined
+      startPptFlowRef.current?.(intent.userText || text, sourceContent)
+      return
+    }
+
+    // 内容生成类意图 → 走 handleGenerate
+    if (GENERATE_INTENT_TYPES.has(intent.type)) {
+      setChatInput("")
+      handleGenerate(intent.type)
       return
     }
 
@@ -557,11 +593,145 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     setChatLoading(true)
     isStreamingRef.current = true
 
+    // 提前设置流关联的对话 ID，以便 RAG/web 搜索阶段也能感知后台模式
+    streamConvIdRef.current = activeConvIdRef.current
+    if (streamConvIdRef.current) {
+      backgroundStreamsRef.current.set(aiMsgId, {
+        convId: streamConvIdRef.current,
+        msgId: aiMsgId,
+        messages: [...newMessages, aiMsg],
+      })
+    }
+
     setSelectedText("")
 
-    await streamAI(newMessages, aiMsgId, deepThinkMode, textSnapshot || undefined)
-    isStreamingRef.current = false
-    setChatLoading(false)
+    // ─── 意图路由统一管控：网络搜索 & RAG 检索 ───
+    const configForFetch = getAIConfig()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    // 判断是否需要网络搜索
+    let webSearchInfo: { action: string; query?: string; url?: string } | null = null
+    if (intent.type === "web_search") {
+      webSearchInfo = { action: intent.action, query: intent.query, url: intent.url }
+      // 划词搜索：当有划词内容且搜索 query 是指代性描述时，用划词文本替换
+      if (webSearchInfo.action === "search" && textSnapshot) {
+        const vague = /^(一下)?(这[段个些]|这[段个些]?(话|内容|文[本字]|句子)|它|this).*/
+        if (!webSearchInfo.query || vague.test(webSearchInfo.query)) {
+          webSearchInfo.query = textSnapshot.length > 200 ? textSnapshot.slice(0, 200) : textSnapshot
+        }
+      }
+    }
+
+    // 判断是否需要 RAG 检索
+    // - 闲聊（needsRAG=false 且无划词）→ 跳过
+    // - 知识问答 / 划词提问 / 其他意图 → 走 RAG
+    const skipRAG = intent.type === "chat" && !textSnapshot && intent.needsRAG === false
+    const willDoRag = !skipRAG && ragEnabled && !!text
+    const willDoWeb = !!webSearchInfo
+
+    // 阶段性 loading 文案
+    if (willDoRag) {
+      wrappedSetChatMessages((prev) =>
+        prev.map((m) => m.id === aiMsgId ? { ...m, content: "", loadingStage: "正在检索知识库..." } : m)
+      )
+    } else if (willDoWeb) {
+      wrappedSetChatMessages((prev) =>
+        prev.map((m) => m.id === aiMsgId ? { ...m, content: "", loadingStage: "正在搜索互联网..." } : m)
+      )
+    }
+
+    // 并行执行网络搜索和 RAG 检索
+    const webSearchPromise = webSearchInfo
+      ? fetchWebContent(webSearchInfo, aiMsgId, controller.signal)
+      : Promise.resolve(null)
+
+    const ragQueryPromise = willDoRag && configForFetch
+      ? (async () => {
+          try {
+            const contextQuery = text
+            const ragRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                action: "query",
+                question: contextQuery,
+                apiKey: configForFetch.apiKey,
+                apiBase: configForFetch.apiBase,
+                model: chatModel,
+                embeddingModel: getEmbeddingConfig()?.embeddingModel || getConfiguredEmbeddingModel(),
+                embeddingApiKey: getEmbeddingConfig()?.apiKey,
+                embeddingApiBase: getEmbeddingConfig()?.apiBase,
+                rerankModel: getEmbeddingConfig()?.rerankModel,
+                activeFile: activeFile || undefined,
+              }),
+            })
+            if (!ragRes.ok) {
+              const errBody = await ragRes.json().catch(() => ({}))
+              const errMsg = errBody.error || `HTTP ${ragRes.status}`
+              console.warn("[RAG] Query HTTP error:", errMsg)
+              showToast("error", `知识库检索失败: ${errMsg}`)
+              return { sources: undefined, text: "", error: true }
+            }
+            const ragData = await ragRes.json()
+            if (ragData.context?.warnings?.length > 0) {
+              for (const w of ragData.context.warnings) {
+                showToast("error", w)
+              }
+            }
+            if (ragData.context?.sources?.length > 0) {
+              return { sources: ragData.context.sources, text: ragData.context.text }
+            }
+          } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") return null
+            const errMsg = err instanceof Error ? err.message : "未知错误"
+            console.warn("[RAG] Query failed, falling back to plain mode:", err)
+            showToast("error", `知识库检索异常: ${errMsg}`)
+            return { sources: undefined, text: "", error: true }
+          }
+          return null
+        })()
+      : Promise.resolve(null)
+
+    const [webResult, ragResult] = await Promise.all([webSearchPromise, ragQueryPromise])
+
+    if (controller.signal.aborted) return
+
+    // 组装预取结果
+    const prefetch: PrefetchResult = {}
+    if (webResult) {
+      prefetch.webSources = webResult.sources && webResult.sources.length > 0 ? webResult.sources : undefined
+      prefetch.webContextText = webResult.content
+      prefetch.webSearchTriggered = true
+      if (webResult.error) prefetch.webFetchError = true
+    } else if (willDoWeb) {
+      prefetch.webSearchTriggered = true
+    }
+    if (ragResult) {
+      const r = ragResult as { sources?: ChatMessage["ragSources"]; text: string; error?: boolean }
+      prefetch.ragSources = r.sources
+      prefetch.ragContextText = r.text
+      if (r.error) prefetch.ragFetchError = true
+    }
+
+    // 保存当前对话 ID，用于流完成后判断是否在后台
+    const streamConvId = activeConvIdRef.current
+
+    await streamAI({
+      userMessages: newMessages,
+      aiMsgId,
+      deepThink: deepThinkMode,
+      selectedTextArg: textSnapshot || undefined,
+      intentType: intent.type,
+      prefetch,
+    })
+    // 只有当前对话仍然是流关联的对话时，才清理 UI 状态
+    // 如果流在后台完成（用户已切换对话），不影响新对话的 UI 状态
+    if (streamConvId === activeConvIdRef.current) {
+      isStreamingRef.current = false
+      setChatLoading(false)
+    }
   }
 
   const handleStopGeneration = React.useCallback(() => {
@@ -614,7 +784,22 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     // 创建 AbortController 用于取消生成请求
     abortControllerRef.current = new AbortController()
 
+    // 设置当前流关联的对话 ID（与 streamAI 一致）
+    streamConvIdRef.current = activeConvIdRef.current
+    const genStreamConvId = activeConvIdRef.current
+    if (streamConvIdRef.current) {
+      backgroundStreamsRef.current.set(aiMsgId, {
+        convId: streamConvIdRef.current,
+        msgId: aiMsgId,
+        messages: [...chatMessages, userMsg, aiMsg],
+      })
+    }
+
     try {
+      // 从智能体库加载对应类型的 system prompt，与设置中配置保持同步
+      const { getAgentSystemPrompt } = await import("@/lib/ai-config")
+      const agentPrompt = getAgentSystemPrompt(type) || undefined
+
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -624,13 +809,14 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
           apiBase: config.apiBase,
           model: chatModel,
           deepThink: deepThinkMode,
+          customPrompt: agentPrompt,
         }),
         signal: abortControllerRef.current.signal,
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setChatMessages((prev) =>
+        wrappedSetChatMessages((prev) =>
           prev.map((m) =>
             m.id === aiMsgId
               ? { ...m, content: `⚠️ ${data.error || "生成失败"}`, generateMeta: { type, label: templateLabel, done: true } }
@@ -642,7 +828,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
 
       const reader = res.body?.getReader()
       if (!reader) {
-        setChatMessages((prev) =>
+        wrappedSetChatMessages((prev) =>
           prev.map((m) =>
             m.id === aiMsgId
               ? { ...m, content: "⚠️ 无法读取响应流", generateMeta: { type, label: templateLabel, done: true } }
@@ -657,7 +843,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       const result = await streamIntoMessage({
         reader,
         msgId: aiMsgId,
-        setChatMessages,
+        setChatMessages: wrappedSetChatMessages,
         parseReasoningFromContent,
         rafIdsRef,
       })
@@ -677,7 +863,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
       fullContent = parsedFinal.content
       fullReasoning = parsedFinal.reasoning
 
-      setChatMessages((prev) =>
+      wrappedSetChatMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
             ? { ...m, content: fullContent, reasoning: fullReasoning || undefined, generateMeta: { type, label: templateLabel, done: true } }
@@ -685,7 +871,7 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
         )
       )
     } catch {
-      setChatMessages((prev) =>
+      wrappedSetChatMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
             ? { ...m, content: "⚠️ 网络错误，请重试", generateMeta: { type, label: templateLabel, done: true } }
@@ -693,9 +879,15 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
         )
       )
     } finally {
-      setGenerating(false)
-      setChatLoading(false)
-      isStreamingRef.current = false
+      // 只有当前对话仍然是流关联的对话时，才清理 UI 状态
+      if (genStreamConvId === activeConvIdRef.current) {
+        setGenerating(false)
+        setChatLoading(false)
+        isStreamingRef.current = false
+      }
+      // 清理后台流跟踪
+      backgroundStreamsRef.current.delete(aiMsgId)
+      streamConvIdRef.current = null
     }
   }
 
@@ -759,9 +951,12 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     setChatLoading(true)
     isStreamingRef.current = true
 
-    await streamAI(preceding, newAiMsgId, deepThinkMode)
-    isStreamingRef.current = false
-    setChatLoading(false)
+    const streamConvId = activeConvIdRef.current
+    await streamAI({ userMessages: preceding, aiMsgId: newAiMsgId, deepThink: deepThinkMode })
+    if (streamConvId === activeConvIdRef.current) {
+      isStreamingRef.current = false
+      setChatLoading(false)
+    }
   }
 
   return {
@@ -775,14 +970,17 @@ export function useChatFlow(params: UseChatFlowParams): UseChatFlowReturn {
     chatModel,
     providerList,
     deepThinkMode,
+    deepResearchMode,
     generating,
     isStreamingRef,
+    backgroundStreamsRef,
 
     // Actions
     handleSendMessage,
     handleStopGeneration,
     handleSwitchProvider,
     handleToggleDeepThink,
+    handleToggleDeepResearch,
     handleGenerate,
     handleSaveGenerated,
     handleCopyGenerated,

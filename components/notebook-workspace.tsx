@@ -63,7 +63,7 @@ const MarkdownRenderer = dynamic(
 
 // ─── Sub-modules (code-split) ───
 
-import type { DocFile, Conversation } from "./notebook/types"
+import type { DocFile, Conversation, ChatMessage } from "./notebook/types"
 import {
   loadConversations,
   loadConversationsSync,
@@ -80,6 +80,7 @@ import { useFileCache } from "@/hooks/use-file-cache"
 import { usePptFlow } from "@/hooks/use-ppt-flow"
 import { useAudioFlow } from "@/hooks/use-audio-flow"
 import { useChatFlow } from "@/hooks/use-chat-flow"
+import { useDeepResearch } from "@/hooks/use-deep-research"
 import { TableOfContents } from "./notebook/table-of-contents"
 import { FileExplorer, MobileFileList } from "./notebook/file-explorer"
 const ReadingModePanel = dynamic(
@@ -740,7 +741,60 @@ scheduleOSSFetch(() => {
   // ─── Refs to break circular dependency between useChatFlow ↔ usePptFlow ───
   const pptSessionRef = React.useRef<{ active: boolean } | null>(null)
   const pptAbortRef = React.useRef<AbortController | null>(null)
-  const startPptFlowRef = React.useRef<((text: string) => void) | null>(null)
+  const startPptFlowRef = React.useRef<((text: string, sourceContent?: string) => void) | null>(null)
+
+  // ─── Deep Research: 从问答框发起研究 ───
+  const handleDeepResearch = React.useCallback(async (text: string) => {
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 API Key")
+      return
+    }
+    try {
+      const res = await fetch("/api/deep-research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: text,
+          apiKey: config.apiKey,
+          apiBase: config.apiBase,
+          model: config.model,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        showToast("error", err.error || "研究请求失败")
+        return
+      }
+      const data = await res.json()
+      router.push(`/docs/projects/${data.projectId}?research=${data.jobId}&q=${encodeURIComponent(text)}`)
+    } catch {
+      showToast("error", "研究请求失败，请重试")
+    }
+  }, [router, showToast])
+
+  // ─── Refs (declared early for useChatFlow) ───
+  const activeConvIdRef = React.useRef<string | null>(activeConversationId)
+  const chatMessagesRef = React.useRef<ChatMessage[]>([])
+  React.useEffect(() => {
+    activeConvIdRef.current = activeConversationId
+  }, [activeConversationId])
+
+  // 后台流更新回调：当流在后台运行时，保存对话内容
+  const handleBackgroundStreamUpdate = React.useCallback((convId: string, messages: ChatMessage[]) => {
+    const now = new Date().toISOString()
+    const firstUserMsg = messages.find((m) => m.role === "user")
+    const title = firstUserMsg ? generateConversationTitle(firstUserMsg.content) : "新对话"
+    setConversations((prev) => {
+      const updated = prev.map((c) =>
+        c.id === convId
+          ? { ...c, messages, title, updatedAt: now }
+          : c
+      )
+      saveConversations(projectId, updated)
+      return updated
+    })
+  }, [projectId])
 
   // ─── AI Chat Flow (via hook) ───
   const chatFlow = useChatFlow({
@@ -755,15 +809,18 @@ scheduleOSSFetch(() => {
     pptSessionRef,
     pptAbortRef,
     startPptFlowRef,
+    onDeepResearch: handleDeepResearch,
     showToast,
     fetchFiles,
+    activeConvIdRef,
+    onBackgroundStreamUpdate: handleBackgroundStreamUpdate,
   })
   const {
     chatMessages, setChatMessages, chatInput, setChatInput,
-    chatLoading, setChatLoading, chatModel, providerList, deepThinkMode, generating,
-    isStreamingRef,
+    chatLoading, setChatLoading, chatModel, providerList, deepThinkMode, deepResearchMode, generating,
+    isStreamingRef, backgroundStreamsRef,
     handleSendMessage, handleStopGeneration, handleSwitchProvider,
-    handleToggleDeepThink, handleGenerate, handleSaveGenerated,
+    handleToggleDeepThink, handleToggleDeepResearch, handleGenerate, handleSaveGenerated,
     handleCopyGenerated, handleRegenerateGuide, handleRegenerateChat,
   } = chatFlow
 
@@ -799,13 +856,10 @@ scheduleOSSFetch(() => {
 
   // Save current conversation (must be after useChatFlow which provides chatMessages)
   const savePendingRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-  const activeConvIdRef = React.useRef(activeConversationId)
-  const chatMessagesRef = React.useRef(chatMessages)
-  // 在 effect 中同步 ref 值，避免在 render 阶段修改 ref（lint: refs-during-render）
+  // chatMessagesRef 已在前面提前声明
   React.useEffect(() => {
-    activeConvIdRef.current = activeConversationId
     chatMessagesRef.current = chatMessages
-  }, [activeConversationId, chatMessages])
+  }, [chatMessages])
 
   React.useEffect(() => {
     if (chatMessages.length <= 1) return
@@ -845,12 +899,38 @@ scheduleOSSFetch(() => {
   // ─── Conversation Management (must be after hook destructuring) ───
 
   const startNewConversation = React.useCallback(() => {
-    handleStopGeneration()
+    // 先立即保存当前对话的当前状态（包括 AI 已生成的部分内容）
+    const currentMessages = chatMessagesRef.current
+    const currentConvId = activeConvIdRef.current
+    if (currentMessages.length > 1) {
+      if (savePendingRef.current) clearTimeout(savePendingRef.current)
+      const now = new Date().toISOString()
+      const firstUserMsg = currentMessages.find((m) => m.role === "user")
+      const title = firstUserMsg ? generateConversationTitle(firstUserMsg.content) : "新对话"
+      setConversations((prev) => {
+        let updated: Conversation[]
+        if (currentConvId) {
+          updated = prev.map((c) =>
+            c.id === currentConvId
+              ? { ...c, messages: currentMessages, title, updatedAt: now }
+              : c
+          )
+        } else {
+          const newId = `conv-${Date.now()}`
+          updated = [{ id: newId, title, messages: currentMessages, createdAt: now, updatedAt: now }, ...prev]
+        }
+        saveConversations(projectId, updated)
+        return updated
+      })
+    }
+    // 不中断流式回复——让旧对话的流在后台继续
+    // wrappedSetChatMessages 会检测到对话已切换，自动将更新写入后台存储
+    // 重置 UI 状态让新对话可用
     setPptSession(null)
     setActiveConversationId(null)
     setChatMessages([WELCOME_MESSAGE])
     setShowHistory(false)
-  }, [handleStopGeneration])
+  }, [projectId])
 
   const loadConversation = React.useCallback((conv: Conversation) => {
     if (pptAbortRef.current) {
@@ -866,6 +946,16 @@ scheduleOSSFetch(() => {
     setActiveConversationId(fullConv.id)
     setChatMessages(fullConv.messages?.length > 0 ? fullConv.messages : [WELCOME_MESSAGE])
     setShowHistory(false)
+
+    // 检查该对话是否有后台流正在运行
+    const hasBackgroundStream = backgroundStreamsRef.current
+      && Array.from(backgroundStreamsRef.current.values()).some((entry) => entry.convId === fullConv.id)
+    if (hasBackgroundStream) {
+      // 恢复 loading 状态，让 UI 显示流式回复中的动画
+      setChatLoading(true)
+      isStreamingRef.current = true
+    }
+
     // Restore PPT session from last PPT message
     const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMeta)
     if (lastPptMsg?.pptMeta && lastPptMsg.pptMeta.step !== "done" && lastPptMsg.pptMeta.step !== "error") {
@@ -913,6 +1003,15 @@ scheduleOSSFetch(() => {
     setSelectedText("") // 切换文件时清除划词
     fileCache.loadFileContent(filename)
   }, [fileCache])
+
+  // ─── Deep Research 进度订阅 (URL ?research=jobId 时激活) ───
+  const { researchProgress } = useDeepResearch({
+    projectId,
+    setChatMessages,
+    setChatLoading,
+    fetchFiles,
+    selectFile,
+  })
 
   React.useEffect(() => {
 if (!loadingFiles && files.length > 0 && !activeFile) {
@@ -1524,7 +1623,7 @@ queueMicrotask(() => selectFile(target))
             {activeFile && !editMode && fileContent && (
               <TableOfContents content={fileContent} />
             )}
-            <div id="doc-content-scroll" ref={docContentRef} className={`min-w-0 flex-1 overflow-y-auto ${readingMode && !editMode ? "reading-mode-active" : ""}`}>
+            <div id="doc-content-scroll" ref={docContentRef} className={`min-w-[200px] flex-1 overflow-y-auto ${readingMode && !editMode ? "reading-mode-active" : ""}`}>
               {loadingContent ? (
                 <div className="mx-auto max-w-5xl p-6">
                   <Skeleton className="mb-4 h-7 w-2/3" />
@@ -1618,6 +1717,7 @@ queueMicrotask(() => selectFile(target))
           providerList={providerList}
           onSwitchProvider={handleSwitchProvider}
           deepThinkMode={deepThinkMode}
+          deepResearchMode={deepResearchMode}
           conversations={conversations}
           activeConversationId={activeConversationId}
           showHistory={showHistory}
@@ -1645,6 +1745,7 @@ queueMicrotask(() => selectFile(target))
           onSendMessage={handleSendMessage}
           onStopGeneration={handleStopGeneration}
           onToggleDeepThink={handleToggleDeepThink}
+          onToggleDeepResearch={handleToggleDeepResearch}
           selectedText={selectedText}
           onClearSelectedText={() => setSelectedText("")}
           onStartNewConversation={startNewConversation}

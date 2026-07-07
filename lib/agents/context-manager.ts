@@ -39,6 +39,9 @@ export interface ContextInputs {
   // Selected text
   selectedText?: string
 
+  // Agent role — when present, replaces the default "你是一个笔记 AI 助手" role description
+  agentRole?: string
+
   // User preferences / Persona
   personaPrompt?: string
   userName?: string
@@ -123,7 +126,11 @@ export function buildSystemPrompt(inputs: ContextInputs): string {
     activeFileName,
     fileContent: rawFileContent,
     selectedText,
+    agentRole,
   } = inputs
+
+  // 当有智能体角色时，使用智能体角色作为 AI 身份；否则用默认的笔记助手角色
+  const role = agentRole || "你是一个笔记 AI 助手"
 
   // [P0 FIX] Truncate fileContent to prevent oversized system prompts
   const isRagMode = !!(ragContextText && ragSources && ragSources.length > 0)
@@ -150,7 +157,7 @@ export function buildSystemPrompt(inputs: ContextInputs): string {
     // Web 来源编号从 RAG 来源之后开始，确保编号体系统一
     const webBlock = buildWebContextBlock(inputs, ragSources.length + 1)
 
-    systemPrompt = `你是一个基于文档知识库的 AI 助手。你的回答必须严格遵循以下规则：
+    systemPrompt = `${role}。你的回答必须严格遵循以下规则：
 
 ## 已检索到的参考资料
 以下是从用户笔记本中检索到的相关内容片段：
@@ -173,7 +180,7 @@ ${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}
   // ----- Branch 2: Web search context only -----
   else if (webContextText) {
     const webBlock = buildWebContextBlock(inputs, 1)
-    systemPrompt = `你是一个笔记 AI 助手，具备互联网搜索能力。${activeFile ? `用户当前正在查看文档「${activeFileName}」。` : ""}${webBlock}\n\n回复请使用中文。引用互联网来源时，使用 [来源 N] 标注出处。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
+    systemPrompt = `${role}，具备互联网搜索能力。${activeFile ? `用户当前正在查看文档「${activeFileName}」。` : ""}${webBlock}\n\n回复请使用中文。引用互联网来源时，使用 [来源 N] 标注出处。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
   }
 
   // ----- Branch 3: Web search triggered but empty result -----
@@ -181,19 +188,19 @@ ${activeFile ? `## 当前打开的文档\n用户正在查看「${activeFileName}
     const failReason = webFetchError
       ? "注：联网搜索请求失败（网络错误或服务不可用），以上内容基于模型知识，可能不是最新信息。"
       : "注：联网搜索未返回结果，以上内容基于模型知识，可能不是最新信息。"
-    systemPrompt = `你是一个笔记 AI 助手。${activeFile ? `用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}${truncationNote}\n\n` : ""}用户的问题可能涉及实时信息，但互联网搜索未能获取到结果。请基于你自己的知识尽力回答，并在回答末尾说明「${failReason}」\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
+    systemPrompt = `${role}。${activeFile ? `用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}${truncationNote}\n\n` : ""}用户的问题可能涉及实时信息，但互联网搜索未能获取到结果。请基于你自己的知识尽力回答，并在回答末尾说明「${failReason}」\n\n回复请使用中文。如果用户要求修改文档内容，将修改后的完整文档放在 <doc-update> 和 </doc-update> 标签之间。`
   }
 
   // ----- Branch 4: Active file open (no RAG, no web) -----
   else if (activeFile) {
     const ragFailNote = ragFetchError ? "\n\n注意：知识库检索失败，以下回答仅基于当前文档内容。" : ""
-    systemPrompt = `你是一个笔记 AI 助手。用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}${truncationNote}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。${ragFailNote}\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
+    systemPrompt = `${role}。用户当前正在查看文档「${activeFileName}」。文档内容如下：\n\n${fileContent}${truncationNote}\n\n请基于文档内容回答用户的问题，帮助用户理解、总结、润色或扩展文档内容。回复请使用中文。${ragFailNote}\n\n【重要】如果用户要求你修改、润色、重写、翻译或编辑文档内容，你需要将修改后的完整文档内容放在 <doc-update> 和 </doc-update> 标签之间。这会自动更新中间区域的文档。在标签之外简要说明你做了什么修改即可。例如：\n我已经帮你润色了文档，主要修改了...\n<doc-update>\n修改后的完整文档内容\n</doc-update>`
   }
 
   // ----- Branch 5: No file selected (default) -----
   else {
     systemPrompt =
-      "你是一个笔记 AI 助手，具备互联网搜索能力。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。用户也可以发送链接或以「搜索」开头来搜索互联网内容。回复请使用中文。"
+      `${role}，具备互联网搜索能力。用户还没有选择文档，请友好地引导用户选择一个文档开始工作。用户也可以发送链接或以「搜索」开头来搜索互联网内容。回复请使用中文。`
   }
 
   // ----- Persona injection (applied to any branch) -----
