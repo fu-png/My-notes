@@ -1,0 +1,2047 @@
+"use client"
+
+import * as React from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { encodeFilePath } from "@/lib/utils"
+import {
+  IconFile,
+  IconLoader2,
+  IconCheck,
+  IconX,
+  IconEdit,
+  IconLayoutSidebarRightExpand,
+  IconLink,
+  IconLanguage,
+  IconNotebook,
+  IconRobot,
+} from "@tabler/icons-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+} from "@/components/ui/sheet"
+import { getAIConfig, isAIConfigured, isEmbeddingConfigured, getConfiguredModel, getConfiguredEmbeddingModel, getEmbeddingConfig } from "@/lib/ai-config"
+import { useToast } from "@/hooks/use-toast"
+import { ToastContainer } from "@/components/toast-container"
+import { ErrorBoundary } from "@/components/error-boundary"
+import { Skeleton } from "@/components/ui/skeleton"
+import dynamic from "next/dynamic"
+
+// ─── Lazy-loaded heavy sub-components ───
+
+const RichTextEditor = dynamic(
+  () => import("@/components/rich-text-editor").then((m) => ({ default: m.RichTextEditor })),
+  { loading: () => <div className="flex items-center justify-center py-20"><IconLoader2 className="size-5 animate-spin text-muted-foreground" /></div> }
+)
+const MarkdownRenderer = dynamic(
+  () => import("@/components/markdown-renderer").then((m) => ({ default: m.MarkdownRenderer })),
+  { loading: () => <div className="flex items-center justify-center py-20"><IconLoader2 className="size-5 animate-spin text-muted-foreground" /></div> }
+)
+
+// ─── Sub-modules (code-split) ───
+
+import type { DocFile, Conversation, ChatMessage } from "./notebook/types"
+import {
+  loadConversations,
+  loadConversationsSync,
+  loadConversationSummaries,
+  loadConversationFromCache,
+  saveConversations,
+  flushPendingSave,
+  migrateLocalToOSS,
+  countWords,
+  generateConversationTitle,
+  WELCOME_MESSAGE,
+} from "./notebook/types"
+import { useFileCache } from "@/hooks/use-file-cache"
+import { usePptFlow } from "@/hooks/use-ppt-flow"
+import { useAudioFlow } from "@/hooks/use-audio-flow"
+import { useChatFlow } from "@/hooks/use-chat-flow"
+import { useDeepResearch } from "@/hooks/use-deep-research"
+import { TableOfContents } from "./notebook/table-of-contents"
+import { FileExplorer, MobileFileList } from "./notebook/file-explorer"
+import { ConversationList } from "./notebook/agent-mode-layout"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+const ReadingModePanel = dynamic(
+  () => import("./notebook/reading-mode").then((m) => ({ default: m.ReadingModePanel })),
+  { ssr: false }
+)
+const ReadingModeButton = dynamic(
+  () => import("./notebook/reading-mode").then((m) => ({ default: m.ReadingModeButton })),
+  { ssr: false }
+)
+const ChatPanel = dynamic(
+  () => import("./notebook/chat-panel").then((m) => ({ default: m.ChatPanel })),
+  {
+    loading: () => (
+      <div className="hidden w-80 shrink-0 items-center justify-center border-l bg-background md:flex">
+        <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  }
+)
+
+// ─── Main Component ───
+
+interface NotebookWorkspaceProps {
+  projectId: string
+  projectName: string
+  /** 服务端预取的文件列表（避免客户端首次 API 请求） */
+  initialFiles?: { filename: string; title: string; lastModified: number }[]
+  /** 服务端预取的初始文件名 */
+  initialFile?: string | null
+  /** 服务端预取的初始文件内容 */
+  initialFileContent?: string
+}
+
+export function NotebookWorkspace({
+  projectId,
+  projectName,
+  initialFiles,
+  initialFile = null,
+  initialFileContent = "",
+}: NotebookWorkspaceProps) {
+const router = useRouter()
+const searchParams = useSearchParams()
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const chatEndRef = React.useRef<HTMLDivElement>(null)
+  const chatScrollRef = React.useRef<HTMLDivElement>(null)
+  const userScrolledUpRef = React.useRef(false)
+
+  // Project name state — 初始值来自 Server Component prop，
+  // 但会在 fetchFiles 时用 API 返回的最新名称覆盖，
+  // 避免 Next.js 客户端 Router Cache 导致旧名称回退
+  const [currentProjectName, setCurrentProjectName] = React.useState(projectName)
+
+  // ─── File order persistence (localStorage) ───
+  const fileOrderKey = `file-order-${projectId}`
+
+  const applyFileOrder = React.useCallback((rawFiles: DocFile[]) => {
+    try {
+      const stored = localStorage.getItem(fileOrderKey)
+      if (!stored) return rawFiles
+      const order: string[] = JSON.parse(stored)
+      const orderMap = new Map(order.map((f, i) => [f, i]))
+      return [...rawFiles].sort((a, b) => {
+        const ai = orderMap.get(a.filename)
+        const bi = orderMap.get(b.filename)
+        if (ai !== undefined && bi !== undefined) return ai - bi
+        if (ai !== undefined) return -1
+        if (bi !== undefined) return 1
+        return (b.lastModified || 0) - (a.lastModified || 0)
+      })
+    } catch {
+      return rawFiles
+    }
+  }, [fileOrderKey])
+
+  // File state
+  const [files, setFiles] = React.useState<DocFile[]>(() => {
+    const raw = initialFiles ? initialFiles.map(f => ({ filename: f.filename, title: f.title, lastModified: f.lastModified })) : []
+    return applyFileOrder(raw)
+  })
+  const [loadingFiles, setLoadingFiles] = React.useState(!initialFiles)
+  const [activeFile, setActiveFile] = React.useState<string | null>(initialFile)
+  const fileCache = useFileCache({ projectId, initialFile, initialContent: initialFileContent })
+  const { fileContent, editContent, setEditContent, loadingContent } = fileCache
+  const [uploading, setUploading] = React.useState(false)
+  const [isDragging, setIsDragging] = React.useState(false)
+  const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null)
+  const deleteTargetRef = React.useRef<string | null>(null)
+  const [deleting, setDeleting] = React.useState<string | null>(null)
+
+// Editor state
+  const [editMode, setEditMode] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
+
+  // New file inline creation
+  const [creatingFile, setCreatingFile] = React.useState(false)
+  const [newFileName, setNewFileName] = React.useState("")
+
+  // URL import state
+  const [createMode, setCreateMode] = React.useState<"file" | "url">("file")
+  const [importUrl, setImportUrl] = React.useState("")
+  const [importingUrl, setImportingUrl] = React.useState(false)
+
+  // Translation
+  const [translating, setTranslating] = React.useState(false)
+
+  // Reading mode
+  const [readingMode, setReadingMode] = React.useState(false)
+  const prevShowAIRef = React.useRef(true)
+
+  // Layout mode: notebook (default) or agent (Codex-style)
+  const [layoutMode, setLayoutMode] = React.useState<"notebook" | "agent">("notebook")
+
+  // File list collapsed (agent mode)
+  const [fileListCollapsed, setFileListCollapsed] = React.useState(false)
+
+  // RAG state
+  const [ragEnabled, setRagEnabled] = React.useState(false)
+  const [indexStatus, setIndexStatus] = React.useState<{
+    indexed: boolean
+    lastIndexedAt?: string
+    totalChunks?: number
+    totalFiles?: number
+  } | null>(null)
+  const [indexing, setIndexing] = React.useState(false)
+  const [indexProgress, setIndexProgress] = React.useState<string>("")
+  const [showSources, setShowSources] = React.useState(false)
+  const [sourcesData, setSourcesData] = React.useState<{
+    files: { filename: string; fileTitle: string; chunkCount: number; totalTokens: number; headings: string[] }[]
+    totalChunks: number
+    totalTokens: number
+  } | null>(null)
+  const [sourcesLoading, setSourcesLoading] = React.useState(false)
+
+  // AI panel resize
+  const [aiPanelWidth, setAiPanelWidth] = React.useState(360)
+  const aiPanelRef = React.useRef<HTMLDivElement>(null)
+
+  // Reading mode panel resize
+  const [readingPanelWidth, setReadingPanelWidth] = React.useState(320)
+  const readingPanelRef = React.useRef<HTMLDivElement>(null)
+
+  // 划词问答
+  const [selectedText, setSelectedText] = React.useState("")
+  const docContentRef = React.useRef<HTMLDivElement>(null)
+
+  // 监听文档区域的划词事件
+  React.useEffect(() => {
+    const handleSelection = () => {
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed) return // 选区消失时不清除，保留已有划词
+      const range = selection.getRangeAt(0)
+      const container = docContentRef.current
+      if (!container) return
+      // 仅当选区在文档内容区域内时才捕获
+      if (container.contains(range.commonAncestorContainer)) {
+        const text = selection.toString().trim()
+        if (text.length > 0) {
+          setSelectedText(text)
+        }
+      }
+    }
+    document.addEventListener("mouseup", handleSelection)
+    return () => document.removeEventListener("mouseup", handleSelection)
+  }, [])
+
+  // 切换文件时清除划词 — moved into selectFile() to avoid set-state-in-effect
+
+  // 拖拽调整宽度的通用工厂函数（消除 AI 面板 / 精读面板乌重复的 resize 逻辑）
+  const createResizeHandler = React.useCallback(
+    (panelRef: React.RefObject<HTMLDivElement | null>, setWidth: React.Dispatch<React.SetStateAction<number>>) => {
+      return (e: React.MouseEvent) => {
+        e.preventDefault()
+        const startX = e.clientX
+        const startWidth = panelRef.current?.offsetWidth ?? 320
+        let rafId: number | null = null
+        let latestWidth = startWidth
+
+        const handleMouseMove = (ev: MouseEvent) => {
+          const delta = startX - ev.clientX
+          latestWidth = Math.min(Math.max(startWidth + delta, 260), 600)
+          if (rafId === null) {
+            rafId = requestAnimationFrame(() => {
+              if (panelRef.current) {
+                panelRef.current.style.width = `${latestWidth}px`
+              }
+              rafId = null
+            })
+          }
+        }
+
+        const handleMouseUp = () => {
+          if (rafId !== null) cancelAnimationFrame(rafId)
+          document.removeEventListener("mousemove", handleMouseMove)
+          document.removeEventListener("mouseup", handleMouseUp)
+          document.body.style.cursor = ""
+          document.body.style.userSelect = ""
+          setWidth(latestWidth)
+        }
+
+        document.addEventListener("mousemove", handleMouseMove)
+        document.addEventListener("mouseup", handleMouseUp)
+        document.body.style.cursor = "col-resize"
+        document.body.style.userSelect = "none"
+      }
+    },
+    []
+  )
+
+  const handleResizeStart = React.useCallback(
+    (e: React.MouseEvent) => createResizeHandler(aiPanelRef, setAiPanelWidth)(e),
+    [createResizeHandler]
+  )
+
+  // Reading mode panel resize handler
+  const handleReadingResizeStart = React.useCallback(
+    (e: React.MouseEvent) => createResizeHandler(readingPanelRef, setReadingPanelWidth)(e),
+    [createResizeHandler]
+  )
+
+
+  // Conversation history
+  const [conversations, setConversations] = React.useState<Conversation[]>([])
+  const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null)
+  const [showHistory, setShowHistory] = React.useState(false)
+
+React.useEffect(() => {
+// Instant load from localStorage cache (full data, for immediate use)
+const cached = loadConversationsSync(projectId)
+queueMicrotask(() => setConversations(cached))
+// 延迟加载 OSS 对话历史，避免阻塞首屏渲染
+const scheduleOSSFetch = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb: () => void) => setTimeout(cb, 200)
+scheduleOSSFetch(() => {
+  loadConversationSummaries(projectId).then(async (summaries) => {
+    if (summaries.length > 0) {
+      const cachedIds = new Set(cached.map((c) => c.id))
+      const summaryIds = new Set(summaries.map((s) => s.id))
+      const needsFullFetch =
+        cached.length !== summaries.length ||
+        summaries.some((s) => !cachedIds.has(s.id)) ||
+        cached.some((c) => !summaryIds.has(c.id))
+
+      if (needsFullFetch) {
+        const fullConvs = await loadConversations(projectId)
+        queueMicrotask(() => setConversations(fullConvs))
+      }
+    } else if (cached.length > 0) {
+      migrateLocalToOSS(projectId)
+    }
+  })
+})
+}, [projectId])
+
+  // Flush pending saves and warn about unsaved edits on page unload
+  const conversationsRef = React.useRef(conversations)
+  const editModeRef = React.useRef(false)
+  const editContentRef = React.useRef("")
+  const fileContentRef = React.useRef("")
+  // 在 effect 中同步 ref 值，避免在 render 阶段修改 ref（lint: refs-during-render）
+  React.useEffect(() => {
+    conversationsRef.current = conversations
+    editModeRef.current = editMode
+    editContentRef.current = editContent
+    fileContentRef.current = fileContent
+  }, [conversations, editMode, editContent, fileContent])
+  React.useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (conversationsRef.current.length > 0) {
+        flushPendingSave(projectId, conversationsRef.current)
+      }
+      // Warn user if there are unsaved edits
+      if (editModeRef.current && editContentRef.current !== fileContentRef.current) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+  }, [projectId])
+
+  // AI panel visibility
+  const [showAI, setShowAI] = React.useState(() => {
+    if (typeof window === "undefined") return true
+    return window.innerWidth >= 768
+  })
+
+  const toggleReadingMode = React.useCallback((forceOff?: boolean) => {
+    setReadingMode((prev) => {
+      const next = forceOff ? false : !prev
+      if (next && !prev) {
+        prevShowAIRef.current = showAI
+        setShowAI(false)
+      } else if (!next && prev) {
+        setShowAI(prevShowAIRef.current)
+      }
+      return next
+    })
+  }, [showAI])
+
+  // 键盘快捷键：Cmd+Shift+R / Ctrl+Shift+R 切换精读模式
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "R") {
+        e.preventDefault()
+        toggleReadingMode()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [toggleReadingMode])
+
+  // AI config
+  const [aiConfigured, setAiConfigured] = React.useState(() => isAIConfigured())
+
+  // 使用 ref 持有 triggerAutoIndex，以便在 ai-config-changed 监听器中调用
+  // （triggerAutoIndex 声明在更下方，直接引用会触发 TDZ）
+  const triggerAutoIndexRef = React.useRef<(() => void) | null>(null)
+
+  React.useEffect(() => {
+    const handleConfigChange = () => {
+      const configured = isAIConfigured()
+      setAiConfigured(configured)
+      // [关键修复] API 配置变更后，如果已配置且索引未建立，自动触发索引
+      // 解决用户配好模型后 RAG 不生效的问题
+      if (configured) {
+        triggerAutoIndexRef.current?.()
+      }
+    }
+    window.addEventListener("ai-config-changed", handleConfigChange)
+    return () => window.removeEventListener("ai-config-changed", handleConfigChange)
+  }, [])
+
+  // Toast (professional queue system with animations) — 前置声明以供 fetchIndexStatus/fetchSourcesData 使用
+  const { toasts, showToast, removeToast } = useToast()
+
+  // Fetch RAG index status，返回 indexed 状态以供调用方判断
+  const fetchIndexStatus = React.useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status" }),
+      })
+      const data = await res.json()
+      if (data.status) {
+        setIndexStatus(data.status)
+        if (data.status.indexed) {
+          setRagEnabled(true)
+          return true
+        }
+      }
+      return false
+    } catch (err) {
+      console.warn("[fetchIndexStatus]", err)
+      return false
+    }
+  }, [projectId])
+
+  // 延迟检查 RAG 索引状态，避免阻塞首屏渲染
+  React.useEffect(() => {
+    const schedule = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb: () => void) => setTimeout(cb, 300)
+    const id = schedule(() => fetchIndexStatus())
+    return () => {
+      if (typeof cancelIdleCallback !== "undefined") cancelIdleCallback(id as number)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  const fetchSourcesData = React.useCallback(async () => {
+    setSourcesLoading(true)
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sources" }),
+      })
+      const data = await res.json()
+      if (data.files) {
+        setSourcesData({ files: data.files, totalChunks: data.totalChunks, totalTokens: data.totalTokens })
+      }
+    } catch (err) {
+      console.warn("[fetchSourcesData]", err)
+      showToast("error", "知识源数据加载失败")
+    } finally {
+      setSourcesLoading(false)
+    }
+  }, [projectId, showToast])
+
+  // Auto-index on file changes
+  const autoIndexTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const triggerAutoIndex = React.useCallback(() => {
+    if (autoIndexTimerRef.current) {
+      clearTimeout(autoIndexTimerRef.current)
+    }
+
+    autoIndexTimerRef.current = setTimeout(async () => {
+      const config = getAIConfig()
+      if (!config) return
+      // 只有用户主动配置了向量模型（填写了 Embedding API Key 或 Base）才自动触发索引
+      // 仅配置了文本模型不应该后台偷偷跑 embedding 索引构建
+      if (!isEmbeddingConfigured()) return
+      const embConfig = getEmbeddingConfig()
+
+      // 显示索引进度，让用户知道后台正在工作
+      setIndexing(true)
+      setIndexProgress("正在自动构建知识索引...")
+
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "index",
+            apiKey: config.apiKey,
+            apiBase: config.apiBase,
+            model: getConfiguredModel(),
+            embeddingModel: embConfig?.embeddingModel || getConfiguredEmbeddingModel(),
+            embeddingApiKey: embConfig?.apiKey,
+            embeddingApiBase: embConfig?.apiBase,
+            rerankModel: embConfig?.rerankModel,
+            stream: true,
+          }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          const errDetail = data.error || `HTTP ${res.status}`
+          console.warn("[autoIndex] HTTP error:", errDetail)
+          showToast("error", `知识索引构建失败: ${errDetail}`)
+          return
+        }
+
+        const reader = res.body?.getReader()
+        if (!reader) return
+
+        const { parseSSEStream } = await import("@/lib/infra/stream-utils")
+        let success = false
+
+        for await (const event of parseSSEStream(reader)) {
+          // 实时更新进度显示
+          if (typeof event.progress === "string") {
+            setIndexProgress(event.progress)
+          }
+          if (event.done === true) {
+            if (event.success === true) {
+              success = true
+              setRagEnabled(true)
+              fetchIndexStatus()
+              if (showSources) fetchSourcesData()
+            } else {
+              const errMsg = typeof event.error === "string" ? event.error : "索引失败"
+              console.warn("[autoIndex] failed:", errMsg)
+              showToast("error", `知识索引构建失败: ${errMsg}`)
+            }
+          }
+        }
+
+        if (!success) {
+          console.warn("[autoIndex] stream ended without success")
+          showToast("error", "知识索引构建异常：连接意外中断，请重试")
+        }
+      } catch (err: unknown) {
+        console.warn("[autoIndex]", err)
+        if (err instanceof Error && err.message) {
+          showToast("error", `知识索引构建异常: ${err.message}`)
+        }
+      } finally {
+        setIndexing(false)
+        setIndexProgress("")
+      }
+    }, 2000)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  // 手动触发全量重建索引：先删除旧索引数据，再执行全量索引
+  const triggerFullReindex = React.useCallback(async () => {
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 AI API Key")
+      return
+    }
+    if (!isEmbeddingConfigured()) {
+      showToast("error", "请先配置 Embedding 模型")
+      return
+    }
+
+    setIndexing(true)
+    setIndexProgress("正在清除旧索引...")
+
+    try {
+      // 1. 删除旧索引
+      const delRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete" }),
+      })
+      if (!delRes.ok) {
+        const data = await delRes.json().catch(() => ({}))
+        throw new Error(data.error || `删除索引失败: HTTP ${delRes.status}`)
+      }
+
+      setIndexProgress("正在全量重建索引...")
+
+      // 2. 全量索引（旧索引已清除，pipeline 会自动走全量路径）
+      const embConfig = getEmbeddingConfig()
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "index",
+          apiKey: config.apiKey,
+          apiBase: config.apiBase,
+          model: getConfiguredModel(),
+          embeddingModel: embConfig?.embeddingModel || getConfiguredEmbeddingModel(),
+          embeddingApiKey: embConfig?.apiKey,
+          embeddingApiBase: embConfig?.apiBase,
+          rerankModel: embConfig?.rerankModel,
+          stream: true,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `索引失败: HTTP ${res.status}`)
+      }
+
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error("无法读取响应流")
+
+      const { parseSSEStream } = await import("@/lib/infra/stream-utils")
+      let success = false
+
+      for await (const event of parseSSEStream(reader)) {
+        if (typeof event.progress === "string") {
+          setIndexProgress(event.progress)
+        }
+        if (event.done === true) {
+          if (event.success === true) {
+            success = true
+            setRagEnabled(true)
+            fetchIndexStatus()
+            if (showSources) fetchSourcesData()
+            showToast("success", "全量索引重建完成")
+          } else {
+            const errMsg = typeof event.error === "string" ? event.error : "索引失败"
+            throw new Error(errMsg)
+          }
+        }
+      }
+
+      if (!success) {
+        throw new Error("连接意外中断，请重试")
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "未知错误"
+      console.warn("[fullReindex]", err)
+      showToast("error", `全量索引重建失败: ${msg}`)
+    } finally {
+      setIndexing(false)
+      setIndexProgress("")
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, showSources])
+
+  // 将 triggerAutoIndex 注入 ref，供 ai-config-changed 监听器使用
+  React.useEffect(() => {
+    triggerAutoIndexRef.current = triggerAutoIndex
+  }, [triggerAutoIndex])
+
+  // 页面加载时：先等 fetchIndexStatus 完成，再判断是否需要触发自动索引
+  // 修复：之前用 setTimeout(3000) + ragEnabled state 判断，由于 ragEnabled 初始为 false
+  // 且 fetchIndexStatus 是 idle/延迟执行，导致每次进入页面都误触发索引
+  React.useEffect(() => {
+    let cancelled = false
+    const checkAndIndex = async () => {
+      // 等待索引状态查询完成，拿到确切结果再决定
+      const alreadyIndexed = await fetchIndexStatus()
+      if (cancelled) return
+      // 只有 API 已配置、embedding 已配置、且索引尚未建立时才自动触发
+      if (isAIConfigured() && isEmbeddingConfigured() && !alreadyIndexed) {
+        triggerAutoIndex()
+      }
+    }
+    // 延迟 300ms 避免阻塞首屏渲染
+    const timer = setTimeout(checkAndIndex, 300)
+    return () => { cancelled = true; clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  React.useEffect(() => {
+    return () => {
+      if (autoIndexTimerRef.current) {
+        clearTimeout(autoIndexTimerRef.current)
+      }
+    }
+  }, [])
+
+  // ─── Data Fetching (moved before useChatFlow which depends on fetchFiles) ───
+
+  const fetchFiles = React.useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
+      const data = await res.json()
+      const orderedFiles = applyFileOrder(data.files || [])
+      setFiles(orderedFiles)
+      // 用 API 返回的最新名称覆盖，防止 Router Cache 缓存了旧名称
+      if (data.project?.name) {
+        setCurrentProjectName(data.project.name)
+      }
+      // 文件列表加载成功后，后台预取前 5 个文件内容（避免大量并发请求抢占带宽）
+      const PREFETCH_LIMIT = 5
+      if (orderedFiles.length > 0) {
+        // 如果 API 返回了第一篇文件的完整内容，直接写入缓存
+        if (data.firstFileContent?.filename && data.firstFileContent.content) {
+          fileCache.setFileContent(data.firstFileContent.filename, data.firstFileContent.content)
+          // 预取时跳过已缓存的第一篇
+          fileCache.prefetchFiles(
+            orderedFiles
+              .filter((f: DocFile) => f.filename !== data.firstFileContent.filename)
+              .slice(0, PREFETCH_LIMIT - 1)
+              .map((f: DocFile) => f.filename)
+          )
+        } else {
+          fileCache.prefetchFiles(
+            orderedFiles.slice(0, PREFETCH_LIMIT).map((f: DocFile) => f.filename)
+          )
+        }
+      }
+    } catch (err) {
+      console.error("[fetchFiles] Failed:", err)
+      setFiles([])
+      showToast("error", "文件列表加载失败，请刷新重试")
+    } finally {
+      setLoadingFiles(false)
+    }
+  }, [projectId, showToast, applyFileOrder, fileCache])
+
+  const handleReorderFiles = React.useCallback((orderedFilenames: string[]) => {
+    localStorage.setItem(fileOrderKey, JSON.stringify(orderedFilenames))
+    setFiles(prev => {
+      const fileMap = new Map(prev.map(f => [f.filename, f]))
+      const reordered: DocFile[] = []
+      for (const fn of orderedFilenames) {
+        const file = fileMap.get(fn)
+        if (file) {
+          reordered.push(file)
+          fileMap.delete(fn)
+        }
+      }
+      // 追加不在排序列表中的文件
+      for (const f of fileMap.values()) {
+        reordered.push(f)
+      }
+      return reordered
+    })
+  }, [fileOrderKey])
+
+  React.useEffect(() => {
+    // 有服务端预取数据时跳过首次 fetch
+    if (initialFiles) return
+    queueMicrotask(() => fetchFiles())
+  }, [fetchFiles]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Refs to break circular dependency between useChatFlow ↔ usePptFlow ───
+  const pptSessionRef = React.useRef<{ active: boolean } | null>(null)
+  const pptAbortRef = React.useRef<AbortController | null>(null)
+  const startPptFlowRef = React.useRef<((text: string, sourceContent?: string) => void) | null>(null)
+
+  // ─── Deep Research: 从问答框发起研究 ───
+  const handleDeepResearch = React.useCallback(async (text: string) => {
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 API Key")
+      return
+    }
+    try {
+      const res = await fetch("/api/deep-research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: text,
+          apiKey: config.apiKey,
+          apiBase: config.apiBase,
+          model: config.model,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        showToast("error", err.error || "研究请求失败")
+        return
+      }
+      const data = await res.json()
+      router.push(`/docs/projects/${data.projectId}?research=${data.jobId}&q=${encodeURIComponent(text)}`)
+    } catch {
+      showToast("error", "研究请求失败，请重试")
+    }
+  }, [router, showToast])
+
+  // ─── Refs (declared early for useChatFlow) ───
+  const activeConvIdRef = React.useRef<string | null>(activeConversationId)
+  const chatMessagesRef = React.useRef<ChatMessage[]>([])
+  React.useEffect(() => {
+    activeConvIdRef.current = activeConversationId
+  }, [activeConversationId])
+
+  // 后台流更新回调：当流在后台运行时，保存对话内容
+  const handleBackgroundStreamUpdate = React.useCallback((convId: string, messages: ChatMessage[]) => {
+    const now = new Date().toISOString()
+    const firstUserMsg = messages.find((m) => m.role === "user")
+    const title = firstUserMsg ? generateConversationTitle(firstUserMsg.content) : "新对话"
+    setConversations((prev) => {
+      const updated = prev.map((c) =>
+        c.id === convId
+          ? { ...c, messages, title, updatedAt: now }
+          : c
+      )
+      saveConversations(projectId, updated)
+      return updated
+    })
+  }, [projectId])
+
+  // ─── AI Chat Flow (via hook) ───
+  const chatFlow = useChatFlow({
+    projectId,
+    activeFile,
+    files,
+    fileContent,
+    ragEnabled,
+    indexStatus,
+    selectedText,
+    setSelectedText,
+    pptSessionRef,
+    pptAbortRef,
+    startPptFlowRef,
+    onDeepResearch: handleDeepResearch,
+    showToast,
+    fetchFiles,
+    activeConvIdRef,
+    onBackgroundStreamUpdate: handleBackgroundStreamUpdate,
+  })
+  const {
+    chatMessages, setChatMessages, chatInput, setChatInput,
+    chatLoading, setChatLoading, chatModel, providerList, deepThinkMode, deepResearchMode, generating,
+    isStreamingRef, backgroundStreamsRef,
+    handleSendMessage, handleStopGeneration, handleSwitchProvider,
+    handleToggleDeepThink, handleToggleDeepResearch, handleGenerate, handleSaveGenerated,
+    handleCopyGenerated, handleRegenerateGuide, handleRegenerateChat,
+  } = chatFlow
+
+  // ─── PPT Generation (via hook) ───
+  const pptFlow = usePptFlow({
+    projectId,
+    ragEnabled,
+    chatMessages,
+    setChatMessages,
+    setChatLoading: (v: boolean) => setChatLoading(v),
+    chatEndRef,
+    showToast,
+  })
+  const { pptSession, setPptSession } = pptFlow
+
+  // 在 effect 中同步 ref 值，避免在 render 阶段修改 ref（lint: refs-during-render）
+  React.useEffect(() => {
+    pptSessionRef.current = pptSession
+    pptAbortRef.current = pptFlow.pptAbortRef.current
+    startPptFlowRef.current = pptFlow.startPptFlow
+  }, [pptSession, pptFlow.pptAbortRef, pptFlow.startPptFlow])
+
+  // ─── Audio Overview (via hook) ───
+  const audioFlow = useAudioFlow({
+    projectId,
+    chatModel,
+    chatMessages,
+    setChatMessages,
+    setChatLoading: (v: boolean) => setChatLoading(v),
+    showToast,
+  })
+  const { audioGenerating, audioPlaying } = audioFlow
+
+  // Save current conversation (must be after useChatFlow which provides chatMessages)
+  const savePendingRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  // chatMessagesRef 已在前面提前声明
+  React.useEffect(() => {
+    chatMessagesRef.current = chatMessages
+  }, [chatMessages])
+
+  React.useEffect(() => {
+    if (chatMessages.length <= 1) return
+
+    if (savePendingRef.current) clearTimeout(savePendingRef.current)
+    savePendingRef.current = setTimeout(() => {
+      const currentMessages = chatMessagesRef.current
+      const currentConvId = activeConvIdRef.current
+      const now = new Date().toISOString()
+      const firstUserMsg = currentMessages.find((m) => m.role === "user")
+      const title = firstUserMsg ? generateConversationTitle(firstUserMsg.content) : "新对话"
+
+      setConversations((prev) => {
+        let updated: Conversation[]
+        if (currentConvId) {
+          updated = prev.map((c) =>
+            c.id === currentConvId
+              ? { ...c, messages: currentMessages, title, updatedAt: now }
+              : c
+          )
+        } else {
+          const newId = `conv-${Date.now()}`
+          setActiveConversationId(newId)
+          updated = [{ id: newId, title, messages: currentMessages, createdAt: now, updatedAt: now }, ...prev]
+        }
+        saveConversations(projectId, updated)
+        return updated
+      })
+    }, 800)
+
+    return () => {
+      if (savePendingRef.current) clearTimeout(savePendingRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatMessages])
+
+  // ─── Conversation Management (must be after hook destructuring) ───
+
+  const startNewConversation = React.useCallback(() => {
+    // 先立即保存当前对话的当前状态（包括 AI 已生成的部分内容）
+    const currentMessages = chatMessagesRef.current
+    const currentConvId = activeConvIdRef.current
+    if (currentMessages.length > 1) {
+      if (savePendingRef.current) clearTimeout(savePendingRef.current)
+      const now = new Date().toISOString()
+      const firstUserMsg = currentMessages.find((m) => m.role === "user")
+      const title = firstUserMsg ? generateConversationTitle(firstUserMsg.content) : "新对话"
+      setConversations((prev) => {
+        let updated: Conversation[]
+        if (currentConvId) {
+          updated = prev.map((c) =>
+            c.id === currentConvId
+              ? { ...c, messages: currentMessages, title, updatedAt: now }
+              : c
+          )
+        } else {
+          const newId = `conv-${Date.now()}`
+          updated = [{ id: newId, title, messages: currentMessages, createdAt: now, updatedAt: now }, ...prev]
+        }
+        saveConversations(projectId, updated)
+        return updated
+      })
+    }
+    // 不中断流式回复——让旧对话的流在后台继续
+    // wrappedSetChatMessages 会检测到对话已切换，自动将更新写入后台存储
+    // 重置 UI 状态让新对话可用
+    setPptSession(null)
+    setActiveConversationId(null)
+    setChatMessages([WELCOME_MESSAGE])
+    setShowHistory(false)
+  }, [projectId])
+
+  const loadConversation = React.useCallback((conv: Conversation) => {
+    if (pptAbortRef.current) {
+      pptAbortRef.current.abort()
+      pptAbortRef.current = null
+    }
+    // If the conversation has no messages (summary-only), try to load full data
+    let fullConv = conv
+    if ((!conv.messages || conv.messages.length === 0) && conv.id) {
+      const cached = loadConversationFromCache(projectId, conv.id)
+      if (cached) fullConv = cached
+    }
+    setActiveConversationId(fullConv.id)
+    setChatMessages(fullConv.messages?.length > 0 ? fullConv.messages : [WELCOME_MESSAGE])
+    setShowHistory(false)
+
+    // 检查该对话是否有后台流正在运行
+    const hasBackgroundStream = backgroundStreamsRef.current
+      && Array.from(backgroundStreamsRef.current.values()).some((entry) => entry.convId === fullConv.id)
+    if (hasBackgroundStream) {
+      // 恢复 loading 状态，让 UI 显示流式回复中的动画
+      setChatLoading(true)
+      isStreamingRef.current = true
+    }
+
+    // Restore PPT session from last PPT message
+    const lastPptMsg = [...(fullConv.messages || [])].reverse().find((m) => m.pptMeta)
+    if (lastPptMsg?.pptMeta && lastPptMsg.pptMeta.step !== "done" && lastPptMsg.pptMeta.step !== "error") {
+      const pm = lastPptMsg.pptMeta
+      setPptSession({
+        active: false,
+        step: pm.step as "style-select" | "slide-count" | "custom-prompt" | "generating-outline" | "outline-review" | "generating-images" | "done",
+        stylePreset: pm.stylePreset || "corporate",
+        slideCount: pm.slideCount || 8,
+        customPrompt: pm.customPrompt || "",
+        userIntent: pm.userIntent || "",
+        outlineMsgId: null,
+        imagesMsgId: null,
+      })
+    } else {
+      setPptSession(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  const deleteConversation = React.useCallback((convId: string) => {
+    setConversations((prev) => {
+      const updated = prev.filter((c) => c.id !== convId)
+      saveConversations(projectId, updated)
+      return updated
+    })
+    if (activeConversationId === convId) {
+      startNewConversation()
+    }
+  }, [projectId, activeConversationId, startNewConversation])
+
+  // Track whether editor has unsaved changes (用于退出编辑模式时判断是否需要确认)
+  const [cancelEditConfirm, setCancelEditConfirm] = React.useState(false)
+
+  const [pendingFileSwitch, setPendingFileSwitch] = React.useState<string | null>(null)
+
+  const selectFile = React.useCallback((filename: string) => {
+    // If switching files while editing with unsaved changes, ask for confirmation
+    if (editModeRef.current && editContentRef.current !== fileContentRef.current) {
+      setPendingFileSwitch(filename)
+      return
+    }
+    setActiveFile(filename)
+    setEditMode(false)
+    setSelectedText("") // 切换文件时清除划词
+    fileCache.loadFileContent(filename)
+  }, [fileCache])
+
+  // ─── Deep Research 进度订阅 (URL ?research=jobId 时激活) ───
+  const { researchProgress } = useDeepResearch({
+    projectId,
+    setChatMessages,
+    setChatLoading,
+    fetchFiles,
+    selectFile,
+  })
+
+  React.useEffect(() => {
+if (!loadingFiles && files.length > 0 && !activeFile) {
+const fileParam = searchParams.get("file")
+const target = fileParam && files.some(f => f.filename === fileParam) ? fileParam : files[0].filename
+queueMicrotask(() => selectFile(target))
+}
+}, [loadingFiles, files]) // eslint-disable-line react-hooks/exhaustive-deps
+  // initialFile 已由服务端预取设置，activeFile 初始值非 null，此 effect 不会重复触发
+
+  // ─── File Operations ───
+
+  const handleUpload = React.useCallback(async (fileList: FileList | File[]) => {
+    const uploadFiles = Array.from(fileList)
+    if (uploadFiles.length === 0) return
+
+    // 前端文件大小检查（10MB 限制），避免上传大文件浪费带宽
+    const MAX_FILE_SIZE = 10 * 1024 * 1024
+    const oversized = uploadFiles.filter((f) => f.size > MAX_FILE_SIZE)
+    if (oversized.length > 0) {
+      const names = oversized.map((f) => f.name).join("、")
+      showToast("error", `以下文件超过 10MB 限制：${names}`)
+      return
+    }
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      uploadFiles.forEach((file) => formData.append("file", file))
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/files`,
+        { method: "POST", body: formData }
+      )
+      const data = await res.json()
+      if (res.ok && data.success) {
+        const { summary } = data
+        if (summary.total === 1) {
+          showToast("success", `"${data.title}" 上传成功`)
+        } else {
+          const msg = summary.failed > 0
+            ? `成功 ${summary.success} 个，失败 ${summary.failed} 个`
+            : `${summary.success} 个文件上传成功`
+          showToast(summary.failed > 0 ? "error" : "success", msg)
+        }
+        await fetchFiles()
+        if (data.results?.length) {
+          const first = data.results.find((r: { success: boolean }) => r.success)
+          if (first) selectFile(first.filename)
+        } else if (data.filename) {
+          selectFile(data.filename)
+        }
+        triggerAutoIndex()
+      } else {
+        showToast("error", data.error || "上传失败")
+      }
+    } catch {
+      showToast("error", "网络错误")
+    } finally {
+      setUploading(false)
+    }
+  }, [projectId, selectFile, fetchFiles, showToast, triggerAutoIndex])
+
+  const handleCreateFile = async () => {
+    const name = newFileName.trim()
+    if (!name) return
+    if (/[\\/:*?"<>|]/.test(newFileName)) {
+      showToast("error", "文件名不能包含特殊字符 / \\ : * ? \" < > |")
+      return
+    }
+    const filename = name.endsWith(".md") ? name : `${name}.md`
+    // 检查是否与现有文件重名
+    if (files.some((f) => f.filename === filename)) {
+      showToast("error", `文件 "${filename}" 已存在`)
+      return
+    }
+    const content = `# ${name.replace(/\.md$/, "")}\n\n`
+
+    try {
+      const blob = new Blob([content], { type: "text/markdown" })
+      const file = new File([blob], filename)
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/files`,
+        { method: "POST", body: formData }
+      )
+      const data = await res.json()
+      if (res.ok && data.success) {
+        await fetchFiles()
+        selectFile(data.filename)
+        setCreatingFile(false)
+        setNewFileName("")
+        setEditMode(true)
+        setEditContent(content)
+        triggerAutoIndex()
+      }
+    } catch {
+      showToast("error", "创建失败")
+    }
+  }
+
+  const handleImportUrl = async () => {
+    const url = importUrl.trim()
+    if (!url) return
+
+    try {
+      new URL(url)
+    } catch {
+      showToast("error", "请输入合法的 URL")
+      return
+    }
+
+    setImportingUrl(true)
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/import-url`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        }
+      )
+      const data = await res.json()
+      if (res.ok && data.success) {
+        showToast("success", `"${data.title}" 导入成功`)
+        await fetchFiles()
+        selectFile(data.filename)
+        setCreatingFile(false)
+        setImportUrl("")
+        setCreateMode("file")
+        triggerAutoIndex()
+      } else {
+        showToast("error", data.error || "导入失败")
+      }
+    } catch {
+      showToast("error", "网络错误，导入失败")
+    } finally {
+      setImportingUrl(false)
+    }
+  }
+
+  const handleDeleteFile = async () => {
+    const filename = deleteTargetRef.current
+    if (!filename) return
+    deleteTargetRef.current = null
+    setDeleteTarget(null)
+    setDeleting(filename)
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeFilePath(filename)}`,
+        { method: "DELETE" }
+      )
+      if (res.ok) {
+        setFiles((prev) => prev.filter((f) => f.filename !== filename))
+        if (activeFile === filename) {
+          setActiveFile(null)
+          setEditMode(false)
+        }
+        fileCache.invalidate(filename)
+        router.refresh()
+        triggerAutoIndex()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showToast("error", data.error || "删除失败，请重试")
+      }
+    } catch {
+      showToast("error", "网络错误，删除失败")
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!activeFile) return
+    setSaving(true)
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeFilePath(activeFile)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: editContent }),
+        }
+      )
+      if (res.ok) {
+        fileCache.setFileContent(activeFile, editContent)
+        setEditMode(false)
+        showToast("success", "已保存")
+        await fetchFiles()
+        triggerAutoIndex()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showToast("error", data.error || "保存失败")
+      }
+    } catch {
+      showToast("error", "保存失败")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ─── Translate ───
+
+  const handleTranslate = async () => {
+    if (!activeFile) return
+    const config = getAIConfig()
+    if (!config) {
+      showToast("error", "请先配置 AI 助手的 API Key")
+      return
+    }
+    setTranslating(true)
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/translate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: activeFile,
+            apiKey: config.apiKey,
+            apiBase: config.apiBase,
+            model: chatModel,
+          }),
+        }
+      )
+      const data = await res.json()
+      if (res.ok && data.content) {
+        fileCache.setFileContent(activeFile, data.content)
+        showToast("success", "翻译完成")
+      } else {
+        showToast("error", data.error || "翻译失败")
+      }
+    } catch {
+      showToast("error", "翻译失败，请重试")
+    } finally {
+      setTranslating(false)
+    }
+  }
+
+  // ─── Drag & Drop ───
+
+  const handleDragOver = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }, [])
+  const handleDragLeave = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+  }, [])
+  const handleDrop = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const droppedFiles = e.dataTransfer.files
+    if (droppedFiles.length > 0) handleUpload(droppedFiles)
+  }, [handleUpload])
+
+  const handleChatScroll = React.useCallback(() => {
+    const el = chatScrollRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    userScrolledUpRef.current = !atBottom
+  }, [])
+
+  React.useEffect(() => {
+    if (userScrolledUpRef.current) return
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: isStreamingRef.current ? "instant" : "smooth" })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatMessages])
+
+  React.useEffect(() => {
+    if (!chatLoading && !generating) {
+      userScrolledUpRef.current = false
+    }
+  }, [chatLoading, generating])
+
+  // ─── Doc Update Actions ───
+
+  const handleApplyDocUpdate = React.useCallback(async (msgId: string) => {
+    const msg = chatMessages.find((m) => m.id === msgId)
+    if (!msg?.docUpdate || !activeFile) return
+
+    const newContent = msg.docUpdate.content
+    fileCache.setFileContent(activeFile, newContent)
+
+    // 使用 PUT 原子更新替代之前的 DELETE + POST 两步操作
+    // 避免竞态条件：若 DELETE 成功但 POST 失败，文件会丢失
+    // 发送 JSON body（与 PUT route handler 的 request.json() 匹配）
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeFilePath(activeFile)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: newContent }),
+        }
+      )
+      if (!res.ok) {
+        // PUT 失败时回退：不更新 UI 状态
+        const data = await res.json().catch(() => ({}))
+        showToast("error", `更新失败: ${data.error || "未知错误"}`)
+        return
+      }
+    } catch {
+      showToast("error", "网络错误，文档更新失败")
+      return
+    }
+
+    setChatMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, docUpdate: { ...m.docUpdate!, status: "applied" } } : m
+      )
+    )
+    showToast("success", "文档已更新")
+    await fetchFiles()
+    triggerAutoIndex()
+  }, [chatMessages, activeFile, projectId, showToast, fileCache, fetchFiles, triggerAutoIndex])
+
+  const handleRejectDocUpdate = React.useCallback((msgId: string) => {
+    setChatMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, docUpdate: { ...m.docUpdate!, status: "rejected" } } : m
+      )
+    )
+    showToast("success", "已退回修改")
+  }, [showToast])
+
+  // ─── Reading progress ───
+  const [readingProgress, setReadingProgress] = React.useState(0)
+
+  React.useEffect(() => {
+    const scrollEl = docContentRef.current
+    if (!scrollEl) return
+
+    let rafId: number | null = null
+
+    const handleScroll = () => {
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        const { scrollTop, scrollHeight, clientHeight } = scrollEl
+        if (scrollHeight <= clientHeight) {
+          setReadingProgress(0)
+          return
+        }
+        const progress = Math.min(scrollTop / (scrollHeight - clientHeight), 1)
+        setReadingProgress(progress)
+      })
+    }
+
+    scrollEl.addEventListener("scroll", handleScroll, { passive: true })
+    // 文件切换时重置进度
+    handleScroll()
+    return () => {
+      scrollEl.removeEventListener("scroll", handleScroll)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+  }, [activeFile, fileContent, editMode])
+
+  // ─── 从文件内容提取真实标题，更新文件列表 ───
+  React.useEffect(() => {
+    if (!activeFile || !fileContent) return
+    const firstLine = fileContent.trim().split("\n")[0]?.trim()
+    if (!firstLine) return
+    const title = firstLine
+      .replace(/^#{1,6}\s*/, "")
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/\*(.+?)\*/g, "$1")
+      .replace(/\[(.+?)\]\(.+?\)/g, "$1")
+      .replace(/`(.+?)`/g, "$1")
+      .trim()
+    if (!title) return
+    setFiles((prev) => {
+      const idx = prev.findIndex((f) => f.filename === activeFile)
+      if (idx === -1 || prev[idx].title === title) return prev
+      const updated = [...prev]
+      updated[idx] = { ...updated[idx], title }
+      return updated
+    })
+  }, [activeFile, fileContent])
+
+  // ─── Active file title ───
+
+  const activeTitle = activeFile
+    ? files.find((f) => f.filename === activeFile)?.title || activeFile.replace(/\.md$/, "")
+    : null
+
+  // ─── Word count (memoized) ───
+
+  const currentContent = editMode ? editContent : fileContent
+  const wordCount = React.useMemo(
+    () => (activeFile ? countWords(currentContent) : null),
+    [activeFile, currentContent]
+  )
+
+  // ─── Shared file operation props ───
+
+  // ─── Render ───
+
+  // Shared props for ChatPanel (used in both notebook and agent layouts)
+  const chatPanelProps = {
+    projectName: currentProjectName,
+    projectId,
+    files,
+    activeFile,
+    fileContent,
+    chatMessages,
+    chatInput,
+    chatLoading,
+    chatModel,
+    providerList,
+    onSwitchProvider: handleSwitchProvider,
+    deepThinkMode,
+    deepResearchMode,
+    conversations,
+    activeConversationId,
+    showHistory,
+    aiConfigured,
+    showAI,
+    ragEnabled,
+    indexStatus,
+    indexing,
+    indexProgress,
+    showSources,
+    sourcesData,
+    sourcesLoading,
+    generating,
+    audioGenerating,
+    audioPlaying,
+    aiPanelWidth,
+    aiPanelRef,
+    chatScrollRef,
+    chatEndRef,
+    onResizeStart: handleResizeStart,
+    onSetShowHistory: setShowHistory,
+    onSetShowAI: setShowAI,
+    onSetShowSources: setShowSources,
+    onSetChatInput: setChatInput,
+    onSendMessage: handleSendMessage,
+    onStopGeneration: handleStopGeneration,
+    onToggleDeepThink: handleToggleDeepThink,
+    onToggleDeepResearch: handleToggleDeepResearch,
+    selectedText,
+    onClearSelectedText: () => setSelectedText(""),
+    onStartNewConversation: startNewConversation,
+    onLoadConversation: loadConversation,
+    onDeleteConversation: deleteConversation,
+    onFetchSourcesData: fetchSourcesData,
+    onChatScroll: handleChatScroll,
+    onBuildIndex: triggerFullReindex,
+    onGenerate: handleGenerate,
+    onSaveGenerated: handleSaveGenerated,
+    onCopyGenerated: handleCopyGenerated,
+    onRegenerateGuide: handleRegenerateGuide,
+    onRegenerateChat: handleRegenerateChat,
+    onApplyDocUpdate: handleApplyDocUpdate,
+    onRejectDocUpdate: handleRejectDocUpdate,
+    onAudioGenerate: audioFlow.handleAudioGenerate,
+    onAudioConfirm: audioFlow.handleAudioConfirm,
+    onAudioPlay: audioFlow.handleAudioPlay,
+    onAudioStop: audioFlow.handleAudioStop,
+    pptSession,
+    onPptStyleSelect: pptFlow.handlePptStyleSelect,
+    onPptSlideCountSelect: pptFlow.handlePptSlideCountSelect,
+    onPptStartOutline: pptFlow.handlePptStartOutline,
+    onPptConfirmOutline: pptFlow.handlePptConfirmOutline,
+    onPptRetrySlide: pptFlow.handlePptRetrySlide,
+    onPptRegenerateOutline: pptFlow.handlePptRegenerateOutline,
+    onPptGuideClick: () => pptFlow.startPptFlow(selectedText ? `基于选中内容生成 PPT：${selectedText.slice(0, 100)}` : "生成 PPT"),
+    showToast,
+  }
+
+  // Shared props for FileExplorer (onSelectFile, agentMode, className, hideHeader are set per-layout)
+  const fileExplorerProps = {
+    projectName: currentProjectName,
+    files,
+    loadingFiles,
+    activeFile,
+    uploading,
+    isDragging,
+    deleting,
+    fileInputRef,
+    onBack: () => router.push("/docs/projects"),
+    onDeleteRequest: (filename: string) => {
+      deleteTargetRef.current = filename
+      setDeleteTarget(filename)
+    },
+    onCreateFile: () => { setCreatingFile(true); setNewFileName(""); setCreateMode("file") },
+    onUploadClick: () => fileInputRef.current?.click(),
+    onUpload: handleUpload,
+    onDragOver: handleDragOver,
+    onDragLeave: handleDragLeave,
+    onDrop: handleDrop,
+    onReorderFiles: handleReorderFiles,
+  }
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      {layoutMode === "agent" ? (
+        <div className="flex h-full overflow-hidden">
+          {/* 1. Conversation List */}
+          <ConversationList
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            onStartNewConversation={startNewConversation}
+            onLoadConversation={(id: string) => {
+              const conv = conversations.find((c) => c.id === id)
+              if (conv) loadConversation(conv)
+            }}
+            onDeleteConversation={deleteConversation}
+            layoutMode={layoutMode}
+            onLayoutModeChange={(v) => setLayoutMode(v)}
+          />
+          {/* 2. Chat Panel */}
+          <ErrorBoundary section="AI 助手">
+            <ChatPanel
+              {...chatPanelProps}
+              agentMode={true}
+              fileListCollapsed={fileListCollapsed}
+              onToggleFileList={() => setFileListCollapsed(v => !v)}
+            />
+          </ErrorBoundary>
+          {/* 3. Document Viewer — only when file selected */}
+          {activeFile && (
+            <div className="flex min-w-0 flex-1 flex-col border-l">
+              <div className="relative hidden h-[49px] items-center justify-between border-b px-4 md:flex">
+                <div className="flex min-w-0 items-center gap-3">
+                  <h2 className="min-w-0 truncate text-sm font-medium">{activeTitle || "未选择文件"}</h2>
+                  {wordCount && <span className="shrink-0 text-[11px] text-muted-foreground">{wordCount.words} 字</span>}
+                </div>
+              </div>
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <div id="doc-content-scroll" ref={docContentRef} className="min-w-[200px] flex-1 overflow-y-auto">
+                  {loadingContent ? (
+                    <div className="mx-auto max-w-5xl p-6">
+                      <Skeleton className="mb-4 h-7 w-2/3" />
+                      <Skeleton className="mb-6 h-px w-full" />
+                      <div className="space-y-3">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <div key={i} className="space-y-2">
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-4 w-[85%]" />
+                            <Skeleton className="h-4 w-[70%]" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <ErrorBoundary section="文档渲染">
+                      <div className="mx-auto max-w-5xl p-6">
+                        <MarkdownRenderer content={fileContent} />
+                      </div>
+                    </ErrorBoundary>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {/* 4. File Explorer */}
+          {!fileListCollapsed && (
+            <FileExplorer
+              {...fileExplorerProps}
+              className={`relative hidden w-60 shrink-0 flex-col overflow-hidden border-l bg-muted/20 md:flex ${isDragging ? "ring-2 ring-inset ring-primary/50" : ""}`}
+              agentMode
+              onSelectFile={(filename: string) => {
+                if (activeFile === filename) {
+                  setActiveFile(null)
+                } else {
+                  selectFile(filename)
+                }
+              }}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="flex h-full overflow-hidden">
+          {/* ─── Left Panel: File Explorer with Mode Switch Tabs ─── */}
+          {!readingMode && (
+            <div className="relative hidden shrink-0 flex-col overflow-hidden border-r bg-muted/20 md:flex" style={{ width: 240 }}>
+              <div className="flex h-[49px] items-center border-b px-3">
+                <Tabs value={layoutMode} onValueChange={(v) => setLayoutMode(v as "notebook" | "agent")} className="w-full">
+                  <TabsList className="h-9 w-full">
+                    <TabsTrigger value="agent" className="flex-1 gap-1.5 text-sm">
+                      <IconRobot className="size-4" />
+                      Agent
+                    </TabsTrigger>
+                    <TabsTrigger value="notebook" className="flex-1 gap-1.5 text-sm">
+                      <IconNotebook className="size-4" />
+                      Notebook
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              <FileExplorer
+                {...fileExplorerProps}
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                hideHeader={false}
+                onSelectFile={selectFile}
+              />
+            </div>
+          )}
+
+        {/* ─── Center: Document Viewer / Editor ─── */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Mobile header */}
+          <div className="flex items-center justify-between border-b px-3 py-2 md:hidden">
+            {readingMode ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => toggleReadingMode(true)}
+              >
+                <IconX className="size-4" />
+                退出精读
+              </Button>
+            ) : (
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-1.5">
+                    <IconFile className="size-4" />
+                    <span className="max-w-[120px] truncate">{activeTitle || "选择文件"}</span>
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-72 p-0">
+                  <MobileFileList
+                    projectName={currentProjectName}
+                    files={files}
+                    activeFile={activeFile}
+                    deleting={deleting}
+                    onSelectFile={selectFile}
+                    onDeleteRequest={(filename: string) => {
+                      deleteTargetRef.current = filename
+                      setDeleteTarget(filename)
+                    }}
+                  />
+                </SheetContent>
+              </Sheet>
+            )}
+            {activeFile && !editMode && !readingMode && (
+              <ReadingModeButton
+                active={readingMode}
+                onClick={() => toggleReadingMode()}
+              />
+            )}
+            {!readingMode && (
+              <Button variant="ghost" size="sm" onClick={() => setShowAI(!showAI)} aria-label={showAI ? "收起 AI 助手" : "展开 AI 助手"}>
+                <IconLayoutSidebarRightExpand className="size-4" />
+              </Button>
+            )}
+          </div>
+
+          {/* Mobile reading mode panel */}
+          {activeFile && !editMode && fileContent && readingMode && (
+            <div className="border-b md:hidden">
+              <div className="h-[50vh]">
+                <ReadingModePanel
+                  content={fileContent}
+                  fileKey={`${projectId}/${activeFile}`}
+                  scrollContainerRef={docContentRef}
+                  onClose={() => toggleReadingMode(true)}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Desktop header */}
+          <div className={`relative items-center justify-between border-b px-4 py-2 ${activeFile ? "hidden md:flex" : "hidden"}`}>
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-medium">{activeTitle || "未选择文件"}</h2>
+              {wordCount && (
+                <span className="text-[11px] text-muted-foreground">{wordCount.words} 字</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {activeFile && readingMode ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => toggleReadingMode(true)}
+                >
+                  <IconX className="size-3.5" />
+                  退出精读
+                </Button>
+              ) : activeFile ? (
+                <>
+                  {!editMode && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5 text-xs"
+                          onClick={() => setEditMode(true)}
+                        >
+                          <IconEdit className="size-3.5" />
+                          编辑
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>切换到编辑模式</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {editMode && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-xs"
+                        onClick={handleSave}
+                        disabled={saving}
+                      >
+                        {saving ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconCheck className="size-3.5" />}
+                        保存
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-xs"
+                        onClick={() => {
+                          if (editContent !== fileContent) {
+                            setCancelEditConfirm(true)
+                            return
+                          }
+                          setEditContent(fileContent)
+                          setEditMode(false)
+                        }}
+                      >
+                        <IconX className="size-3.5" />
+                        取消
+                      </Button>
+                    </>
+                  )}
+                  {!editMode && (
+                    <>
+                      <ReadingModeButton
+                        active={readingMode}
+                        onClick={() => toggleReadingMode()}
+                      />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 text-xs"
+                            onClick={handleTranslate}
+                            disabled={translating}
+                          >
+                            {translating ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconLanguage className="size-3.5" />}
+                            翻译
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>翻译为中文</TooltipContent>
+                      </Tooltip>
+                    </>
+                  )}
+                </>
+              ) : null}
+              {!showAI && !readingMode && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" onClick={() => setShowAI(true)}>
+                      <IconLayoutSidebarRightExpand className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>打开 AI 助手</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+            {/* Reading progress bar */}
+            {activeFile && !editMode && (
+              <div className="absolute bottom-0 left-0 right-0 h-px bg-transparent">
+                <div
+                  className="h-full bg-primary/30 transition-[width] duration-150 ease-out"
+                  style={{ width: `${readingProgress * 100}%` }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Content area */}
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            {activeFile && !editMode && fileContent && (
+              <TableOfContents content={fileContent} />
+            )}
+            <div id="doc-content-scroll" ref={docContentRef} className={`min-w-[200px] flex-1 overflow-y-auto ${readingMode && !editMode ? "reading-mode-active" : ""}`}>
+              {loadingContent ? (
+                <div className="mx-auto max-w-5xl p-6">
+                  <Skeleton className="mb-4 h-7 w-2/3" />
+                  <Skeleton className="mb-6 h-px w-full" />
+                  <div className="space-y-3">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="space-y-2">
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-[85%]" />
+                        <Skeleton className="h-4 w-[70%]" />
+                      </div>
+                    ))}
+                  </div>
+                  <Skeleton className="mt-6 mb-3 h-5 w-1/3" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-[90%]" />
+                    <Skeleton className="h-4 w-[60%]" />
+                  </div>
+                </div>
+              ) : !activeFile ? (
+                <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                  <IconFile className="mb-2 size-8 opacity-30" />
+                  <p className="text-sm">选择一个文件开始阅读</p>
+                </div>
+              ) : editMode ? (
+                <ErrorBoundary section="编辑器">
+                  <div className="h-full p-4">
+                    <RichTextEditor content={editContent} onChange={setEditContent} />
+                  </div>
+                </ErrorBoundary>
+              ) : (
+                <ErrorBoundary section="文档渲染">
+                  <div className="mx-auto max-w-5xl p-6">
+                    <MarkdownRenderer content={fileContent} />
+                  </div>
+                </ErrorBoundary>
+              )}
+            </div>
+              {/* Reading mode panel */}
+              {activeFile && !editMode && fileContent && readingMode && (
+                <div
+                  ref={readingPanelRef}
+                  className="relative hidden shrink-0 border-l md:block"
+                  style={{ width: readingPanelWidth }}
+                >
+                  {/* Drag handle */}
+                  <div
+                    className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 focus:bg-primary/20 focus:outline-none"
+                    onMouseDown={handleReadingResizeStart}
+                    onKeyDown={(e) => {
+                      // 键盘左右箭头调整面板宽度
+                      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                        e.preventDefault()
+                        const delta = e.key === "ArrowLeft" ? -20 : 20
+                        setReadingPanelWidth((prev) => {
+                          const current = typeof prev === "number" ? prev : parseInt(String(prev), 10) || 400
+                          return Math.max(200, Math.min(800, current + delta))
+                        })
+                      }
+                    }}
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整阅读面板宽度，使用左右箭头键调整"
+                    aria-valuenow={readingPanelWidth}
+                    tabIndex={0}
+                  />
+                  <ReadingModePanel
+                    content={fileContent}
+                    fileKey={`${projectId}/${activeFile}`}
+                    scrollContainerRef={docContentRef}
+                    onClose={() => toggleReadingMode(true)}
+                  />
+                </div>
+              )}
+          </div>
+        </div>
+
+          {/* ─── Right: AI Chat Panel ─── */}
+          <ErrorBoundary section="AI 助手">
+            <ChatPanel {...chatPanelProps} />
+          </ErrorBoundary>
+        </div>
+      )}
+
+      {/* ─── Unsaved Changes Confirmation Dialog ─── */}
+      <AlertDialog
+        open={!!pendingFileSwitch}
+        onOpenChange={(open) => {
+          if (!open) setPendingFileSwitch(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>有未保存的更改</AlertDialogTitle>
+            <AlertDialogDescription>
+              当前文件有未保存的编辑内容，切换文件将丢失这些更改。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续编辑</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const target = pendingFileSwitch
+                setPendingFileSwitch(null)
+                if (target) {
+                  setEditContent(fileContent)
+                  setActiveFile(target)
+                  setEditMode(false)
+                  fileCache.loadFileContent(target)
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              放弃更改
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ─── Delete Confirmation Dialog ─── */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null)
+            deleteTargetRef.current = null
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除「{deleteTarget}」吗？此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteFile}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ─── Cancel Edit Confirmation Dialog ─── */}
+      <AlertDialog
+        open={cancelEditConfirm}
+        onOpenChange={setCancelEditConfirm}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>放弃编辑</AlertDialogTitle>
+            <AlertDialogDescription>
+              有未保存的编辑内容，确定要放弃吗？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续编辑</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setCancelEditConfirm(false)
+                setEditContent(fileContent)
+                setEditMode(false)
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              放弃更改
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ─── Create File / Import URL Dialog ─── */}
+      <Dialog open={creatingFile} onOpenChange={setCreatingFile}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>新建文件</DialogTitle>
+          </DialogHeader>
+          <div className="flex gap-2">
+            <Button
+              variant={createMode === "file" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setCreateMode("file")}
+            >
+              新建文件
+            </Button>
+            <Button
+              variant={createMode === "url" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setCreateMode("url")}
+            >
+              导入 URL
+            </Button>
+          </div>
+          {createMode === "file" ? (
+            <div className="space-y-3">
+              <Input
+                placeholder="输入文件名（不需要扩展名）"
+                value={newFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateFile() }}
+              />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCreatingFile(false)}>取消</Button>
+                <Button onClick={handleCreateFile} disabled={!newFileName.trim()}>创建</Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Input
+                placeholder="输入网页 URL"
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+              />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCreatingFile(false)}>取消</Button>
+                <Button onClick={handleImportUrl} disabled={!importUrl.trim() || importingUrl}>
+                  {importingUrl ? <IconLoader2 className="mr-1 size-4 animate-spin" /> : <IconLink className="mr-1 size-4" />}
+                  导入
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Toast Queue ─── */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
+    </TooltipProvider>
+  )
+}

@@ -1,0 +1,47 @@
+# 本地开发 / 单机部署编排文件
+# - postgres: 数据持久化
+# - api: Fastify 后端服务（连接 postgres）
+# 前端 (apps/web) 推荐部署到 Vercel，不在此编排范围内；
+# 如需本地联调，直接 `pnpm dev:web` 单独启动即可。
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mynotes-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mynotes
+      POSTGRES_PASSWORD: mynotes_dev_pw
+      POSTGRES_DB: mynotes_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - mynotes_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mynotes -d mynotes_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: mynotes-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      HOST: 0.0.0.0
+      DATABASE_URL: "postgresql://mynotes:mynotes_dev_pw@postgres:5432/mynotes_dev?schema=public"
+      JWT_ACCESS_SECRET: "${JWT_ACCESS_SECRET:?请设置 JWT_ACCESS_SECRET 环境变量}"
+      JWT_REFRESH_SECRET: "${JWT_REFRESH_SECRET:?请设置 JWT_REFRESH_SECRET 环境变量}"
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:3000}"
+    ports:
+      - "4000:4000"
+
+volumes:
+  mynotes_pg_data:

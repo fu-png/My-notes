@@ -23,9 +23,9 @@
 
 依次执行以下命令，记录结果：
 
-1. `pnpm typecheck` — TypeScript 编译是否有错误
-2. `pnpm lint` — ESLint 是否有错误或警告
-3. `pnpm build` — 生产构建是否成功
+1. `pnpm --filter web typecheck` — TypeScript 编译是否有错误
+2. `pnpm --filter web lint` — ESLint 是否有错误或警告
+3. `pnpm --filter web build` — 生产构建是否成功
 
 将所有错误和警告完整记录下来，作为本次迭代的候选修复项。
 
@@ -34,27 +34,27 @@
 在以下 6 个维度中扫描代码库，找出可改进的点。每个维度至少检查指定文件：
 
 **性能**
-- `lib/rag/pipeline.ts`、`lib/rag/embedding.ts`、`lib/rag/retriever.ts` — RAG 查询是否有串行可并行的步骤、是否有重复计算、缓存是否有效
-- `app/api/chat/route.ts` — 首 token 延迟是否有优化空间（流式输出、预热、并行）
-- `components/notebook-workspace.tsx` — 是否有不必要的重渲染、是否有 useMemo/useCallback 缺失
-- `components/notebook/chat-panel.tsx` — 消息列表渲染是否高效、是否有虚拟滚动需求
+- `apps/web/lib/rag/pipeline.ts`、`apps/web/lib/rag/embedding.ts`、`apps/web/lib/rag/retriever.ts` — RAG 查询是否有串行可并行的步骤、是否有重复计算、缓存是否有效
+- `apps/web/app/api/chat/route.ts`（或迁移后的 `apps/api/src/modules/chat`）— 首 token 延迟是否有优化空间（流式输出、预热、并行）
+- `apps/web/components/notebook-workspace.tsx` — 是否有不必要的重渲染、是否有 useMemo/useCallback 缺失
+- `apps/web/components/notebook/chat-panel.tsx` — 消息列表渲染是否高效、是否有虚拟滚动需求
 
 **用户体验**
 - 遍历所有组件，检查：加载状态是否完善（骨架屏 vs 裸 spinner）、错误状态是否有友好提示、空状态是否有引导
-- 检查表单验证：`components/settings-dialog.tsx`、`components/new-project-form.tsx` — 输入是否有前端验证
-- 检查键盘可访问性：`components/file-upload.tsx`、`components/notebook/file-explorer.tsx` — 关键操作是否支持键盘
+- 检查表单验证：`apps/web/components/settings-dialog.tsx`、`apps/web/components/new-project-form.tsx` — 输入是否有前端验证
+- 检查键盘可访问性：`apps/web/components/file-upload.tsx`、`apps/web/components/notebook/file-explorer.tsx` — 关键操作是否支持键盘
 - 检查 `window.prompt` / `window.confirm` 等原生弹窗是否可以替换为组件化方案
 
 **代码质量**
-- 检查 `components/notebook/chat-panel.tsx` 的 Props 接口字段数量，如果超过 30 个，考虑引入 Context 拆分
+- 检查 `apps/web/components/notebook/chat-panel.tsx` 的 Props 接口字段数量，如果超过 30 个，考虑引入 Context 拆分
 - 检查是否有重复代码可抽取为公共函数或组件
 - 检查是否有 `any` 类型滥用
-- 检查 `hooks/` 目录下的自定义 hook 是否有清理函数缺失（内存泄漏风险）
+- 检查 `apps/web/hooks/` 目录下的自定义 hook 是否有清理函数缺失（内存泄漏风险）
 
 **安全性**
-- 检查 `lib/ai-config.ts` 和 API 路由 — API Key 是否通过 URL query 传输（应改为 header 或加密 cookie）
-- 检查 `app/api/` 下所有路由 — 是否有鉴权检查、是否有输入校验
-- 检查 `lib/storage.ts` — 文件路径是否有目录遍历风险
+- 检查 `apps/web/lib/ai-config.ts`（迁移后应改为后端持有 Key，前端不再直连模型）和 API 路由 — API Key 是否通过 URL query 传输（应改为 header 或加密 cookie）
+- 检查 `apps/web/app/api/`（或迁移后的 `apps/api/src/modules/`）下所有路由 — 是否有鉴权检查、是否有输入校验
+- 检查 `apps/web/lib/storage.ts` — 文件路径是否有目录遍历风险、是否已按 userId 隔离
 
 **可访问性 (a11y)**
 - 检查所有交互元素是否有 `aria-label`
@@ -62,10 +62,10 @@
 - 检查焦点管理：对话框、抽屉打开时焦点是否被捕获
 
 **RAG 与搜索**
-- 检查 `lib/rag/bm25-store.ts` — BM25 索引是否被文件搜索功能实际利用
-- 检查 `app/api/search/route.ts` — 搜索是否仅匹配文件名而未利用全文索引
-- 检查 `lib/rag/context-builder.ts` — 上下文组装是否有 token 溢出风险
-- 检查 `lib/rag/chunker.ts` — 分块策略是否合理（块大小、重叠）
+- 检查 `apps/web/lib/rag/bm25-store.ts` — BM25 索引是否被文件搜索功能实际利用
+- 检查 `apps/web/app/api/search/route.ts`（或迁移后的 `apps/api/src/modules/`）— 搜索是否仅匹配文件名而未利用全文索引
+- 检查 `apps/web/lib/rag/context-builder.ts` — 上下文组装是否有 token 溢出风险
+- 检查 `apps/web/lib/rag/chunker.ts` — 分块策略是否合理（块大小、重叠）
 
 ## 第四步：优先级排序与选择
 
@@ -90,10 +90,10 @@
 - 如果涉及 Next.js API，先阅读 `node_modules/next/dist/docs/` 中的相关文档（本项目使用 Next.js 16，API 可能有变动）
 
 ### 5.2 验证（必须全部通过）
-1. `pnpm typecheck` — 零错误
-2. `pnpm lint` — 本次改动不引入新错误（历史遗留错误可忽略但需记录）
-3. `pnpm build` — 构建成功
-4. 浏览器实测 — 使用 `catdesk browser-action` 启动 `pnpm dev`，打开核心页面验证改动效果：
+1. `pnpm --filter web typecheck` — 零错误
+2. `pnpm --filter web lint` — 本次改动不引入新错误（历史遗留错误可忽略但需记录）
+3. `pnpm --filter web build` — 构建成功
+4. 浏览器实测 — 使用 `catdesk browser-action` 启动 `pnpm --filter web dev`，打开核心页面验证改动效果：
    - 首页（`/`）正常渲染
    - 项目列表页（`/docs/projects`）正常加载
    - 项目工作区（`/docs/projects/[id]`）三栏布局完整

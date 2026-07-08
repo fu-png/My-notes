@@ -1,0 +1,92 @@
+# 生产环境部署编排文件
+# 前后端 + 数据库 + Nginx 全部容器化，一台服务器搞定
+#
+# 使用方式:
+#   cp .env.production.example .env.production   # 填入你的配置
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mynotes-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mynotes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请设置数据库密码}
+      POSTGRES_DB: ${POSTGRES_DB:-mynotes_prod}
+    volumes:
+      - mynotes_pg_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mynotes} -d ${POSTGRES_DB:-mynotes_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: mynotes-api
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      HOST: 0.0.0.0
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-mynotes}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mynotes_prod}?schema=public"
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?请设置 JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?请设置 JWT_REFRESH_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+    expose:
+      - "4000"
+    networks:
+      - internal
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # 构建时注入后端地址（Docker 内部网络，web 容器通过服务名访问 api 容器）
+        API_BASE_URL: http://api:4000
+    container_name: mynotes-web
+    restart: always
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      # 运行时后端地址（Next.js SSR 通过 Docker 内部网络访问后端）
+      API_BASE_URL: http://api:4000
+    expose:
+      - "3000"
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: mynotes-nginx
+    restart: always
+    depends_on:
+      - api
+      - web
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - internal
+
+volumes:
+  mynotes_pg_data:
+
+networks:
+  internal:
+    driver: bridge

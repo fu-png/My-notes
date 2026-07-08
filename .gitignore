@@ -1,5 +1,5 @@
 # dependencies
-/node_modules
+node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -9,14 +9,14 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
+build/
 
 # misc
 .DS_Store
@@ -31,12 +31,21 @@ pnpm-debug.log*
 # env files
 .env*
 !.env.local.example
+!.env.production.example
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 
 # project runtime data (RAG index, audio cache)
-content/projects/**/.rag/
-content/projects/**/.audio/
+apps/web/content/projects/**/.rag/
+apps/web/content/projects/**/.audio/
 .vercel
+
+# apps/api 本地开发存储（按 userId 隔离的运行时数据，非种子数据，不入库）
+apps/api/content/
+
+# monorepo build artifacts
+apps/*/dist/
+apps/*/.turbo/
+

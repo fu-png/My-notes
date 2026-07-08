@@ -1,0 +1,190 @@
+// Prisma Schema — mynotes SaaS 后端
+// 参考设计文档: /docs/saas-architecture-plan.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------------
+// 身份与组织
+// ------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships   OrganizationMember[]
+  subscriptions Subscription[]
+  orders        Order[]
+  usageRecords  UsageRecord[]
+  projects      Project[]
+
+  @@map("users")
+}
+
+// 预留团队协作扩展空间：现阶段每个用户注册时自动创建一个"个人组织"，
+// 后续团队版直接复用同一套 Organization/Member/Subscription 模型。
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  isPersonal Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members       OrganizationMember[]
+  subscriptions Subscription[]
+  projects      Project[]
+
+  @@map("organizations")
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole      @default(OWNER)
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+}
+
+// ------------------------------------------------------------------
+// 会员与计费
+// ------------------------------------------------------------------
+
+model Plan {
+  id            String   @id @default(cuid())
+  code          String   @unique // e.g. "free" | "pro" | "team"
+  name          String
+  priceInCents  Int
+  billingPeriod String   @default("month") // "month" | "year"
+  features      Json // { maxProjects, monthlyTokenQuota, ... }
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+  PAST_DUE
+}
+
+model Subscription {
+  id             String             @id @default(cuid())
+  userId         String
+  organizationId String
+  planId         String
+  status         SubscriptionStatus @default(ACTIVE)
+  currentStart   DateTime           @default(now())
+  currentEnd     DateTime
+  cancelAtEnd    Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         Plan         @relation(fields: [planId], references: [id])
+  orders       Order[]
+
+  @@index([userId])
+  @@index([organizationId])
+  @@map("subscriptions")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  amountInCents  Int
+  currency       String      @default("CNY")
+  status         OrderStatus @default(PENDING)
+  channel        String? // "alipay" | "wechat"
+  externalTradeNo String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([userId])
+  @@map("orders")
+}
+
+// ------------------------------------------------------------------
+// 用量计费 — 计费闭环的核心数据源
+// ------------------------------------------------------------------
+
+enum UsageFeature {
+  DEEP_RESEARCH
+  RAG_CHAT
+  PPT_GENERATION
+  OTHER
+}
+
+model UsageRecord {
+  id               String       @id @default(cuid())
+  userId           String
+  feature          UsageFeature
+  model            String // 实际调用的底层模型名
+  promptTokens     Int          @default(0)
+  completionTokens Int          @default(0)
+  totalTokens      Int          @default(0)
+  costInCents      Int          @default(0)
+  createdAt        DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("usage_records")
+}
+
+// ------------------------------------------------------------------
+// 业务数据
+// ------------------------------------------------------------------
+
+model Project {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@map("projects")
+}
